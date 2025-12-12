@@ -113,12 +113,60 @@ Deno.serve(async (req) => {
     console.log('Triggered At:', payload.triggered_at);
     console.log('=====================================');
 
+    // Forward to external bot service with Bearer token
+    const botServiceUrl = Deno.env.get('BOT_SERVICE_URL');
+    const botServiceSecret = Deno.env.get('BOT_SERVICE_SECRET');
+
+    let forwardResult = null;
+    if (botServiceUrl && botServiceSecret) {
+      console.log('📤 Forwarding to external bot service:', botServiceUrl);
+      try {
+        const forwardResponse = await fetch(botServiceUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${botServiceSecret}`
+          },
+          body: JSON.stringify({
+            meeting_id: payload.meeting_id,
+            meeting_url: payload.meeting_url,
+            title: payload.title,
+            start_time: payload.start_time,
+            end_time: payload.end_time,
+            attendees: payload.attendees,
+            triggered_at: payload.triggered_at
+          })
+        });
+
+        const responseText = await forwardResponse.text();
+        console.log('📥 Bot service response status:', forwardResponse.status);
+        console.log('📥 Bot service response:', responseText);
+
+        forwardResult = {
+          status: forwardResponse.status,
+          success: forwardResponse.ok,
+          response: responseText
+        };
+      } catch (forwardError) {
+        const errorMsg = forwardError instanceof Error ? forwardError.message : 'Unknown error';
+        console.error('❌ Failed to forward to bot service:', errorMsg);
+        forwardResult = {
+          status: 0,
+          success: false,
+          error: errorMsg
+        };
+      }
+    } else {
+      console.log('ℹ️ BOT_SERVICE_URL or BOT_SERVICE_SECRET not configured - skipping forward');
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
         message: 'Webhook received successfully',
         meeting_id: payload.meeting_id,
-        received_at: new Date().toISOString()
+        received_at: new Date().toISOString(),
+        forwarded: forwardResult
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
