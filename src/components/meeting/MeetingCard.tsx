@@ -61,7 +61,7 @@ export const MeetingCard = ({ meeting, onSelect, onDownload, onDelete }: Meeting
         </div>
 
         <p className="text-sm sm:text-base text-muted-foreground line-clamp-2 mb-4 leading-relaxed">
-          {meeting.analysis.summary}
+          {meeting.analysis?.summary || 'Keine Zusammenfassung verfügbar'}
         </p>
 
         <div className="flex flex-wrap gap-2">
