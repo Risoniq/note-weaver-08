@@ -15,6 +15,7 @@ import { MeetingCard } from './meeting/MeetingCard';
 import { EmptyState } from './meeting/EmptyState';
 import { MeetingDetailModal } from './meeting/MeetingDetailModal';
 import { DownloadModal } from './meeting/DownloadModal';
+import { CalendarView } from './calendar/CalendarView';
 import { useToast } from '@/hooks/use-toast';
 
 export default function MeetingNoteTaker() {
@@ -322,6 +323,10 @@ export default function MeetingNoteTaker() {
               <EmptyState hasSearchTerm={!!searchTerm} />
             )}
           </>
+        )}
+
+        {activeView === 'calendar' && (
+          <CalendarView />
         )}
 
         {selectedMeeting && (

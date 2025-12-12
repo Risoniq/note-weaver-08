@@ -1,4 +1,4 @@
-import { LayoutDashboard, Plus } from 'lucide-react';
+import { LayoutDashboard, Plus, Calendar } from 'lucide-react';
 import { ViewType } from '@/types/meeting';
 
 interface NavigationProps {
@@ -30,6 +30,17 @@ export const Navigation = ({ activeView, onViewChange }: NavigationProps) => {
       >
         <Plus size={18} />
         Neues Meeting
+      </button>
+      <button
+        onClick={() => onViewChange('calendar')}
+        className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-medium transition-all duration-200 ${
+          activeView === 'calendar'
+            ? 'gradient-hero text-primary-foreground shadow-primary'
+            : 'bg-card text-foreground hover:bg-secondary border border-border shadow-sm'
+        }`}
+      >
+        <Calendar size={18} />
+        Kalender
       </button>
     </div>
   );

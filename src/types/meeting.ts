@@ -18,4 +18,4 @@ export interface Meeting {
 }
 
 export type CaptureMode = 'tab' | 'mic';
-export type ViewType = 'dashboard' | 'record';
+export type ViewType = 'dashboard' | 'record' | 'calendar';
