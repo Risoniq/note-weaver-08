@@ -66,13 +66,13 @@ export const MeetingCard = ({ meeting, onSelect, onDownload, onDelete }: Meeting
 
         <div className="flex flex-wrap gap-2">
           <span className="px-3 py-1.5 bg-primary/10 text-primary rounded-full text-xs sm:text-sm font-medium">
-            {meeting.analysis.wordCount || 0} Wörter
+            {meeting.analysis?.wordCount || 0} Wörter
           </span>
           <span className="px-3 py-1.5 bg-accent/10 text-accent rounded-full text-xs sm:text-sm font-medium">
-            {meeting.analysis.keyPoints?.length || 0} Punkte
+            {meeting.analysis?.keyPoints?.length || 0} Punkte
           </span>
           <span className="px-3 py-1.5 bg-success/10 text-success rounded-full text-xs sm:text-sm font-medium">
-            {meeting.analysis.actionItems?.length || 0} Actions
+            {meeting.analysis?.actionItems?.length || 0} Actions
           </span>
         </div>
       </div>
