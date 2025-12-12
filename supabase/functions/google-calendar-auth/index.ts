@@ -13,19 +13,72 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  if (req.method !== 'POST') {
+    return new Response(
+      JSON.stringify({ error: 'Method not allowed' }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      },
+    );
+  }
+
   try {
-    const { action, code, redirectUri, refreshToken } = await req.json();
+    let payload: {
+      action?: string;
+      code?: string;
+      redirectUri?: string;
+      refreshToken?: string;
+    };
+
+    try {
+      payload = await req.json();
+    } catch (parseError) {
+      console.error('Failed to parse JSON body in google-calendar-auth:', parseError);
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON body' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
+    const { action, code, redirectUri, refreshToken } = payload;
+
+    if (!action) {
+      return new Response(
+        JSON.stringify({ error: 'Missing action' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
+    }
 
     if (action === 'getAuthUrl') {
       const scope = encodeURIComponent('https://www.googleapis.com/auth/calendar.readonly');
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
-      
+
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri ?? '')}` +
+        `&response_type=code&scope=${scope}&access_type=offline&prompt=consent`;
+
       return new Response(JSON.stringify({ authUrl }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     if (action === 'exchangeCode') {
+      if (!code || !redirectUri) {
+        return new Response(
+          JSON.stringify({ error: 'Missing code or redirectUri' }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        );
+      }
+
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -38,11 +91,28 @@ serve(async (req) => {
         }),
       });
 
-      const tokens = await tokenResponse.json();
-      
-      if (tokens.error) {
-        console.error('Token exchange error:', tokens);
-        throw new Error(tokens.error_description || tokens.error);
+      const tokenResponseText = await tokenResponse.text();
+
+      let tokens: any;
+      try {
+        tokens = JSON.parse(tokenResponseText);
+      } catch (parseError) {
+        console.error(
+          'Failed to parse Google token response JSON (exchangeCode):',
+          tokenResponse.status,
+          tokenResponseText.slice(0, 200),
+        );
+        throw new Error('Ungültige Antwort vom Google Token-Endpunkt');
+      }
+
+      if (!tokenResponse.ok || tokens.error) {
+        console.error('Google token endpoint error (exchangeCode):', {
+          status: tokenResponse.status,
+          error: tokens.error,
+          error_description: tokens.error_description,
+        });
+
+        throw new Error(tokens.error_description || tokens.error || 'Fehler beim Token-Austausch mit Google');
       }
 
       return new Response(JSON.stringify({
@@ -55,6 +125,16 @@ serve(async (req) => {
     }
 
     if (action === 'refreshToken') {
+      if (!refreshToken) {
+        return new Response(
+          JSON.stringify({ error: 'Missing refreshToken' }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          },
+        );
+      }
+
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -66,11 +146,28 @@ serve(async (req) => {
         }),
       });
 
-      const tokens = await tokenResponse.json();
-      
-      if (tokens.error) {
-        console.error('Token refresh error:', tokens);
-        throw new Error(tokens.error_description || tokens.error);
+      const tokenResponseText = await tokenResponse.text();
+
+      let tokens: any;
+      try {
+        tokens = JSON.parse(tokenResponseText);
+      } catch (parseError) {
+        console.error(
+          'Failed to parse Google token response JSON (refreshToken):',
+          tokenResponse.status,
+          tokenResponseText.slice(0, 200),
+        );
+        throw new Error('Ungültige Antwort vom Google Token-Endpunkt');
+      }
+
+      if (!tokenResponse.ok || tokens.error) {
+        console.error('Google token endpoint error (refreshToken):', {
+          status: tokenResponse.status,
+          error: tokens.error,
+          error_description: tokens.error_description,
+        });
+
+        throw new Error(tokens.error_description || tokens.error || 'Fehler beim Aktualisieren des Tokens');
       }
 
       return new Response(JSON.stringify({
@@ -85,7 +182,6 @@ serve(async (req) => {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error in google-calendar-auth:', errorMessage);
