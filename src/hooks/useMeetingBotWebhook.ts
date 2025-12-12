@@ -12,8 +12,8 @@ function extractUrl(text: string | null | undefined): string | null {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-// Fetch signed token from backend
-async function getWebhookToken(payload: object): Promise<{ signature: string; timestamp: string } | null> {
+// Fetch signed token from backend - accepts the exact payload string to sign
+async function getWebhookToken(payloadString: string): Promise<{ signature: string; timestamp: string } | null> {
   try {
     const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-webhook-token`, {
       method: 'POST',
@@ -21,7 +21,8 @@ async function getWebhookToken(payload: object): Promise<{ signature: string; ti
         'Content-Type': 'application/json',
         'apikey': SUPABASE_ANON_KEY,
       },
-      body: JSON.stringify({ payload }),
+      // Send the raw payload string to be signed
+      body: JSON.stringify({ payloadString }),
     });
 
     if (!response.ok) {
@@ -121,13 +122,15 @@ export const useMeetingBotWebhook = () => {
       triggered_at: new Date().toISOString(),
     };
 
+    // IMPORTANT: Create the payload string ONCE and use it consistently
+    // This ensures the signature matches exactly what will be verified
     const payloadString = JSON.stringify(payload);
 
     console.log('Triggering meeting bot webhook:', payload);
 
     try {
-      // Get signed token from backend
-      const token = await getWebhookToken(payload);
+      // Get signed token from backend - send the exact string that will be used
+      const token = await getWebhookToken(payloadString);
       
       if (!token) {
         throw new Error('Failed to obtain webhook signature token');
