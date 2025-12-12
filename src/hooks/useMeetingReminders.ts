@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { CalendarEvent } from '@/types/calendar';
 import { useToast } from '@/hooks/use-toast';
 
@@ -14,14 +14,14 @@ export const useMeetingReminders = (
 ) => {
   const { toast } = useToast();
   const shownReminders = useRef<Set<string>>(new Set());
-  const notificationPermission = useRef<NotificationPermission>('default');
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+    'Notification' in window ? Notification.permission : 'default'
+  );
 
-  // Request notification permission
+  // Sync permission state on mount
   useEffect(() => {
     if ('Notification' in window) {
-      Notification.requestPermission().then(permission => {
-        notificationPermission.current = permission;
-      });
+      setNotificationPermission(Notification.permission);
     }
   }, []);
 
@@ -41,7 +41,7 @@ export const useMeetingReminders = (
     });
 
     // Browser Push Notification
-    if ('Notification' in window && notificationPermission.current === 'granted') {
+    if ('Notification' in window && notificationPermission === 'granted') {
       const notification = new Notification('Meeting-Erinnerung', {
         body: message,
         icon: '/favicon.ico',
@@ -60,7 +60,7 @@ export const useMeetingReminders = (
       // Auto-close after 30 seconds
       setTimeout(() => notification.close(), 30000);
     }
-  }, [toast, settings.minutesBefore]);
+  }, [toast, settings.minutesBefore, notificationPermission]);
 
   // Check for upcoming meetings
   useEffect(() => {
@@ -87,7 +87,7 @@ export const useMeetingReminders = (
     return () => clearInterval(interval);
   }, [events, settings.enabled, settings.minutesBefore, showReminder]);
 
-  // Clean up old reminders (older than 1 hour)
+  // Clean up old reminders
   useEffect(() => {
     const cleanup = () => {
       shownReminders.current = new Set(
@@ -101,10 +101,10 @@ export const useMeetingReminders = (
     cleanup();
   }, [events, settings.minutesBefore]);
 
-  const requestNotificationPermission = async () => {
+  const requestNotificationPermission = async (): Promise<boolean> => {
     if ('Notification' in window) {
       const permission = await Notification.requestPermission();
-      notificationPermission.current = permission;
+      setNotificationPermission(permission);
       return permission === 'granted';
     }
     return false;
@@ -113,6 +113,6 @@ export const useMeetingReminders = (
   return {
     requestNotificationPermission,
     notificationSupported: 'Notification' in window,
-    notificationPermission: notificationPermission.current,
+    notificationPermission,
   };
 };
