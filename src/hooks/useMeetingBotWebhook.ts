@@ -2,24 +2,6 @@ import { useRef, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { CalendarEvent } from '@/types/calendar';
 
-// HMAC-SHA256 signature generation
-async function generateSignature(payload: string, timestamp: string, secret: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-
-  const signatureData = `${timestamp}.${payload}`;
-  const signatureBytes = await crypto.subtle.sign('HMAC', key, encoder.encode(signatureData));
-  return Array.from(new Uint8Array(signatureBytes))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
 // Extract URL from text using regex
 function extractUrl(text: string | null | undefined): string | null {
   if (!text) return null;
@@ -27,10 +9,33 @@ function extractUrl(text: string | null | undefined): string | null {
   return urlMatch ? urlMatch[0] : null;
 }
 
-// Get signing secret from environment
-const WEBHOOK_SIGNING_SECRET = import.meta.env.VITE_WEBHOOK_SIGNING_SECRET || '';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+// Fetch signed token from backend
+async function getWebhookToken(payload: object): Promise<{ signature: string; timestamp: string } | null> {
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-webhook-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ payload }),
+    });
+
+    if (!response.ok) {
+      console.error('Failed to get webhook token:', await response.text());
+      return null;
+    }
+
+    const data = await response.json();
+    return { signature: data.signature, timestamp: data.timestamp };
+  } catch (error) {
+    console.error('Error fetching webhook token:', error);
+    return null;
+  }
+}
 
 // LocalStorage key for persisting triggered webhooks
 const TRIGGERED_WEBHOOKS_KEY = 'meeting:triggeredWebhooks';
@@ -117,25 +122,25 @@ export const useMeetingBotWebhook = () => {
     };
 
     const payloadString = JSON.stringify(payload);
-    const timestamp = Date.now().toString();
 
     console.log('Triggering meeting bot webhook:', payload);
 
     try {
+      // Get signed token from backend
+      const token = await getWebhookToken(payload);
+      
+      if (!token) {
+        throw new Error('Failed to obtain webhook signature token');
+      }
+
+      console.log('✅ Obtained signed webhook token');
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'apikey': SUPABASE_ANON_KEY,
-        'x-webhook-timestamp': timestamp,
+        'x-webhook-timestamp': token.timestamp,
+        'x-webhook-signature': token.signature,
       };
-
-      // Add signature if secret is configured
-      if (WEBHOOK_SIGNING_SECRET) {
-        const signature = await generateSignature(payloadString, timestamp, WEBHOOK_SIGNING_SECRET);
-        headers['x-webhook-signature'] = signature;
-        console.log('Request signed with HMAC-SHA256');
-      } else {
-        console.warn('VITE_WEBHOOK_SIGNING_SECRET not configured - sending unsigned request');
-      }
 
       const response = await fetch(`${SUPABASE_URL}/functions/v1/meeting-bot-webhook`, {
         method: 'POST',

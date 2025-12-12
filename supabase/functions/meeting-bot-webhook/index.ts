@@ -70,20 +70,27 @@ Deno.serve(async (req) => {
     const signature = req.headers.get('x-webhook-signature');
     const body = await req.text();
 
-    // Verify signature if headers are present
-    if (timestamp && signature) {
-      const isValid = await verifySignature(body, signature, timestamp);
-      if (!isValid) {
-        console.error('Invalid webhook signature');
-        return new Response(
-          JSON.stringify({ error: 'Invalid signature' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      console.log('✅ Webhook signature verified successfully');
-    } else {
-      console.warn('⚠️ No signature headers present - accepting unsigned request');
+    // Require signature for security
+    if (!timestamp || !signature) {
+      console.error('❌ Missing signature headers - request rejected');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Unauthorized', 
+          message: 'Missing signature headers. Use generate-webhook-token to obtain a valid signature.' 
+        }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
+
+    const isValid = await verifySignature(body, signature, timestamp);
+    if (!isValid) {
+      console.error('❌ Invalid webhook signature');
+      return new Response(
+        JSON.stringify({ error: 'Invalid signature' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    console.log('✅ Webhook signature verified successfully');
 
     const payload: MeetingWebhookPayload = JSON.parse(body);
 
