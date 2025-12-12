@@ -5,6 +5,8 @@ import { CalendarConnection } from './CalendarConnection';
 import { UpcomingMeetings } from './UpcomingMeetings';
 import { ReminderSettings } from './ReminderSettings';
 import { CalendarEvent } from '@/types/calendar';
+import { Button } from '@/components/ui/button';
+import { FlaskConical } from 'lucide-react';
 
 interface CalendarViewProps {
   onStartRecording?: (event: CalendarEvent) => void;
@@ -35,6 +37,21 @@ export const CalendarView = ({ onStartRecording }: CalendarViewProps) => {
     }
   };
 
+  const handleTestWebhook = async () => {
+    const testEvent: CalendarEvent = {
+      id: 'test-' + Date.now(),
+      summary: 'Test Meeting ' + new Date().toLocaleTimeString('de-DE'),
+      description: 'Test webhook call',
+      location: '',
+      start: new Date().toISOString(),
+      end: new Date(Date.now() + 3600000).toISOString(),
+      meetingUrl: 'https://meet.google.com/test-xyz-123',
+      hangoutLink: 'https://meet.google.com/test-xyz-123',
+      attendees: [{ email: 'test@example.com', displayName: 'Test User', responseStatus: 'accepted' }]
+    };
+    await triggerBotWebhook(testEvent);
+  };
+
   const {
     requestNotificationPermission,
     notificationSupported,
@@ -63,6 +80,18 @@ export const CalendarView = ({ onStartRecording }: CalendarViewProps) => {
             notificationPermission={notificationPermission}
             onRequestPermission={requestNotificationPermission}
           />
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleTestWebhook}
+              className="gap-2"
+            >
+              <FlaskConical className="h-4 w-4" />
+              Webhook testen
+            </Button>
+          </div>
 
           <div>
             <h2 className="text-lg font-semibold text-foreground mb-4">
