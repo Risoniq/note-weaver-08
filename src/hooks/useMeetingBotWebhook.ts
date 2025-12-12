@@ -32,9 +32,43 @@ const WEBHOOK_SIGNING_SECRET = import.meta.env.VITE_WEBHOOK_SIGNING_SECRET || ''
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
+// LocalStorage key for persisting triggered webhooks
+const TRIGGERED_WEBHOOKS_KEY = 'meeting:triggeredWebhooks';
+
+// Load triggered webhooks from localStorage
+function loadTriggeredWebhooks(): Set<string> {
+  try {
+    const stored = localStorage.getItem(TRIGGERED_WEBHOOKS_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Filter out entries older than 24 hours
+      const now = Date.now();
+      const valid = Object.entries(parsed)
+        .filter(([_, timestamp]) => now - (timestamp as number) < 24 * 60 * 60 * 1000)
+        .map(([id]) => id);
+      return new Set(valid);
+    }
+  } catch (e) {
+    console.error('Failed to load triggered webhooks:', e);
+  }
+  return new Set();
+}
+
+// Save triggered webhooks to localStorage
+function saveTriggeredWebhook(id: string): void {
+  try {
+    const stored = localStorage.getItem(TRIGGERED_WEBHOOKS_KEY);
+    const data = stored ? JSON.parse(stored) : {};
+    data[id] = Date.now();
+    localStorage.setItem(TRIGGERED_WEBHOOKS_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error('Failed to save triggered webhook:', e);
+  }
+}
+
 export const useMeetingBotWebhook = () => {
   const { toast } = useToast();
-  const triggeredWebhooks = useRef<Set<string>>(new Set());
+  const triggeredWebhooks = useRef<Set<string>>(loadTriggeredWebhooks());
 
   const triggerBotWebhook = useCallback(async (event: CalendarEvent) => {
     // Prevent duplicate webhook calls for the same meeting
@@ -43,14 +77,30 @@ export const useMeetingBotWebhook = () => {
       return;
     }
 
-    triggeredWebhooks.current.add(event.id);
-
     // Priority: meetingUrl → hangoutLink → location → description
     const meetingUrl = event.meetingUrl 
       || event.hangoutLink 
       || extractUrl(event.location) 
       || extractUrl(event.description) 
       || null;
+
+    // Don't send webhook if no meeting URL found
+    if (!meetingUrl) {
+      console.warn('No meeting URL found for event:', event.id, event.summary);
+      toast({
+        title: "Kein Meeting-Link",
+        description: `"${event.summary}" hat keinen Konferenz-Link. Bitte fügen Sie einen Google Meet oder Zoom-Link hinzu.`,
+        variant: "destructive",
+        duration: 8000,
+      });
+      // Still mark as triggered to avoid repeated warnings
+      triggeredWebhooks.current.add(event.id);
+      saveTriggeredWebhook(event.id);
+      return;
+    }
+
+    triggeredWebhooks.current.add(event.id);
+    saveTriggeredWebhook(event.id);
 
     const payload = {
       meeting_id: event.id,
