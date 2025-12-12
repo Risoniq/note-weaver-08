@@ -71,9 +71,11 @@ export const useMeetingBotWebhook = () => {
   const triggeredWebhooks = useRef<Set<string>>(loadTriggeredWebhooks());
 
   const triggerBotWebhook = useCallback(async (event: CalendarEvent) => {
+    console.log('[Webhook] triggerBotWebhook called for:', event.id, event.summary);
+    
     // Prevent duplicate webhook calls for the same meeting
     if (triggeredWebhooks.current.has(event.id)) {
-      console.log('Webhook already triggered for meeting:', event.id);
+      console.log('[Webhook] Already triggered for meeting:', event.id);
       return;
     }
 
@@ -83,6 +85,8 @@ export const useMeetingBotWebhook = () => {
       || extractUrl(event.location) 
       || extractUrl(event.description) 
       || null;
+
+    console.log('[Webhook] Meeting URL found:', meetingUrl);
 
     // Don't send webhook if no meeting URL found
     if (!meetingUrl) {
