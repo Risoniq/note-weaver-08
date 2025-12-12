@@ -136,14 +136,18 @@ export const useMeetingReminders = (
 
     const checkMeetingStarts = () => {
       const now = Date.now();
+      console.log('[MeetingReminders] Checking meeting starts, events:', events.length);
 
       events.forEach(event => {
         const startTime = new Date(event.start).getTime();
         const endTime = new Date(event.end).getTime();
         const minutesSinceStart = (now - startTime) / (1000 * 60);
 
+        console.log(`[MeetingReminders] Event "${event.summary}": minutesSinceStart=${minutesSinceStart.toFixed(2)}, inWindow=${minutesSinceStart >= -1 && minutesSinceStart <= 10}, notEnded=${now < endTime}`);
+
         // Meeting starts within 1 minute OR has started (within first 10 minutes) and hasn't ended
         if (minutesSinceStart >= -1 && minutesSinceStart <= 10 && now < endTime) {
+          console.log(`[MeetingReminders] Triggering start notification for "${event.summary}"`);
           showMeetingStartNotification(event);
         }
       });
