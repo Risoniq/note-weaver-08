@@ -40,10 +40,25 @@ serve(async (req) => {
       );
     }
 
-    // Get the payload from request body
-    const body = await req.json();
-    const payload = JSON.stringify(body.payload || {});
+    // Get the raw request body text first to ensure consistent formatting
+    const rawBody = await req.text();
+    const body = JSON.parse(rawBody);
+    
+    // Use the exact payload string that was passed - this is what will be sent to the webhook
+    // and must match exactly for signature verification
+    const payload = body.payloadString;
+    
+    if (!payload || typeof payload !== 'string') {
+      console.error('Missing or invalid payloadString in request body');
+      return new Response(
+        JSON.stringify({ error: 'Missing payloadString in request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
     const timestamp = Date.now().toString();
+    
+    console.log('Generating signature for payload length:', payload.length);
     
     // Generate signature
     const signature = await generateSignature(payload, timestamp, secret);
