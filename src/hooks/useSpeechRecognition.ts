@@ -62,20 +62,30 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
   }, [isSupported]);
 
   const startRecognition = useCallback(() => {
-    if (!recognitionRef.current) {
-      recognitionRef.current = initializeRecognition();
-    }
+    // Immer neue Recognition-Instanz erstellen für sauberen Start
+    recognitionRef.current = initializeRecognition();
     
     if (recognitionRef.current) {
       isRecordingRef.current = true;
+      // Längere Verzögerung um sicherzustellen, dass MediaRecorder das Mikrofon bereits hat
       setTimeout(() => {
         try {
           recognitionRef.current?.start();
+          console.log('Speech recognition started');
         } catch (e) {
           console.error('Failed to start recognition:', e);
-          setError('Spracherkennung konnte nicht gestartet werden.');
+          // Bei Fehler nochmal versuchen
+          setTimeout(() => {
+            try {
+              recognitionRef.current?.start();
+              console.log('Speech recognition started (retry)');
+            } catch (retryError) {
+              console.error('Speech recognition retry failed:', retryError);
+              setError('Spracherkennung konnte nicht gestartet werden. Bitte versuche es erneut.');
+            }
+          }, 500);
         }
-      }, 500);
+      }, 800);
     }
   }, [initializeRecognition]);
 

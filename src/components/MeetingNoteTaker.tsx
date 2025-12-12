@@ -96,13 +96,28 @@ export default function MeetingNoteTaker() {
           stopRecording();
         };
       } else {
+        // Mikrofon-Modus: System-Standard-Mikrofon verwenden
         stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true
+            autoGainControl: true,
+            // Explizit das Standard-Mikrofon anfordern
+            deviceId: 'default'
           }
         });
+
+        const audioTracks = stream.getAudioTracks();
+        if (audioTracks.length === 0) {
+          throw new Error('Kein Mikrofon gefunden. Bitte überprüfe deine Audio-Einstellungen.');
+        }
+
+        console.log('Mikrofon aktiviert:', audioTracks[0].label);
+
+        audioTracks[0].onended = () => {
+          console.log('Microphone stream ended');
+          stopRecording();
+        };
       }
 
       streamRef.current = stream;
@@ -127,6 +142,9 @@ export default function MeetingNoteTaker() {
 
       // Request data every second
       mediaRecorderRef.current.start(1000);
+      
+      // Kurze Verzögerung vor Speech Recognition Start, um Mikrofon-Konflikte zu vermeiden
+      await new Promise(resolve => setTimeout(resolve, 300));
       startRecognition();
 
       toast({
