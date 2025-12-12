@@ -113,29 +113,48 @@ Deno.serve(async (req) => {
     console.log('Triggered At:', payload.triggered_at);
     console.log('=====================================');
 
-    // Forward to external bot service with Bearer token
+    // Forward to external bot service with HMAC signature
     const botServiceUrl = Deno.env.get('BOT_SERVICE_URL');
-    const botServiceSecret = Deno.env.get('BOT_SERVICE_SECRET');
+    const signingSecret = Deno.env.get('WEBHOOK_SIGNING_SECRET');
 
     let forwardResult = null;
-    if (botServiceUrl && botServiceSecret) {
+    if (botServiceUrl && signingSecret) {
       console.log('📤 Forwarding to external bot service:', botServiceUrl);
       try {
+        // Prepare payload for start-meeting-bot (matching expected field names)
+        const forwardPayload = JSON.stringify({
+          meetingId: payload.meeting_id,
+          meetingUrl: payload.meeting_url,
+          title: payload.title,
+          startTime: payload.start_time,
+          endTime: payload.end_time,
+          attendees: payload.attendees
+        });
+
+        // Generate HMAC signature for the forwarded request
+        const forwardTimestamp = Date.now().toString();
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.importKey(
+          'raw',
+          encoder.encode(signingSecret),
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+        const signatureData = `${forwardTimestamp}.${forwardPayload}`;
+        const signatureBytes = await crypto.subtle.sign('HMAC', key, encoder.encode(signatureData));
+        const forwardSignature = Array.from(new Uint8Array(signatureBytes))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
         const forwardResponse = await fetch(botServiceUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${botServiceSecret}`
+            'x-webhook-timestamp': forwardTimestamp,
+            'x-webhook-signature': forwardSignature
           },
-          body: JSON.stringify({
-            meeting_id: payload.meeting_id,
-            meeting_url: payload.meeting_url,
-            title: payload.title,
-            start_time: payload.start_time,
-            end_time: payload.end_time,
-            attendees: payload.attendees,
-            triggered_at: payload.triggered_at
-          })
+          body: forwardPayload
         });
 
         const responseText = await forwardResponse.text();
@@ -157,7 +176,7 @@ Deno.serve(async (req) => {
         };
       }
     } else {
-      console.log('ℹ️ BOT_SERVICE_URL or BOT_SERVICE_SECRET not configured - skipping forward');
+      console.log('ℹ️ BOT_SERVICE_URL or WEBHOOK_SIGNING_SECRET not configured - skipping forward');
     }
 
     return new Response(
