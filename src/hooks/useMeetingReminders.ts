@@ -10,10 +10,11 @@ interface ReminderSettings {
 export const useMeetingReminders = (
   events: CalendarEvent[],
   settings: ReminderSettings,
-  onStartRecording?: (event: CalendarEvent) => void
+  onMeetingStart?: (event: CalendarEvent) => void
 ) => {
   const { toast } = useToast();
   const shownReminders = useRef<Set<string>>(new Set());
+  const startedMeetings = useRef<Set<string>>(new Set());
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'default'
   );
@@ -57,10 +58,52 @@ export const useMeetingReminders = (
         notification.close();
       };
 
-      // Auto-close after 30 seconds
       setTimeout(() => notification.close(), 30000);
     }
   }, [toast, settings.minutesBefore, notificationPermission]);
+
+  const showMeetingStartNotification = useCallback((event: CalendarEvent) => {
+    const startId = `start-${event.id}`;
+    
+    if (startedMeetings.current.has(startId)) return;
+    startedMeetings.current.add(startId);
+
+    const message = `"${event.summary}" startet JETZT!`;
+    const meetingLink = event.meetingUrl || event.hangoutLink;
+
+    // In-App Toast with action
+    toast({
+      title: "🔴 Meeting startet JETZT!",
+      description: message,
+      duration: 60000, // 1 minute
+    });
+
+    // Browser Push Notification
+    if ('Notification' in window && notificationPermission === 'granted') {
+      const notification = new Notification('🔴 Meeting startet JETZT!', {
+        body: message + (meetingLink ? '\nKlicken zum Beitreten' : ''),
+        icon: '/favicon.ico',
+        tag: startId,
+        requireInteraction: true,
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        if (meetingLink) {
+          window.open(meetingLink, '_blank');
+        }
+        notification.close();
+      };
+
+      // Keep notification visible for 2 minutes
+      setTimeout(() => notification.close(), 120000);
+    }
+
+    // Trigger callback for automatic actions
+    if (onMeetingStart) {
+      onMeetingStart(event);
+    }
+  }, [toast, notificationPermission, onMeetingStart]);
 
   // Check for upcoming meetings
   useEffect(() => {
@@ -87,19 +130,53 @@ export const useMeetingReminders = (
     return () => clearInterval(interval);
   }, [events, settings.enabled, settings.minutesBefore, showReminder]);
 
-  // Clean up old reminders
+  // Check for meeting starts (current time >= start time)
+  useEffect(() => {
+    if (!settings.enabled || events.length === 0) return;
+
+    const checkMeetingStarts = () => {
+      const now = Date.now();
+
+      events.forEach(event => {
+        const startTime = new Date(event.start).getTime();
+        const endTime = new Date(event.end).getTime();
+        const minutesSinceStart = (now - startTime) / (1000 * 60);
+
+        // Meeting has started (within first 5 minutes after start) and hasn't ended
+        if (minutesSinceStart >= 0 && minutesSinceStart <= 5 && now < endTime) {
+          showMeetingStartNotification(event);
+        }
+      });
+    };
+
+    checkMeetingStarts();
+    const interval = setInterval(checkMeetingStarts, 30000);
+
+    return () => clearInterval(interval);
+  }, [events, settings.enabled, showMeetingStartNotification]);
+
+  // Clean up old reminders and started meetings
   useEffect(() => {
     const cleanup = () => {
+      const eventIds = new Set(events.map(e => e.id));
+      
       shownReminders.current = new Set(
         [...shownReminders.current].filter(id => {
           const eventId = id.split('-').slice(0, -1).join('-');
-          return events.some(e => e.id === eventId);
+          return eventIds.has(eventId);
+        })
+      );
+      
+      startedMeetings.current = new Set(
+        [...startedMeetings.current].filter(id => {
+          const eventId = id.replace('start-', '');
+          return eventIds.has(eventId);
         })
       );
     };
 
     cleanup();
-  }, [events, settings.minutesBefore]);
+  }, [events]);
 
   const requestNotificationPermission = async (): Promise<boolean> => {
     if ('Notification' in window) {
