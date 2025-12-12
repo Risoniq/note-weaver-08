@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.meeting-bot-webhook]
 verify_jwt = false
+
+[functions.generate-webhook-token]
+verify_jwt = false
