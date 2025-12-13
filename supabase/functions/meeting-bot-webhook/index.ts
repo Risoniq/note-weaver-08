@@ -129,12 +129,12 @@ Deno.serve(async (req) => {
           start_time: payload.start_time
         });
 
-        // Simple X-Secret-Key header authentication
+        // Simple x-secret-key header authentication (lowercase as expected by external service)
         const forwardResponse = await fetch(botServiceUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-Secret-Key': botServiceSecret
+            'x-secret-key': botServiceSecret
           },
           body: forwardPayload
         });
