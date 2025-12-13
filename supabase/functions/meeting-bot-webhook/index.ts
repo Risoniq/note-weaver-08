@@ -123,36 +123,18 @@ Deno.serve(async (req) => {
       try {
         // Prepare payload for start-meeting-bot (matching expected field names)
         const forwardPayload = JSON.stringify({
-          meetingId: payload.meeting_id,
-          meetingUrl: payload.meeting_url,
-          title: payload.title,
-          startTime: payload.start_time,
-          endTime: payload.end_time,
-          attendees: payload.attendees
+          meeting_id: payload.meeting_id,
+          topic: payload.title,
+          attendees: payload.attendees.map(a => a.email),
+          start_time: payload.start_time
         });
 
-        // Generate HMAC signature for the forwarded request
-        const forwardTimestamp = Date.now().toString();
-        const encoder = new TextEncoder();
-        const key = await crypto.subtle.importKey(
-          'raw',
-          encoder.encode(botServiceSecret),
-          { name: 'HMAC', hash: 'SHA-256' },
-          false,
-          ['sign']
-        );
-        const signatureData = `${forwardTimestamp}.${forwardPayload}`;
-        const signatureBytes = await crypto.subtle.sign('HMAC', key, encoder.encode(signatureData));
-        const forwardSignature = Array.from(new Uint8Array(signatureBytes))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
-
+        // Simple X-Secret-Key header authentication
         const forwardResponse = await fetch(botServiceUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-webhook-timestamp': forwardTimestamp,
-            'x-webhook-signature': forwardSignature
+            'X-Secret-Key': botServiceSecret
           },
           body: forwardPayload
         });
