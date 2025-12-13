@@ -115,10 +115,10 @@ Deno.serve(async (req) => {
 
     // Forward to external bot service with HMAC signature
     const botServiceUrl = Deno.env.get('BOT_SERVICE_URL');
-    const signingSecret = Deno.env.get('WEBHOOK_SIGNING_SECRET');
+    const botServiceSecret = Deno.env.get('BOT_SERVICE_SECRET');
 
     let forwardResult = null;
-    if (botServiceUrl && signingSecret) {
+    if (botServiceUrl && botServiceSecret) {
       console.log('📤 Forwarding to external bot service:', botServiceUrl);
       try {
         // Prepare payload for start-meeting-bot (matching expected field names)
@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
         const encoder = new TextEncoder();
         const key = await crypto.subtle.importKey(
           'raw',
-          encoder.encode(signingSecret),
+          encoder.encode(botServiceSecret),
           { name: 'HMAC', hash: 'SHA-256' },
           false,
           ['sign']
@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
         };
       }
     } else {
-      console.log('ℹ️ BOT_SERVICE_URL or WEBHOOK_SIGNING_SECRET not configured - skipping forward');
+      console.log('ℹ️ BOT_SERVICE_URL or BOT_SERVICE_SECRET not configured - skipping forward');
     }
 
     return new Response(
