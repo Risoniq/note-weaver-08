@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.start-meeting-bot]
 verify_jwt = false
+
+[functions.create-bot]
+verify_jwt = false
+
+[functions.sync-recording]
+verify_jwt = false

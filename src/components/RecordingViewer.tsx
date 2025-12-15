@@ -45,15 +45,15 @@ export function RecordingViewer({ meetingId }: RecordingViewerProps) {
         // If done, fetch recording data from table
         if (syncData?.status === "done") {
           const { data: recordingData, error: fetchError } = await supabase
-            .from("recordings")
+            .from("recordings" as any)
             .select("*")
             .eq("meeting_id", meetingId)
-            .single();
+            .maybeSingle();
 
           if (fetchError) {
             console.error("Fetch error:", fetchError);
           } else if (recordingData) {
-            setRecording(recordingData as Recording);
+            setRecording(recordingData as unknown as Recording);
           }
         }
       } catch (error) {
