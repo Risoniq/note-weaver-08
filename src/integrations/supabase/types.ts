@@ -14,7 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      recordings: {
+        Row: {
+          created_at: string
+          id: string
+          meeting_id: string
+          meeting_url: string | null
+          status: string
+          transcript_text: string | null
+          transcript_url: string | null
+          updated_at: string
+          video_url: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          meeting_id: string
+          meeting_url?: string | null
+          status?: string
+          transcript_text?: string | null
+          transcript_url?: string | null
+          updated_at?: string
+          video_url?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          meeting_id?: string
+          meeting_url?: string | null
+          status?: string
+          transcript_text?: string | null
+          transcript_url?: string | null
+          updated_at?: string
+          video_url?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
