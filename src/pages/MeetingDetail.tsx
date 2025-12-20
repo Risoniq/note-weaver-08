@@ -19,13 +19,14 @@ import {
   BarChart3,
   MessageSquare,
   Users,
-  TrendingUp,
   Copy,
-  Check
+  Check,
+  Sparkles
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { toast } from "sonner";
+import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 
 export default function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
@@ -236,14 +237,43 @@ export default function MeetingDetail() {
 
           <Card className="gradient-card">
             <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-warning/10">
-                  <TrendingUp className="h-5 w-5 text-warning" />
+              <div className="flex flex-col items-center gap-2">
+                <div className="relative w-16 h-16">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Teilnehmer', value: participantCount, color: 'hsl(var(--primary))' },
+                          { name: 'Key Points', value: keyPointsCount || 1, color: 'hsl(var(--accent))' },
+                          { name: 'To-Dos', value: actionItemsCount || 1, color: 'hsl(var(--success))' },
+                        ]}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={18}
+                        outerRadius={28}
+                        paddingAngle={3}
+                        dataKey="value"
+                      >
+                        {[
+                          { color: 'hsl(var(--primary))' },
+                          { color: 'hsl(var(--accent))' },
+                          { color: 'hsl(var(--success))' },
+                        ].map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
-                <div>
-                  <p className="text-2xl font-bold text-foreground">{kpis.wordsPerMinute}</p>
-                  <p className="text-xs text-muted-foreground">Wörter/Min</p>
-                </div>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="text-xs h-7 gap-1.5 hover:bg-primary hover:text-primary-foreground transition-colors"
+                  onClick={() => toast.info("Deep Dive Analyse wird geladen...")}
+                >
+                  <Sparkles className="h-3 w-3" />
+                  Deep Dive
+                </Button>
               </div>
             </CardContent>
           </Card>
