@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Recording } from "@/types/recording";
 import { RecordingCard } from "./RecordingCard";
-import { RecordingDetailSheet } from "./RecordingDetailSheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FolderOpen } from "lucide-react";
 
 export const RecordingsList = () => {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedRecording, setSelectedRecording] = useState<Recording | null>(null);
+  const navigate = useNavigate();
 
   const fetchRecordings = async () => {
     try {
@@ -85,16 +85,10 @@ export const RecordingsList = () => {
           <RecordingCard
             key={recording.id}
             recording={recording}
-            onClick={() => setSelectedRecording(recording)}
+            onClick={() => navigate(`/meeting/${recording.id}`)}
           />
         ))}
       </div>
-
-      <RecordingDetailSheet
-        recording={selectedRecording}
-        open={!!selectedRecording}
-        onOpenChange={(open) => !open && setSelectedRecording(null)}
-      />
     </div>
   );
 };
