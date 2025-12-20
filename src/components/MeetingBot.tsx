@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Send, Loader2, Settings } from "lucide-react";
+import { Bot, Send, Loader2 } from "lucide-react";
 
 interface MeetingBotProps {
   onRecordingCreated: (recordingId: string) => void;
@@ -103,7 +103,7 @@ export function MeetingBot({ onRecordingCreated }: MeetingBotProps) {
                       {botAvatarUrl ? "Profilbild aktiv" : "Kein Profilbild"}
                     </span>
                   </div>
-                  <Settings className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                  
                 </Link>
               </TooltipTrigger>
               <TooltipContent>
