@@ -26,7 +26,7 @@ import {
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { toast } from "sonner";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+
 
 export default function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
@@ -239,31 +239,53 @@ export default function MeetingDetail() {
             <CardContent className="p-4">
               <div className="flex flex-col items-center gap-2">
                 <div className="relative w-16 h-16">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: 'Teilnehmer', value: participantCount, color: 'hsl(var(--primary))' },
-                          { name: 'Key Points', value: keyPointsCount || 1, color: 'hsl(var(--accent))' },
-                          { name: 'To-Dos', value: actionItemsCount || 1, color: 'hsl(var(--success))' },
-                        ]}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={18}
-                        outerRadius={28}
-                        paddingAngle={3}
-                        dataKey="value"
-                      >
-                        {[
-                          { color: 'hsl(var(--primary))' },
-                          { color: 'hsl(var(--accent))' },
-                          { color: 'hsl(var(--success))' },
-                        ].map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                    {/* Background circle */}
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="hsl(var(--muted))"
+                      strokeWidth="4"
+                    />
+                    {/* Participants segment (primary) */}
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="hsl(var(--primary))"
+                      strokeWidth="4"
+                      strokeDasharray={`${(participantCount / Math.max(participantCount + keyPointsCount + actionItemsCount, 1)) * 88} 88`}
+                      strokeDashoffset="0"
+                      className="transition-all duration-500"
+                    />
+                    {/* Key Points segment (accent) */}
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="hsl(var(--accent))"
+                      strokeWidth="4"
+                      strokeDasharray={`${(keyPointsCount / Math.max(participantCount + keyPointsCount + actionItemsCount, 1)) * 88} 88`}
+                      strokeDashoffset={`${-(participantCount / Math.max(participantCount + keyPointsCount + actionItemsCount, 1)) * 88}`}
+                      className="transition-all duration-500"
+                    />
+                    {/* To-Dos segment (success) */}
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="hsl(var(--success))"
+                      strokeWidth="4"
+                      strokeDasharray={`${(actionItemsCount / Math.max(participantCount + keyPointsCount + actionItemsCount, 1)) * 88} 88`}
+                      strokeDashoffset={`${-((participantCount + keyPointsCount) / Math.max(participantCount + keyPointsCount + actionItemsCount, 1)) * 88}`}
+                      className="transition-all duration-500"
+                    />
+                  </svg>
                 </div>
                 <Button 
                   size="sm" 
