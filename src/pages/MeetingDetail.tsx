@@ -132,8 +132,23 @@ export default function MeetingDetail() {
     };
   }, [recording?.status, syncRecordingStatus]);
 
+  const sanitizeContent = (text: string): string => {
+    // Remove asterisks and markdown formatting
+    let cleaned = text.replace(/\*+/g, '');
+    // Remove potential passwords (patterns like password:, pw:, passwort:)
+    cleaned = cleaned.replace(/(?:password|passwort|pw|kennwort)\s*[:=]\s*\S+/gi, '[ENTFERNT]');
+    // Remove profanity and insults (common German words)
+    const profanityPatterns = [
+      /\b(schei[ßs]e?|verdammt|arsch|idiot|dumm|blöd|depp|trottel|vollidiot|wichser|hurensohn|fick|f[uü]ck)\b/gi
+    ];
+    profanityPatterns.forEach(pattern => {
+      cleaned = cleaned.replace(pattern, '[...]');
+    });
+    return cleaned;
+  };
+
   const generateFollowUpEmail = (recording: Recording): string => {
-    const title = recording.title || `Meeting ${recording.meeting_id.slice(0, 8)}`;
+    const title = sanitizeContent(recording.title || `Meeting ${recording.meeting_id.slice(0, 8)}`);
     const date = format(new Date(recording.created_at), "dd. MMMM yyyy", { locale: de });
     
     let email = `Betreff: Follow-Up: ${title}\n\n`;
@@ -141,21 +156,21 @@ export default function MeetingDetail() {
     email += `vielen Dank für die Teilnahme am Meeting "${title}" am ${date}.\n\n`;
     
     if (recording.summary) {
-      email += `**Zusammenfassung:**\n${recording.summary}\n\n`;
+      email += `Zusammenfassung:\n${sanitizeContent(recording.summary)}\n\n`;
     }
     
     if (recording.key_points && recording.key_points.length > 0) {
-      email += `**Wichtige Punkte:**\n`;
+      email += `Wichtige Punkte:\n`;
       recording.key_points.forEach((point, index) => {
-        email += `${index + 1}. ${point}\n`;
+        email += `${index + 1}. ${sanitizeContent(point)}\n`;
       });
       email += `\n`;
     }
     
     if (recording.action_items && recording.action_items.length > 0) {
-      email += `**Nächste Schritte:**\n`;
+      email += `Nächste Schritte:\n`;
       recording.action_items.forEach((item) => {
-        email += `☐ ${item}\n`;
+        email += `• ${sanitizeContent(item)}\n`;
       });
       email += `\n`;
     }
