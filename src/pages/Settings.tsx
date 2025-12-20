@@ -20,18 +20,29 @@ const Settings = () => {
   const isConnecting = status === 'connecting';
   const { toast } = useToast();
   
-  // Bot avatar state
+  // Bot settings state
+  const [botName, setBotName] = useState("Notetaker Bot");
   const [botAvatarUrl, setBotAvatarUrl] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Load saved bot avatar URL from localStorage
+  // Load saved bot settings from localStorage
   useEffect(() => {
     const savedAvatarUrl = localStorage.getItem('bot:avatarUrl');
     if (savedAvatarUrl) {
       setBotAvatarUrl(savedAvatarUrl);
     }
+    const savedBotName = localStorage.getItem('bot:name');
+    if (savedBotName) {
+      setBotName(savedBotName);
+    }
   }, []);
+  
+  const handleBotNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newName = e.target.value;
+    setBotName(newName);
+    localStorage.setItem('bot:name', newName);
+  };
   
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -186,7 +197,12 @@ const Settings = () => {
                   <Label>Bot-Name</Label>
                   <p className="text-sm text-muted-foreground">Der Name, der im Meeting angezeigt wird</p>
                 </div>
-                <Input className="w-48" defaultValue="Notetaker Bot" />
+                <Input 
+                  className="w-48" 
+                  value={botName} 
+                  onChange={handleBotNameChange}
+                  placeholder="Notetaker Bot"
+                />
               </div>
               <Separator />
               <div className="flex items-center justify-between">
