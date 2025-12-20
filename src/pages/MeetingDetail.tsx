@@ -358,23 +358,6 @@ export default function MeetingDetail() {
                   <p className="text-3xl font-bold text-accent">{keyPointsCount}</p>
                 </div>
               </div>
-              
-              {/* Filter Pills */}
-              <div className="flex flex-wrap gap-2 mb-4">
-                {filterButtons.map((btn) => (
-                  <button
-                    key={btn.key}
-                    onClick={() => setActiveFilter(btn.key)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                      activeFilter === btn.key
-                        ? 'bg-primary text-primary-foreground shadow-primary'
-                        : 'bg-secondary/50 text-muted-foreground hover:bg-secondary'
-                    }`}
-                  >
-                    {btn.label}
-                  </button>
-                ))}
-              </div>
 
               {/* Area Chart */}
               <div className="h-24 relative">
