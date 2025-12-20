@@ -60,9 +60,22 @@ Deno.serve(async (req) => {
       }
     };
     
-    // Bot-Profilbild hinzufügen wenn vorhanden
+    // Bot-Profilbild für alle Plattformen hinzufügen
     if (botAvatarUrl) {
+      // Generisches Bot-Bild
       botConfig.bot_image = botAvatarUrl;
+      
+      // Teams-spezifische Konfiguration mit Profilbild
+      botConfig.teams = {
+        avatar_image_url: botAvatarUrl
+      };
+      
+      // Zoom-spezifische Konfiguration mit Profilbild
+      botConfig.zoom = {
+        user_avatar_url: botAvatarUrl
+      };
+      
+      console.log(`[Recall] Bot Avatar für alle Plattformen gesetzt: ${botAvatarUrl}`);
     }
 
     // 5. Bot bei Recall.ai erstellen
