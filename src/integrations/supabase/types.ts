@@ -23,6 +23,7 @@ export type Database = {
           key_points: string[] | null
           meeting_id: string
           meeting_url: string | null
+          participants: Json | null
           recall_bot_id: string | null
           status: string
           summary: string | null
@@ -41,6 +42,7 @@ export type Database = {
           key_points?: string[] | null
           meeting_id: string
           meeting_url?: string | null
+          participants?: Json | null
           recall_bot_id?: string | null
           status?: string
           summary?: string | null
@@ -59,6 +61,7 @@ export type Database = {
           key_points?: string[] | null
           meeting_id?: string
           meeting_url?: string | null
+          participants?: Json | null
           recall_bot_id?: string | null
           status?: string
           summary?: string | null
