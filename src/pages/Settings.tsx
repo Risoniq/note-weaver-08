@@ -44,6 +44,58 @@ const Settings = () => {
     localStorage.setItem('bot:name', newName);
   };
   
+  // Compress image to target size
+  const compressImage = (file: File, maxSizeBytes: number): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      img.onload = () => {
+        let { width, height } = img;
+        let quality = 0.9;
+        
+        // Start with original dimensions
+        canvas.width = width;
+        canvas.height = height;
+        
+        const tryCompress = () => {
+          ctx?.clearRect(0, 0, canvas.width, canvas.height);
+          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error('Komprimierung fehlgeschlagen'));
+                return;
+              }
+              
+              if (blob.size <= maxSizeBytes || quality <= 0.1) {
+                resolve(blob);
+              } else {
+                // Reduce quality or dimensions
+                quality -= 0.1;
+                if (quality <= 0.3) {
+                  // Also reduce dimensions
+                  canvas.width = Math.floor(canvas.width * 0.8);
+                  canvas.height = Math.floor(canvas.height * 0.8);
+                }
+                tryCompress();
+              }
+            },
+            'image/jpeg',
+            quality
+          );
+        };
+        
+        tryCompress();
+      };
+      
+      img.onerror = () => reject(new Error('Bild konnte nicht geladen werden'));
+      img.src = URL.createObjectURL(file);
+    });
+  };
+  
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -58,27 +110,29 @@ const Settings = () => {
       return;
     }
     
-    // Validate file size (max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      toast({
-        title: "Datei zu groß",
-        description: "Das Bild darf maximal 2MB groß sein",
-        variant: "destructive",
-      });
-      return;
-    }
-    
     setIsUploadingAvatar(true);
     
     try {
-      // Generate unique filename
-      const fileExt = file.name.split('.').pop();
+      const maxSize = 2 * 1024 * 1024; // 2MB
+      let uploadFile: File | Blob = file;
+      
+      // Compress if file is too large
+      if (file.size > maxSize) {
+        toast({
+          title: "Bild wird komprimiert...",
+          description: "Das Bild wird auf unter 2MB verkleinert",
+        });
+        uploadFile = await compressImage(file, maxSize);
+      }
+      
+      // Generate unique filename (always use jpg for compressed images)
+      const fileExt = file.size > maxSize ? 'jpg' : file.name.split('.').pop();
       const fileName = `bot-avatar-${Date.now()}.${fileExt}`;
       
       // Upload to Supabase storage
       const { data, error: uploadError } = await supabase.storage
         .from('bot-avatars')
-        .upload(fileName, file, { upsert: true });
+        .upload(fileName, uploadFile, { upsert: true });
       
       if (uploadError) throw uploadError;
       
