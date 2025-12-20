@@ -50,7 +50,12 @@ Deno.serve(async (req) => {
         join_at: new Date().toISOString(),
         recording_config: {
           transcript: {
-            provider: { meeting_captions: {} }
+            provider: { 
+              recallai_streaming: {
+                mode: "prioritize_accuracy",
+                language_code: "auto"
+              }
+            }
           }
         }
       }),
