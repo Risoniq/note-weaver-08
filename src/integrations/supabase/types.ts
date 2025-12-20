@@ -20,6 +20,7 @@ export type Database = {
           id: string
           meeting_id: string
           meeting_url: string | null
+          recall_bot_id: string | null
           status: string
           transcript_text: string | null
           transcript_url: string | null
@@ -31,6 +32,7 @@ export type Database = {
           id?: string
           meeting_id: string
           meeting_url?: string | null
+          recall_bot_id?: string | null
           status?: string
           transcript_text?: string | null
           transcript_url?: string | null
@@ -42,6 +44,7 @@ export type Database = {
           id?: string
           meeting_id?: string
           meeting_url?: string | null
+          recall_bot_id?: string | null
           status?: string
           transcript_text?: string | null
           transcript_url?: string | null

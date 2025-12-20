@@ -13,6 +13,7 @@ interface Recording {
   video_url?: string;
   transcript_url?: string;
   transcript_text?: string;
+  recall_bot_id?: string;
   created_at: string;
 }
 
@@ -99,6 +100,20 @@ export function RecordingViewer({ meetingId }: RecordingViewerProps) {
             Verarbeitung
           </Badge>
         );
+      case "joining":
+        return (
+          <Badge variant="secondary">
+            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            Bot tritt bei
+          </Badge>
+        );
+      case "error":
+        return (
+          <Badge variant="destructive">
+            <Clock className="h-3 w-3 mr-1" />
+            Fehler
+          </Badge>
+        );
       default:
         return (
           <Badge variant="secondary">
@@ -141,6 +156,10 @@ export function RecordingViewer({ meetingId }: RecordingViewerProps) {
                 ? "Der Bot nimmt das Meeting auf..."
                 : status === "processing"
                 ? "Die Aufnahme wird verarbeitet..."
+                : status === "joining"
+                ? "Bot tritt dem Meeting bei..."
+                : status === "error"
+                ? "Ein Fehler ist aufgetreten."
                 : "Warte auf den Bot..."}
             </p>
             <p className="text-sm text-muted-foreground mt-2">

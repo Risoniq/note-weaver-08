@@ -38,8 +38,10 @@ export function MeetingBot({ onMeetingCreated }: MeetingBotProps) {
         description: "Bot wurde zum Meeting gesendet!",
       });
 
-      if (data?.meetingId) {
-        onMeetingCreated(data.meetingId);
+      // Handle both meetingId and recording.meeting_id responses
+      const meetingId = data?.meetingId || data?.recording?.meeting_id;
+      if (meetingId) {
+        onMeetingCreated(meetingId);
       }
       
       setMeetingUrl("");
