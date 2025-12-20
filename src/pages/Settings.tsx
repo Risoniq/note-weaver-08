@@ -1,4 +1,5 @@
-import { ArrowLeft, Bell, Bot, Calendar, Check, Globe, Loader2, Mic, Shield, Volume2 } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { ArrowLeft, Bell, Bot, Calendar, Check, Globe, Loader2, Mic, Shield, Upload, Volume2, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -9,11 +10,103 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGoogleCalendar } from "@/hooks/useGoogleCalendar";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const Settings = () => {
   const { status, events, connect, disconnect, error } = useGoogleCalendar();
   const isConnected = status === 'connected';
   const isConnecting = status === 'connecting';
+  const { toast } = useToast();
+  
+  // Bot avatar state
+  const [botAvatarUrl, setBotAvatarUrl] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Load saved bot avatar URL from localStorage
+  useEffect(() => {
+    const savedAvatarUrl = localStorage.getItem('bot:avatarUrl');
+    if (savedAvatarUrl) {
+      setBotAvatarUrl(savedAvatarUrl);
+    }
+  }, []);
+  
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Ungültiger Dateityp",
+        description: "Bitte lade ein Bild hoch (JPG, PNG, etc.)",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "Datei zu groß",
+        description: "Das Bild darf maximal 2MB groß sein",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsUploadingAvatar(true);
+    
+    try {
+      // Generate unique filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `bot-avatar-${Date.now()}.${fileExt}`;
+      
+      // Upload to Supabase storage
+      const { data, error: uploadError } = await supabase.storage
+        .from('bot-avatars')
+        .upload(fileName, file, { upsert: true });
+      
+      if (uploadError) throw uploadError;
+      
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('bot-avatars')
+        .getPublicUrl(fileName);
+      
+      setBotAvatarUrl(publicUrl);
+      localStorage.setItem('bot:avatarUrl', publicUrl);
+      
+      toast({
+        title: "Profilbild hochgeladen",
+        description: "Das Bot-Profilbild wurde erfolgreich gespeichert",
+      });
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      toast({
+        title: "Upload fehlgeschlagen",
+        description: "Das Bild konnte nicht hochgeladen werden",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingAvatar(false);
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+  
+  const removeAvatar = () => {
+    setBotAvatarUrl(null);
+    localStorage.removeItem('bot:avatarUrl');
+    toast({
+      title: "Profilbild entfernt",
+      description: "Das Bot-Profilbild wurde entfernt",
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -42,6 +135,52 @@ const Settings = () => {
               <CardDescription>Passe das Verhalten des Meeting-Bots an</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Bot Profile Image */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Bot-Profilbild</Label>
+                  <p className="text-sm text-muted-foreground">Wird in MS Teams & Google Meet angezeigt</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-12 w-12 border-2 border-border">
+                    <AvatarImage src={botAvatarUrl || undefined} alt="Bot Avatar" />
+                    <AvatarFallback className="bg-primary/10">
+                      <Bot className="h-6 w-6 text-primary" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex gap-2">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleAvatarUpload}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingAvatar}
+                    >
+                      {isUploadingAvatar ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4" />
+                      )}
+                    </Button>
+                    {botAvatarUrl && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={removeAvatar}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <Separator />
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Bot-Name</Label>

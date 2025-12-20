@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
 
   try {
     // 1. Daten vom Frontend holen
-    const { meetingUrl } = await req.json();
+    const { meetingUrl, botName, botAvatarUrl } = await req.json();
 
     if (!meetingUrl) {
       return new Response(
@@ -36,33 +36,43 @@ Deno.serve(async (req) => {
     }
 
     console.log(`[Recall] Sende Bot zu: ${meetingUrl}`);
+    console.log(`[Recall] Bot Name: ${botName || "Notetaker Bot"}`);
+    console.log(`[Recall] Bot Avatar: ${botAvatarUrl || "nicht gesetzt"}`);
 
-    // 4. Bot bei Recall.ai erstellen mit Speaker Timeline
+    // 4. Bot-Konfiguration erstellen
+    const botConfig: Record<string, unknown> = {
+      meeting_url: meetingUrl,
+      bot_name: botName || "Notetaker Bot",
+      join_at: new Date().toISOString(),
+      // Speaker Timeline für Sprecher-Identifikation aktivieren
+      speaker_timeline: {
+        enabled: true
+      },
+      recording_config: {
+        transcript: {
+          provider: { 
+            recallai_streaming: {
+              mode: "prioritize_accuracy",
+              language_code: "auto"
+            }
+          }
+        }
+      }
+    };
+    
+    // Bot-Profilbild hinzufügen wenn vorhanden
+    if (botAvatarUrl) {
+      botConfig.bot_image = botAvatarUrl;
+    }
+
+    // 5. Bot bei Recall.ai erstellen
     const recallResponse = await fetch(recallApiUrl, {
       method: "POST",
       headers: {
         "Authorization": `Token ${recallApiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        meeting_url: meetingUrl,
-        bot_name: "Notetaker Bot",
-        join_at: new Date().toISOString(),
-        // Speaker Timeline für Sprecher-Identifikation aktivieren
-        speaker_timeline: {
-          enabled: true
-        },
-        recording_config: {
-          transcript: {
-            provider: { 
-              recallai_streaming: {
-                mode: "prioritize_accuracy",
-                language_code: "auto"
-              }
-            }
-          }
-        }
-      }),
+      body: JSON.stringify(botConfig),
     });
 
     if (!recallResponse.ok) {

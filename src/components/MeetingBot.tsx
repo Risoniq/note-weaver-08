@@ -27,8 +27,12 @@ export function MeetingBot({ onRecordingCreated }: MeetingBotProps) {
 
     setIsLoading(true);
     try {
+      // Get bot settings from localStorage
+      const botName = localStorage.getItem('bot:name') || 'Notetaker Bot';
+      const botAvatarUrl = localStorage.getItem('bot:avatarUrl') || null;
+      
       const { data, error } = await supabase.functions.invoke("create-bot", {
-        body: { meetingUrl },
+        body: { meetingUrl, botName, botAvatarUrl },
       });
 
       if (error) throw error;
