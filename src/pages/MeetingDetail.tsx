@@ -228,7 +228,7 @@ export default function MeetingDetail() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold text-foreground">{actionItemsCount}</p>
-                  <p className="text-xs text-muted-foreground">Action Items</p>
+                  <p className="text-xs text-muted-foreground">To-Dos</p>
                 </div>
               </div>
             </CardContent>
