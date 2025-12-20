@@ -90,39 +90,52 @@ Deno.serve(async (req) => {
 
     // Wenn der Bot fertig ist ('done'), holen wir die Video- und Transkript-URLs
     if (status === 'done') {
-      if (botData.video_url) {
-        updates.video_url = botData.video_url
+      console.log('Bot ist fertig, extrahiere Media-URLs...')
+      console.log('Recordings Array:', JSON.stringify(botData.recordings, null, 2))
+      
+      // Video-URL aus verschachtelter Struktur extrahieren
+      const videoUrl = botData.recordings?.[0]?.media_shortcuts?.video_mixed?.data?.download_url
+      if (videoUrl) {
+        updates.video_url = videoUrl
+        console.log('Video-URL gefunden:', videoUrl)
+      } else {
+        console.log('Keine Video-URL in media_shortcuts gefunden')
       }
       
-      // Transkript abrufen
-      try {
-        const transcriptResponse = await fetch(`${recallApiUrl}/${recording.recall_bot_id}/transcript/`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Token ${recallApiKey}`,
-            'Content-Type': 'application/json',
-          },
-        })
-
-        if (transcriptResponse.ok) {
-          const transcriptData = await transcriptResponse.json()
-          console.log('Transkript abgerufen:', transcriptData.length, 'Einträge')
+      // Transkript-URL aus verschachtelter Struktur extrahieren
+      const transcriptUrl = botData.recordings?.[0]?.media_shortcuts?.transcript?.data?.download_url
+      console.log('Transkript-URL:', transcriptUrl)
+      
+      if (transcriptUrl) {
+        try {
+          // Transkript von der Download-URL abrufen
+          const transcriptResponse = await fetch(transcriptUrl)
           
-          // Transkript formatieren
-          if (Array.isArray(transcriptData) && transcriptData.length > 0) {
-            const formattedTranscript = transcriptData
-              .map((entry: { speaker?: string; words?: { text?: string }[] }) => {
-                const speaker = entry.speaker || 'Unbekannt'
-                const text = entry.words?.map(w => w.text).join(' ') || ''
-                return `${speaker}: ${text}`
-              })
-              .join('\n\n')
+          if (transcriptResponse.ok) {
+            const transcriptData = await transcriptResponse.json()
+            console.log('Transkript abgerufen, Typ:', typeof transcriptData, 'Länge:', Array.isArray(transcriptData) ? transcriptData.length : 'N/A')
             
-            updates.transcript_text = formattedTranscript
+            // Transkript formatieren
+            if (Array.isArray(transcriptData) && transcriptData.length > 0) {
+              const formattedTranscript = transcriptData
+                .map((entry: { speaker?: string; words?: { text?: string }[] }) => {
+                  const speaker = entry.speaker || 'Unbekannt'
+                  const text = entry.words?.map(w => w.text).join(' ') || ''
+                  return `${speaker}: ${text}`
+                })
+                .join('\n\n')
+              
+              updates.transcript_text = formattedTranscript
+              console.log('Transkript formatiert, Länge:', formattedTranscript.length, 'Zeichen')
+            }
+          } else {
+            console.error('Transkript-Download fehlgeschlagen:', transcriptResponse.status, transcriptResponse.statusText)
           }
+        } catch (transcriptError) {
+          console.error('Transkript-Abruf fehlgeschlagen:', transcriptError)
         }
-      } catch (transcriptError) {
-        console.error('Transkript-Abruf fehlgeschlagen:', transcriptError)
+      } else {
+        console.log('Keine Transkript-URL in media_shortcuts gefunden')
       }
     }
 
