@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { MeetingBot } from "@/components/MeetingBot";
 import { RecordingViewer } from "@/components/RecordingViewer";
 import { RecordingsList } from "@/components/recordings/RecordingsList";
+import { RecentActivityList } from "@/components/recordings/RecentActivityList";
 import { Toaster } from "@/components/ui/toaster";
 import { Mic, Settings } from "lucide-react";
 
@@ -41,6 +42,9 @@ const Index = () => {
           {activeRecordingId && (
             <RecordingViewer recordingId={activeRecordingId} />
           )}
+
+          {/* Recent Activity List */}
+          <RecentActivityList />
 
           {/* Recordings Dashboard */}
           <RecordingsList />
