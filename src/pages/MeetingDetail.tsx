@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Recording, getStatusLabel, getStatusColor } from "@/types/recording";
@@ -22,7 +22,8 @@ import {
   Copy,
   Check,
   Sparkles,
-  Play
+  Play,
+  RefreshCw
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -35,38 +36,101 @@ export default function MeetingDetail() {
   const navigate = useNavigate();
   const [recording, setRecording] = useState<Recording | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [activeFilter, setActiveFilter] = useState<TimeFilter>('7tage');
+  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    const fetchRecording = async () => {
-      if (!id) return;
-      
-      try {
-        const { data, error } = await supabase
-          .from('recordings')
-          .select('*')
-          .eq('id', id)
-          .maybeSingle();
+  const fetchRecording = useCallback(async () => {
+    if (!id) return null;
+    
+    try {
+      const { data, error } = await supabase
+        .from('recordings')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
 
-        if (error) throw error;
-        if (!data) {
-          toast.error("Meeting nicht gefunden");
-          navigate('/');
-          return;
-        }
-        setRecording(data as Recording);
-      } catch (error) {
-        console.error('Error fetching recording:', error);
-        toast.error("Meeting konnte nicht geladen werden");
-        navigate('/');
-      } finally {
-        setIsLoading(false);
+      if (error) throw error;
+      return data as Recording | null;
+    } catch (error) {
+      console.error('Error fetching recording:', error);
+      return null;
+    }
+  }, [id]);
+
+  const syncRecordingStatus = useCallback(async () => {
+    if (!id || !recording || recording.status === 'done' || recording.status === 'error') {
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('sync-recording', {
+        body: { id }
+      });
+
+      if (error) {
+        console.error('Sync error:', error);
+        return;
       }
+
+      // Refetch the recording to get updated data
+      const updatedRecording = await fetchRecording();
+      if (updatedRecording) {
+        setRecording(updatedRecording);
+        
+        // Show toast when status changes to done
+        if (updatedRecording.status === 'done' && recording.status !== 'done') {
+          toast.success("Aufnahme erfolgreich verarbeitet!");
+        }
+      }
+    } catch (error) {
+      console.error('Error syncing recording:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [id, recording, fetchRecording]);
+
+  // Initial fetch
+  useEffect(() => {
+    const loadRecording = async () => {
+      const data = await fetchRecording();
+      if (!data) {
+        toast.error("Meeting nicht gefunden");
+        navigate('/');
+        return;
+      }
+      setRecording(data);
+      setIsLoading(false);
     };
 
-    fetchRecording();
-  }, [id, navigate]);
+    loadRecording();
+  }, [fetchRecording, navigate]);
+
+  // Auto-sync for pending recordings every 30 seconds
+  useEffect(() => {
+    if (!recording) return;
+
+    const isPending = ['pending', 'joining', 'recording', 'processing'].includes(recording.status);
+
+    if (isPending) {
+      // Sync immediately on first load if pending
+      syncRecordingStatus();
+
+      // Set up interval for subsequent syncs
+      syncIntervalRef.current = setInterval(() => {
+        syncRecordingStatus();
+      }, 30000); // 30 seconds
+    }
+
+    return () => {
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+    };
+  }, [recording?.status, syncRecordingStatus]);
 
   const generateFollowUpEmail = (recording: Recording): string => {
     const title = recording.title || `Meeting ${recording.meeting_id.slice(0, 8)}`;
@@ -183,9 +247,24 @@ export default function MeetingDetail() {
               Überblick über deine wichtigsten Kennzahlen
             </p>
           </div>
-          <Badge className={`shrink-0 px-4 py-1.5 text-sm rounded-full ${getStatusColor(recording.status)}`}>
-            {getStatusLabel(recording.status)}
-          </Badge>
+          <div className="flex items-center gap-3">
+            {['pending', 'joining', 'recording', 'processing'].includes(recording.status) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={syncRecordingStatus}
+                disabled={isSyncing}
+                className="rounded-xl hover:bg-white/50 transition-all"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+                {isSyncing ? 'Synchronisiere...' : 'Aktualisieren'}
+              </Button>
+            )}
+            <Badge className={`shrink-0 px-4 py-1.5 text-sm rounded-full ${getStatusColor(recording.status)}`}>
+              {getStatusLabel(recording.status)}
+              {isSyncing && <RefreshCw className="h-3 w-3 ml-1.5 animate-spin inline" />}
+            </Badge>
+          </div>
         </div>
 
         {/* Welcome Banner */}
