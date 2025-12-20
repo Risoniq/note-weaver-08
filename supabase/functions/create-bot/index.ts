@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
 
     console.log(`[Recall] Sende Bot zu: ${meetingUrl}`);
 
-    // 4. Bot bei Recall.ai erstellen
+    // 4. Bot bei Recall.ai erstellen mit Speaker Timeline
     const recallResponse = await fetch(recallApiUrl, {
       method: "POST",
       headers: {
@@ -48,6 +48,10 @@ Deno.serve(async (req) => {
         meeting_url: meetingUrl,
         bot_name: "Notetaker Bot",
         join_at: new Date().toISOString(),
+        // Speaker Timeline für Sprecher-Identifikation aktivieren
+        speaker_timeline: {
+          enabled: true
+        },
         recording_config: {
           transcript: {
             provider: { 
