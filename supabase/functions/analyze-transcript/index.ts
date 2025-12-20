@@ -66,11 +66,18 @@ serve(async (req) => {
       );
     }
 
-    const systemPrompt = `Du bist ein Meeting-Analyst. Analysiere das folgende Meeting-Transkript und extrahiere:
+    const systemPrompt = `Du bist ein professioneller Meeting-Analyst. Analysiere das folgende Meeting-Transkript und extrahiere:
 1. Einen kurzen Titel für das Meeting (max 50 Zeichen)
 2. Eine prägnante Zusammenfassung (2-3 Sätze)
 3. Die 3-5 wichtigsten Punkte als Liste
 4. Konkrete Action Items mit Verantwortlichen (falls erwähnt)
+
+WICHTIGE REGELN:
+- Schreibe IMMER professionell und freundlich
+- Verwende KEINE Markdown-Formatierung (keine Sterne *, keine Unterstriche _)
+- Übernimme NIEMALS Schimpfwörter, Beleidigungen oder unangemessene Sprache - formuliere diese neutral um
+- Übernimme NIEMALS Passwörter, Zugangsdaten oder sensible Informationen - ersetze diese durch "[ENTFERNT]"
+- Halte den Ton sachlich und respektvoll
 
 Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
 {
