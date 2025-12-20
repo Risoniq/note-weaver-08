@@ -1,3 +1,8 @@
+export interface RecordingParticipant {
+  id: string;
+  name: string;
+}
+
 export interface Recording {
   id: string;
   created_at: string;
@@ -15,6 +20,7 @@ export interface Recording {
   key_points: string[] | null;
   action_items: string[] | null;
   word_count: number | null;
+  participants: RecordingParticipant[] | null;
 }
 
 export type RecordingStatus = 'pending' | 'joining' | 'recording' | 'processing' | 'done' | 'error';

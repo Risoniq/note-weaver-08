@@ -19,7 +19,7 @@ export const RecordingsList = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setRecordings(data as Recording[]);
+      setRecordings(data as unknown as Recording[]);
     } catch (error) {
       console.error('Error fetching recordings:', error);
     } finally {

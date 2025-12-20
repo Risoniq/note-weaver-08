@@ -52,7 +52,7 @@ export default function MeetingDetail() {
         .maybeSingle();
 
       if (error) throw error;
-      return data as Recording | null;
+      return data as unknown as Recording | null;
     } catch (error) {
       console.error('Error fetching recording:', error);
       return null;
@@ -204,19 +204,46 @@ export default function MeetingDetail() {
   const keyPointsCount = recording.key_points?.length || 0;
   const actionItemsCount = recording.action_items?.length || 0;
 
-  // Teilnehmer aus Transkript extrahieren
+  // Teilnehmer aus Transkript oder participants-Feld extrahieren
   const extractParticipants = (transcript: string | null): string[] => {
     if (!transcript) return [];
     const speakerPattern = /^([^:]+):/gm;
     const matches = transcript.match(speakerPattern);
     if (!matches) return [];
     const speakers = matches.map(m => m.replace(':', '').trim());
-    return [...new Set(speakers)].filter(s => s !== 'Unbekannt');
+    // Alle unique Sprecher zurückgeben (auch "Unbekannt" und "Sprecher X")
+    return [...new Set(speakers)];
   };
   
-  const participants = extractParticipants(recording.transcript_text);
-  const participantCount = participants.length > 0 ? participants.length : 
-    (recording.transcript_text ? 1 : 0);
+  // Nutze participants aus DB wenn vorhanden, sonst extrahiere aus Transkript
+  const dbParticipants = recording.participants as { id: string; name: string }[] | null;
+  const transcriptParticipants = extractParticipants(recording.transcript_text);
+  
+  // Berechne Teilnehmeranzahl
+  let participantCount = 0;
+  let participantNames: string[] = [];
+  
+  if (dbParticipants && dbParticipants.length > 0) {
+    // Aus DB (zukünftige Meetings mit Speaker Timeline)
+    participantCount = dbParticipants.length;
+    participantNames = dbParticipants.map(p => p.name);
+  } else if (transcriptParticipants.length > 0) {
+    // Aus Transkript extrahiert
+    // Wenn alle "Unbekannt" sind, zähle die verschiedenen Sprechblöcke um Sprecher zu schätzen
+    const nonUnknown = transcriptParticipants.filter(s => s !== 'Unbekannt');
+    if (nonUnknown.length > 0) {
+      participantCount = nonUnknown.length;
+      participantNames = nonUnknown;
+    } else {
+      // Bei "Unbekannt" versuchen wir die Anzahl der Sprecher anhand von Gesprächsmustern zu schätzen
+      // Mindestens 2 Teilnehmer wenn es ein Gespräch gibt
+      participantCount = recording.transcript_text && recording.transcript_text.includes('\n\n') ? 2 : 1;
+      participantNames = ['Unbekannte Teilnehmer'];
+    }
+  } else if (recording.transcript_text) {
+    participantCount = 1;
+    participantNames = ['Unbekannt'];
+  }
 
   const filterButtons: { key: TimeFilter; label: string }[] = [
     { key: 'heute', label: 'Heute' },
