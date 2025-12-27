@@ -73,20 +73,59 @@ serve(async (req) => {
       const authData = await authResponse.json();
       console.log('Recall auth response:', authData);
 
-      // Build the OAuth URL based on provider
-      const oauthProvider = provider === 'microsoft' ? 'microsoft' : 'google';
+      // Build the OAuth URL - redirect directly to Google/Microsoft
+      // The Recall.ai token is passed via the state parameter
+      // Recall.ai acts as the OAuth callback handler
       
-      // Build OAuth URL with success_url and error_url for proper redirect after OAuth
-      let oauthUrl = `https://us-west-2.recall.ai/api/v1/calendar/${oauthProvider}/authorize/?token=${authData.token}`;
+      const recallRegion = 'us-west-2';
+      let oauthUrl: string;
       
-      // CRITICAL: Add success_url and error_url so Recall.ai knows where to redirect after OAuth
-      if (redirect_uri) {
-        const successUrl = `${redirect_uri}?oauth_success=true&provider=${oauthProvider}`;
-        const errorUrl = `${redirect_uri}?oauth_error=true&provider=${oauthProvider}`;
-        oauthUrl += `&success_url=${encodeURIComponent(successUrl)}`;
-        oauthUrl += `&error_url=${encodeURIComponent(errorUrl)}`;
-        console.log('OAuth URL built with success_url:', successUrl);
-        console.log('OAuth URL built with error_url:', errorUrl);
+      if (provider === 'microsoft') {
+        // Microsoft OAuth URL structure
+        const msScopes = 'offline_access openid email https://graph.microsoft.com/Calendars.Read';
+        const msRedirectUri = `https://${recallRegion}.recall.ai/api/v1/calendar/ms_oauth_callback/`;
+        
+        // Build state object with Recall.ai auth token and redirect URLs
+        const stateObj = {
+          recall_calendar_auth_token: authData.token,
+          ms_oauth_redirect_url: msRedirectUri,
+          success_url: redirect_uri ? `${redirect_uri}?oauth_success=true&provider=microsoft` : undefined,
+          error_url: redirect_uri ? `${redirect_uri}?oauth_error=true&provider=microsoft` : undefined,
+        };
+        
+        oauthUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?` +
+          `scope=${encodeURIComponent(msScopes)}` +
+          `&response_mode=query` +
+          `&response_type=code` +
+          `&state=${encodeURIComponent(JSON.stringify(stateObj))}` +
+          `&redirect_uri=${encodeURIComponent(msRedirectUri)}` +
+          `&client_id=${Deno.env.get('MS_OAUTH_CLIENT_ID') || ''}`;
+          
+        console.log('Microsoft OAuth URL built with state:', stateObj);
+      } else {
+        // Google OAuth URL structure
+        const googleScopes = 'https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/userinfo.email';
+        const googleRedirectUri = `https://${recallRegion}.recall.ai/api/v1/calendar/google_oauth_callback/`;
+        
+        // Build state object with Recall.ai auth token and redirect URLs
+        const stateObj = {
+          recall_calendar_auth_token: authData.token,
+          google_oauth_redirect_url: googleRedirectUri,
+          success_url: redirect_uri ? `${redirect_uri}?oauth_success=true&provider=google` : undefined,
+          error_url: redirect_uri ? `${redirect_uri}?oauth_error=true&provider=google` : undefined,
+        };
+        
+        oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+          `scope=${encodeURIComponent(googleScopes)}` +
+          `&access_type=offline` +
+          `&prompt=consent` +
+          `&include_granted_scopes=true` +
+          `&response_type=code` +
+          `&state=${encodeURIComponent(JSON.stringify(stateObj))}` +
+          `&redirect_uri=${encodeURIComponent(googleRedirectUri)}` +
+          `&client_id=${Deno.env.get('GOOGLE_CLIENT_ID') || ''}`;
+          
+        console.log('Google OAuth URL built with state:', stateObj);
       }
       
       console.log('Final OAuth URL:', oauthUrl);
