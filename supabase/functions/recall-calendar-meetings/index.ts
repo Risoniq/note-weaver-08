@@ -31,13 +31,33 @@ serve(async (req) => {
         throw new Error('user_id is required');
       }
 
-      // Get upcoming meetings from Recall.ai
+      // First, get a fresh calendar auth token for this user
+      const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${RECALL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ user_id }),
+      });
+
+      if (!authResponse.ok) {
+        const errorText = await authResponse.text();
+        console.error('Recall auth token error:', authResponse.status, errorText);
+        throw new Error(`Failed to get calendar auth token: ${errorText}`);
+      }
+
+      const authData = await authResponse.json();
+
+      // Get upcoming meetings from Recall.ai (requires calendar auth token)
       const meetingsResponse = await fetch(
         `https://us-west-2.recall.ai/api/v1/calendar/meetings/?user_id=${user_id}&start_time__gte=${new Date().toISOString()}`,
         {
           method: 'GET',
           headers: {
-            'Authorization': `Token ${RECALL_API_KEY}`,
+            'x-recallcalendarauthtoken': authData.token,
+            'x-recall-calendar-auth-token': authData.token,
+            'Authorization': `Bearer ${authData.token}`,
             'Content-Type': 'application/json',
           },
         }
@@ -79,13 +99,33 @@ serve(async (req) => {
         throw new Error('user_id and meeting_id are required');
       }
 
+      // First, get a fresh calendar auth token for this user
+      const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${RECALL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ user_id }),
+      });
+
+      if (!authResponse.ok) {
+        const errorText = await authResponse.text();
+        console.error('Recall auth token error:', authResponse.status, errorText);
+        throw new Error(`Failed to get calendar auth token: ${errorText}`);
+      }
+
+      const authData = await authResponse.json();
+
       // Update recording preference for a specific meeting
       const updateResponse = await fetch(
         `https://us-west-2.recall.ai/api/v1/calendar/meetings/${meeting_id}/`,
         {
           method: 'PATCH',
           headers: {
-            'Authorization': `Token ${RECALL_API_KEY}`,
+            'x-recallcalendarauthtoken': authData.token,
+            'x-recall-calendar-auth-token': authData.token,
+            'Authorization': `Bearer ${authData.token}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
