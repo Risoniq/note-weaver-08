@@ -91,24 +91,59 @@ export function useRecallCalendar() {
     }
   }, [userId]);
 
+  // Check for OAuth callback on mount (for redirect flow)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const oauthComplete = urlParams.get('oauth_complete');
+    const provider = urlParams.get('provider');
+    
+    if (oauthComplete === 'true') {
+      // Clean up URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+      
+      // Show success message and refresh status
+      toast.success(`${provider === 'microsoft' ? 'Microsoft' : 'Google'} Kalender wird verbunden...`);
+      
+      // Check status after a short delay to allow backend to process
+      setTimeout(() => {
+        if (userId) {
+          checkStatus();
+        }
+      }, 1000);
+    }
+  }, [userId, checkStatus]);
+
   const connect = useCallback(async (provider: 'google' | 'microsoft' = 'google') => {
     try {
       setIsLoading(true);
       setStatus('connecting');
       setError(null);
 
+      // Build redirect URI for callback
+      const redirectUri = `${window.location.origin}/calendar-callback`;
+
       const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-auth', {
-        body: { action: 'authenticate', user_id: userId, provider },
+        body: { action: 'authenticate', user_id: userId, provider, redirect_uri: redirectUri },
       });
 
       if (funcError) throw funcError;
 
       if (data.success && data.oauth_url) {
-        // Store the user ID
+        // Store the user ID before redirect/popup
         localStorage.setItem(RECALL_USER_ID_KEY, data.user_id);
         setUserId(data.user_id);
 
-        // Open OAuth popup (same for both providers)
+        // For Microsoft: Use redirect flow (popups are often blocked)
+        if (provider === 'microsoft') {
+          // Store that we're in the middle of connecting
+          sessionStorage.setItem('recall_oauth_provider', 'microsoft');
+          // Redirect to OAuth URL
+          window.location.href = data.oauth_url;
+          return;
+        }
+
+        // For Google: Try popup first, fallback to redirect
         const width = 600;
         const height = 700;
         const left = window.screenX + (window.outerWidth - width) / 2;
@@ -121,9 +156,9 @@ export function useRecallCalendar() {
         );
 
         if (!popup) {
-          toast.error('Popup wurde blockiert – bitte Popups erlauben und erneut versuchen.');
-          setStatus(googleConnected || microsoftConnected ? 'connected' : 'disconnected');
-          setIsLoading(false);
+          // Fallback to redirect flow if popup is blocked
+          sessionStorage.setItem('recall_oauth_provider', 'google');
+          window.location.href = data.oauth_url;
           return;
         }
 
@@ -152,7 +187,7 @@ export function useRecallCalendar() {
       setStatus('error');
       setIsLoading(false);
     }
-  }, [userId, checkStatus]);
+  }, [userId, checkStatus, googleConnected, microsoftConnected]);
 
   const disconnectProvider = useCallback(async (provider: 'google' | 'microsoft') => {
     if (!userId) return;

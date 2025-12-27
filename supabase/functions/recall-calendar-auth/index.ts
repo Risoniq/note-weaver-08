@@ -21,8 +21,8 @@ serve(async (req) => {
       throw new Error('RECALL_API_KEY is not configured');
     }
 
-    const { action, user_id, provider } = await req.json();
-    console.log('Calendar auth request:', { action, user_id, provider });
+    const { action, user_id, provider, redirect_uri } = await req.json();
+    console.log('Calendar auth request:', { action, user_id, provider, redirect_uri });
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -75,7 +75,14 @@ serve(async (req) => {
 
       // Build the OAuth URL based on provider
       const oauthProvider = provider === 'microsoft' ? 'microsoft' : 'google';
-      const oauthUrl = `https://us-west-2.recall.ai/api/v1/calendar/${oauthProvider}/authorize/?token=${authData.token}`;
+      
+      // Build OAuth URL with redirect_uri if provided
+      let oauthUrl = `https://us-west-2.recall.ai/api/v1/calendar/${oauthProvider}/authorize/?token=${authData.token}`;
+      
+      // Add redirect_uri for redirect flow (especially important for Microsoft)
+      if (redirect_uri) {
+        oauthUrl += `&redirect_uri=${encodeURIComponent(redirect_uri)}`;
+      }
 
       return new Response(
         JSON.stringify({
