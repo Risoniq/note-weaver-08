@@ -55,9 +55,8 @@ serve(async (req) => {
         {
           method: 'GET',
           headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
             'x-recallcalendarauthtoken': authData.token,
-            'x-recall-calendar-auth-token': authData.token,
-            'Authorization': `Bearer ${authData.token}`,
             'Content-Type': 'application/json',
           },
         }
@@ -123,9 +122,8 @@ serve(async (req) => {
         {
           method: 'PATCH',
           headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
             'x-recallcalendarauthtoken': authData.token,
-            'x-recall-calendar-auth-token': authData.token,
-            'Authorization': `Bearer ${authData.token}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({

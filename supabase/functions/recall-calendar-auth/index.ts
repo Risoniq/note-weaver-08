@@ -129,9 +129,8 @@ serve(async (req) => {
       const userResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${user_id}`, {
         method: 'GET',
         headers: {
+          'Authorization': `Token ${RECALL_API_KEY}`,
           'x-recallcalendarauthtoken': authData.token,
-          'x-recall-calendar-auth-token': authData.token,
-          'Authorization': `Bearer ${authData.token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -208,9 +207,8 @@ serve(async (req) => {
         const disconnectResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${user_id}`, {
           method: 'DELETE',
           headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
             'x-recallcalendarauthtoken': authData.token,
-            'x-recall-calendar-auth-token': authData.token,
-            'Authorization': `Bearer ${authData.token}`,
           },
         });
 
