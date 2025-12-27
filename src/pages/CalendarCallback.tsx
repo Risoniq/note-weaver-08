@@ -1,15 +1,69 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+
+interface ErrorDetails {
+  code: string;
+  message: string;
+  suggestion: string;
+}
 
 const CalendarCallback = () => {
   const navigate = useNavigate();
   const [message, setMessage] = useState('Verbindung wird hergestellt...');
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<ErrorDetails | null>(null);
   const [debugInfo, setDebugInfo] = useState<Record<string, string | null>>({});
+
+  // Helper to translate Microsoft OAuth errors to user-friendly messages
+  const translateMsError = (error: string, description: string | null): ErrorDetails => {
+    switch (error) {
+      case 'access_denied':
+        return {
+          code: 'access_denied',
+          message: 'Zugriff verweigert',
+          suggestion: 'Du hast die Berechtigung abgelehnt. Bitte versuche es erneut und akzeptiere die Berechtigungsanfrage.',
+        };
+      case 'consent_required':
+        return {
+          code: 'consent_required',
+          message: 'Admin-Zustimmung erforderlich',
+          suggestion: 'Dein Microsoft-Administrator muss diese App genehmigen, bevor du sie nutzen kannst. Bitte kontaktiere deinen IT-Administrator.',
+        };
+      case 'interaction_required':
+        return {
+          code: 'interaction_required',
+          message: 'Zusätzliche Authentifizierung erforderlich',
+          suggestion: 'Microsoft erfordert eine zusätzliche Bestätigung. Bitte versuche es erneut.',
+        };
+      case 'invalid_request':
+        return {
+          code: 'invalid_request',
+          message: 'Ungültige Anfrage',
+          suggestion: description || 'Die OAuth-Anfrage war fehlerhaft. Bitte versuche es erneut.',
+        };
+      case 'invalid_client':
+        return {
+          code: 'invalid_client',
+          message: 'Konfigurationsfehler',
+          suggestion: 'Die Microsoft OAuth-Konfiguration ist fehlerhaft. Bitte kontaktiere den Support.',
+        };
+      case 'temporarily_unavailable':
+        return {
+          code: 'temporarily_unavailable',
+          message: 'Microsoft-Dienst nicht verfügbar',
+          suggestion: 'Der Microsoft-Anmeldedienst ist vorübergehend nicht verfügbar. Bitte versuche es später erneut.',
+        };
+      default:
+        return {
+          code: error,
+          message: 'Anmeldefehler',
+          suggestion: description || 'Ein unbekannter Fehler ist aufgetreten. Bitte versuche es erneut.',
+        };
+    }
+  };
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -40,7 +94,6 @@ const CalendarCallback = () => {
         // Microsoft-specific error parameters
         const msError = urlParams.get('error');
         const msErrorDescription = urlParams.get('error_description');
-        const msErrorUri = urlParams.get('error_uri');
         
         // Recall.ai specific parameters
         const recallError = urlParams.get('recall_error');
@@ -63,26 +116,9 @@ const CalendarCallback = () => {
           console.error('[CalendarCallback] Microsoft OAuth error:', msError, msErrorDescription);
           setStatus('error');
           
-          let userMessage = 'Microsoft-Anmeldung fehlgeschlagen';
-          let details = msErrorDescription || msError;
-          
-          // Translate common Microsoft errors
-          if (msError === 'access_denied') {
-            userMessage = 'Zugriff verweigert';
-            details = 'Du hast die Berechtigung abgelehnt oder es fehlen Admin-Rechte.';
-          } else if (msError === 'consent_required' || msError === 'interaction_required') {
-            userMessage = 'Admin-Zustimmung erforderlich';
-            details = 'Dein Microsoft-Administrator muss diese App genehmigen.';
-          } else if (msError === 'invalid_request') {
-            userMessage = 'Ungültige Anfrage';
-            details = msErrorDescription || 'Die OAuth-Konfiguration ist fehlerhaft.';
-          } else if (msError === 'invalid_client') {
-            userMessage = 'Ungültige Client-Konfiguration';
-            details = 'Client ID oder Secret sind falsch konfiguriert.';
-          }
-          
-          setMessage(userMessage);
-          setErrorDetails(details);
+          const errorInfo = translateMsError(msError, msErrorDescription);
+          setMessage(errorInfo.message);
+          setErrorDetails(errorInfo);
           sessionStorage.removeItem('recall_oauth_provider');
           return;
         }
@@ -91,8 +127,12 @@ const CalendarCallback = () => {
         if (recallError) {
           console.error('[CalendarCallback] Recall.ai error:', recallError);
           setStatus('error');
-          setMessage('Recall.ai Fehler');
-          setErrorDetails(recallError);
+          setMessage('Kalender-Dienst Fehler');
+          setErrorDetails({
+            code: 'recall_error',
+            message: 'Fehler beim Kalender-Dienst',
+            suggestion: recallError,
+          });
           sessionStorage.removeItem('recall_oauth_provider');
           return;
         }
@@ -102,7 +142,11 @@ const CalendarCallback = () => {
           console.error('[CalendarCallback] OAuth failed');
           setStatus('error');
           setMessage('Verbindung fehlgeschlagen');
-          setErrorDetails('Der OAuth-Flow wurde nicht erfolgreich abgeschlossen.');
+          setErrorDetails({
+            code: 'oauth_failed',
+            message: 'OAuth fehlgeschlagen',
+            suggestion: 'Der Anmeldevorgang wurde nicht erfolgreich abgeschlossen. Bitte versuche es erneut.',
+          });
           sessionStorage.removeItem('recall_oauth_provider');
           return;
         }
@@ -125,7 +169,7 @@ const CalendarCallback = () => {
         if (oauthSuccess === 'true' || storedProvider) {
           sessionStorage.removeItem('recall_oauth_provider');
           setStatus('success');
-          setMessage('Kalender erfolgreich verbunden!');
+          setMessage('Kalender wird synchronisiert...');
           
           console.log('[CalendarCallback] OAuth successful, redirecting to home with provider:', effectiveProvider);
           
@@ -139,13 +183,21 @@ const CalendarCallback = () => {
         // Fallback: No clear state, show debug info
         console.log('[CalendarCallback] No clear OAuth state, showing debug info');
         setStatus('error');
-        setMessage('Unbekannter OAuth-Status');
-        setErrorDetails('Keine erkennbaren OAuth-Parameter in der URL gefunden.');
+        setMessage('Unbekannter Status');
+        setErrorDetails({
+          code: 'unknown_state',
+          message: 'Unbekannter OAuth-Status',
+          suggestion: 'Keine erkennbaren OAuth-Parameter in der URL gefunden. Bitte versuche es erneut.',
+        });
       } catch (err) {
         console.error('[CalendarCallback] Error handling callback', err);
         setStatus('error');
         setMessage('Ein Fehler ist aufgetreten');
-        setErrorDetails(err instanceof Error ? err.message : 'Unbekannter Fehler');
+        setErrorDetails({
+          code: 'exception',
+          message: 'Unerwarteter Fehler',
+          suggestion: err instanceof Error ? err.message : 'Unbekannter Fehler',
+        });
         sessionStorage.removeItem('recall_oauth_provider');
       }
     };
@@ -171,7 +223,8 @@ const CalendarCallback = () => {
           <Alert className="border-green-500/50 bg-green-500/10">
             <CheckCircle2 className="h-4 w-4 text-green-500" />
             <AlertTitle className="text-green-500">{message}</AlertTitle>
-            <AlertDescription>
+            <AlertDescription className="flex items-center gap-2">
+              <RefreshCw className="h-3 w-3 animate-spin" />
               Du wirst in Kürze weitergeleitet...
             </AlertDescription>
           </Alert>
@@ -183,8 +236,13 @@ const CalendarCallback = () => {
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>{message}</AlertTitle>
               {errorDetails && (
-                <AlertDescription className="mt-2">
-                  {errorDetails}
+                <AlertDescription className="mt-2 space-y-2">
+                  <p>{errorDetails.suggestion}</p>
+                  {errorDetails.code === 'consent_required' && (
+                    <p className="text-xs opacity-75">
+                      Fehlercode: {errorDetails.code}
+                    </p>
+                  )}
                 </AlertDescription>
               )}
             </Alert>

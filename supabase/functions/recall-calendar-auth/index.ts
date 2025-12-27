@@ -22,16 +22,24 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    // Support both old (user_id) and new (supabase_user_id) parameters
-    const { action, supabase_user_id, user_id: legacyUserId, provider, redirect_uri } = body;
+    const { action, supabase_user_id, user_email, provider, redirect_uri } = body;
     const supabaseUserId = supabase_user_id || null;
+    const userEmail = user_email || null;
     
-    console.log('Calendar auth request:', { action, supabase_user_id: supabaseUserId, provider, redirect_uri });
+    console.log('Calendar auth request:', { action, supabase_user_id: supabaseUserId, user_email: userEmail, provider, redirect_uri });
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
+    // Helper: Get stable Recall user ID - prefer email for consistency with Recall.ai
+    function getStableRecallUserId(email: string | null, supabaseId: string): string {
+      // Use email if available (most stable across sessions), otherwise fall back to Supabase ID
+      return email || supabaseId;
+    }
+
     // Helper function to get or create Recall user for a Supabase user
-    async function getOrCreateRecallUser(supabaseUserId: string): Promise<{ recallUserId: string; isNew: boolean }> {
+    async function getOrCreateRecallUser(supabaseUserId: string, userEmail: string | null): Promise<{ recallUserId: string; isNew: boolean }> {
+      const stableId = getStableRecallUserId(userEmail, supabaseUserId);
+      
       // First, check if we already have a Recall user for this Supabase user
       const { data: existingUser, error: fetchError } = await supabase
         .from('recall_calendar_users')
@@ -44,13 +52,22 @@ serve(async (req) => {
       }
 
       if (existingUser?.recall_user_id) {
+        // Check if the stored recall_user_id matches the stable ID
+        // If not, we may need to repair it
+        if (existingUser.recall_user_id !== stableId) {
+          console.log('Detected recall_user_id mismatch:', {
+            stored: existingUser.recall_user_id,
+            expected: stableId,
+          });
+          // For now, return the existing one but log the mismatch
+          // The repair action will handle this
+        }
         console.log('Found existing Recall user:', existingUser.recall_user_id);
         return { recallUserId: existingUser.recall_user_id, isNew: false };
       }
 
-      // Create a new Recall user using the Supabase user ID as external_id
-      // This ensures consistent mapping
-      const recallUserId = supabaseUserId;
+      // Create a new Recall user using the stable ID
+      const recallUserId = stableId;
       
       const { error: insertError } = await supabase
         .from('recall_calendar_users')
@@ -80,12 +97,76 @@ serve(async (req) => {
       return { recallUserId, isNew: true };
     }
 
+    // Helper: Check connection status with Recall.ai for a given user ID
+    async function checkRecallConnections(recallUserId: string, authToken: string): Promise<{ google: boolean; microsoft: boolean; userData: any }> {
+      const userResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${recallUserId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Token ${RECALL_API_KEY}`,
+          'x-recallcalendarauthtoken': authToken,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!userResponse.ok) {
+        if (userResponse.status === 404) {
+          return { google: false, microsoft: false, userData: null };
+        }
+        const errorText = await userResponse.text();
+        console.error('Recall user status error:', userResponse.status, errorText);
+        return { google: false, microsoft: false, userData: null };
+      }
+
+      const userData = await userResponse.json();
+      console.log('Recall user data for', recallUserId, ':', userData);
+
+      let googleConnected = false;
+      let microsoftConnected = false;
+      
+      if (userData.connections && Array.isArray(userData.connections)) {
+        for (const conn of userData.connections) {
+          if (conn.platform === 'google' && conn.connected) {
+            googleConnected = true;
+          }
+          if (conn.platform === 'microsoft' && conn.connected) {
+            microsoftConnected = true;
+          }
+        }
+      } else {
+        googleConnected = userData.google_calendar_id !== null;
+        microsoftConnected = userData.microsoft_calendar_id !== null;
+      }
+
+      return { google: googleConnected, microsoft: microsoftConnected, userData };
+    }
+
+    // Helper: Get auth token from Recall.ai
+    async function getRecallAuthToken(recallUserId: string): Promise<string | null> {
+      const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${RECALL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ user_id: recallUserId }),
+      });
+
+      if (!authResponse.ok) {
+        const errorText = await authResponse.text();
+        console.error('Recall auth token error:', authResponse.status, errorText);
+        return null;
+      }
+
+      const authData = await authResponse.json();
+      return authData.token;
+    }
+
     if (action === 'authenticate') {
       if (!supabaseUserId) {
         throw new Error('supabase_user_id is required for authentication');
       }
 
-      const { recallUserId } = await getOrCreateRecallUser(supabaseUserId);
+      const { recallUserId } = await getOrCreateRecallUser(supabaseUserId, userEmail);
 
       // Get authentication token from Recall.ai
       const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
@@ -204,6 +285,7 @@ serve(async (req) => {
             connected: false,
             google_connected: false,
             microsoft_connected: false,
+            needs_repair: false,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -212,80 +294,26 @@ serve(async (req) => {
       const recallUserId = calendarUser.recall_user_id;
 
       // Get a fresh auth token for this user
-      const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${RECALL_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          user_id: recallUserId,
-        }),
-      });
-
-      if (!authResponse.ok) {
-        const errorText = await authResponse.text();
-        console.error('Recall auth token error:', authResponse.status, errorText);
+      const authToken = await getRecallAuthToken(recallUserId);
+      if (!authToken) {
         return new Response(
           JSON.stringify({
             success: true,
             connected: false,
             google_connected: false,
             microsoft_connected: false,
+            needs_repair: false,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const authData = await authResponse.json();
-      console.log('Got auth token for status check');
+      // Check connections
+      const { google: googleConnected, microsoft: microsoftConnected, userData } = await checkRecallConnections(recallUserId, authToken);
 
-      // Get user status from Recall.ai
-      const userResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${recallUserId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Token ${RECALL_API_KEY}`,
-          'x-recallcalendarauthtoken': authData.token,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!userResponse.ok) {
-        if (userResponse.status === 404) {
-          return new Response(
-            JSON.stringify({
-              success: true,
-              connected: false,
-              google_connected: false,
-              microsoft_connected: false,
-            }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-        const errorText = await userResponse.text();
-        console.error('Recall user status error:', userResponse.status, errorText);
-        throw new Error(`Failed to get user status: ${errorText}`);
-      }
-
-      const userData = await userResponse.json();
-      console.log('Recall user data:', userData);
-
-      let googleConnected = false;
-      let microsoftConnected = false;
-      
-      if (userData.connections && Array.isArray(userData.connections)) {
-        for (const conn of userData.connections) {
-          if (conn.platform === 'google' && conn.connected) {
-            googleConnected = true;
-          }
-          if (conn.platform === 'microsoft' && conn.connected) {
-            microsoftConnected = true;
-          }
-        }
-      } else {
-        googleConnected = userData.google_calendar_id !== null;
-        microsoftConnected = userData.microsoft_calendar_id !== null;
-      }
+      // Check if we might need repair - if email-based ID would be different
+      const expectedId = getStableRecallUserId(userEmail, supabaseUserId);
+      const needsRepair = userEmail && recallUserId !== expectedId;
 
       // Update our database
       const { error: updateError } = await supabase
@@ -307,6 +335,81 @@ serve(async (req) => {
           google_connected: googleConnected,
           microsoft_connected: microsoftConnected,
           user_data: userData,
+          recall_user_id: recallUserId,
+          needs_repair: needsRepair,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // New action: repair - try to find and link to an existing Recall user with connections
+    if (action === 'repair') {
+      if (!supabaseUserId) {
+        throw new Error('supabase_user_id is required for repair');
+      }
+
+      const targetRecallUserId = body.target_recall_user_id;
+      if (!targetRecallUserId) {
+        throw new Error('target_recall_user_id is required for repair');
+      }
+
+      console.log('Attempting to repair connection:', { supabaseUserId, targetRecallUserId });
+
+      // Get auth token for the target Recall user
+      const authToken = await getRecallAuthToken(targetRecallUserId);
+      if (!authToken) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Could not authenticate with target Recall user',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Check if target has connections
+      const { google, microsoft, userData } = await checkRecallConnections(targetRecallUserId, authToken);
+
+      if (!google && !microsoft) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Target Recall user has no active connections',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Update the database to use the target Recall user ID
+      const { error: updateError } = await supabase
+        .from('recall_calendar_users')
+        .update({
+          recall_user_id: targetRecallUserId,
+          google_connected: google,
+          microsoft_connected: microsoft,
+        })
+        .eq('supabase_user_id', supabaseUserId);
+
+      if (updateError) {
+        console.error('Error updating user during repair:', updateError);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Failed to update user mapping',
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('Repair successful:', { supabaseUserId, targetRecallUserId, google, microsoft });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: 'Connection repaired successfully',
+          google_connected: google,
+          microsoft_connected: microsoft,
+          recall_user_id: targetRecallUserId,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -366,25 +469,14 @@ serve(async (req) => {
         .maybeSingle();
 
       if (calendarUser?.recall_user_id) {
-        const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Token ${RECALL_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            user_id: calendarUser.recall_user_id,
-          }),
-        });
+        const authToken = await getRecallAuthToken(calendarUser.recall_user_id);
 
-        if (authResponse.ok) {
-          const authData = await authResponse.json();
-          
+        if (authToken) {
           const disconnectResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${calendarUser.recall_user_id}`, {
             method: 'DELETE',
             headers: {
               'Authorization': `Token ${RECALL_API_KEY}`,
-              'x-recallcalendarauthtoken': authData.token,
+              'x-recallcalendarauthtoken': authToken,
             },
           });
 

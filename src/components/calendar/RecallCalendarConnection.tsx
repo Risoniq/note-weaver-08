@@ -1,4 +1,4 @@
-import { Calendar, Link2Off, RefreshCw, AlertCircle, Chrome } from 'lucide-react';
+import { Calendar, Link2Off, RefreshCw, AlertCircle, Chrome, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CalendarStatus } from '@/hooks/useRecallCalendar';
 
@@ -12,7 +12,10 @@ interface RecallCalendarConnectionProps {
   onDisconnectGoogle: () => void;
   onDisconnectMicrosoft: () => void;
   onRefresh: () => void;
+  onRepair?: (targetId: string) => Promise<boolean>;
   isLoading: boolean;
+  needsRepair?: boolean;
+  recallUserId?: string | null;
 }
 
 // Microsoft icon component
@@ -30,6 +33,7 @@ interface CalendarCardProps {
   icon: React.ReactNode;
   connected: boolean;
   isConnecting: boolean;
+  isSyncing: boolean;
   isLoading: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
@@ -41,6 +45,7 @@ const CalendarCard = ({
   icon,
   connected,
   isConnecting,
+  isSyncing,
   isLoading,
   onConnect,
   onDisconnect,
@@ -53,6 +58,8 @@ const CalendarCard = ({
           <div className={`p-2 rounded-lg ${
             connected 
               ? 'bg-green-500/10 text-green-500' 
+              : isSyncing
+              ? 'bg-yellow-500/10 text-yellow-500'
               : 'bg-muted text-muted-foreground'
           }`}>
             {icon}
@@ -60,7 +67,13 @@ const CalendarCard = ({
           <div>
             <h3 className="font-medium text-foreground">{title}</h3>
             <p className="text-sm text-muted-foreground">
-              {isConnecting ? 'Verbindung wird hergestellt...' : connected ? 'Verbunden' : 'Nicht verbunden'}
+              {isSyncing 
+                ? 'Wird synchronisiert...' 
+                : isConnecting 
+                ? 'Verbindung wird hergestellt...' 
+                : connected 
+                ? 'Verbunden' 
+                : 'Nicht verbunden'}
             </p>
             {connected && (
               <p className="text-xs text-green-500 mt-1">
@@ -92,10 +105,10 @@ const CalendarCard = ({
                 Trennen
               </Button>
             </>
-          ) : isConnecting ? (
+          ) : isConnecting || isSyncing ? (
             <Button variant="ghost" size="sm" disabled>
               <RefreshCw size={16} className="mr-1 animate-spin" />
-              Verbinden...
+              {isSyncing ? 'Synchronisieren...' : 'Verbinden...'}
             </Button>
           ) : (
             <Button
@@ -123,9 +136,13 @@ export const RecallCalendarConnection = ({
   onDisconnectGoogle,
   onDisconnectMicrosoft,
   onRefresh,
+  onRepair,
   isLoading,
+  needsRepair,
+  recallUserId,
 }: RecallCalendarConnectionProps) => {
   const isConnecting = status === 'connecting';
+  const isSyncing = status === 'syncing';
 
   return (
     <div className="space-y-3">
@@ -137,6 +154,7 @@ export const RecallCalendarConnection = ({
         icon={<Chrome size={20} />}
         connected={googleConnected}
         isConnecting={isConnecting && !googleConnected}
+        isSyncing={isSyncing && !googleConnected}
         isLoading={isLoading}
         onConnect={onConnectGoogle}
         onDisconnect={onDisconnectGoogle}
@@ -149,11 +167,34 @@ export const RecallCalendarConnection = ({
         icon={<MicrosoftIcon size={20} />}
         connected={microsoftConnected}
         isConnecting={isConnecting && !microsoftConnected}
+        isSyncing={isSyncing && !microsoftConnected}
         isLoading={isLoading}
         onConnect={onConnectMicrosoft}
         onDisconnect={onDisconnectMicrosoft}
         onRefresh={onRefresh}
       />
+
+      {/* Repair hint - only show if repair is possible */}
+      {needsRepair && onRepair && recallUserId && (
+        <div className="p-3 bg-yellow-500/10 rounded-lg flex items-start gap-2">
+          <Wrench size={16} className="text-yellow-500 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm text-yellow-600 dark:text-yellow-400">
+              Mögliche Verbindungs-Inkonsistenz erkannt.
+            </p>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-2"
+              onClick={() => onRepair(recallUserId)}
+              disabled={isLoading}
+            >
+              <Wrench size={14} className="mr-1" />
+              Verbindung reparieren
+            </Button>
+          </div>
+        </div>
+      )}
 
       {status === 'error' && error && (
         <div className="p-3 bg-destructive/10 rounded-lg flex items-start gap-2">

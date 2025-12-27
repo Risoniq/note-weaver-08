@@ -17,12 +17,15 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
     googleConnected,
     microsoftConnected,
     preferences,
+    needsRepair,
+    recallUserId,
     connect,
     disconnectGoogle,
     disconnectMicrosoft,
     fetchMeetings,
     updateMeetingRecording,
     updatePreferences,
+    repairConnection,
   } = useRecallCalendar();
 
   const handleJoinMeeting = (meeting: RecallMeeting) => {
@@ -43,7 +46,10 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
         onDisconnectGoogle={disconnectGoogle}
         onDisconnectMicrosoft={disconnectMicrosoft}
         onRefresh={fetchMeetings}
+        onRepair={repairConnection}
         isLoading={isLoading}
+        needsRepair={needsRepair}
+        recallUserId={recallUserId}
       />
 
       {status === 'connected' && (

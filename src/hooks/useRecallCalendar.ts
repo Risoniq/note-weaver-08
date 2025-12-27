@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { User } from '@supabase/supabase-js';
@@ -25,7 +25,7 @@ export interface RecordingPreferences {
   auto_record: boolean;
 }
 
-export type CalendarStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type CalendarStatus = 'disconnected' | 'connecting' | 'connected' | 'syncing' | 'error';
 
 export function useRecallCalendar() {
   const [status, setStatus] = useState<CalendarStatus>('disconnected');
@@ -36,12 +36,17 @@ export function useRecallCalendar() {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [microsoftConnected, setMicrosoftConnected] = useState(false);
+  const [needsRepair, setNeedsRepair] = useState(false);
+  const [recallUserId, setRecallUserId] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<RecordingPreferences>({
     record_all: true,
     record_only_owned: false,
     record_external: true,
     auto_record: true,
   });
+
+  const retryCountRef = useRef(0);
+  const maxRetries = 3;
 
   // Get authenticated user from Supabase
   useEffect(() => {
@@ -65,13 +70,21 @@ export function useRecallCalendar() {
     }
   }, [authUser?.id]);
 
-  const checkStatus = useCallback(async () => {
+  const checkStatus = useCallback(async (isRetry = false) => {
     if (!authUser?.id) return;
 
     try {
       setIsLoading(true);
+      if (!isRetry) {
+        setError(null);
+      }
+      
       const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-auth', {
-        body: { action: 'status', supabase_user_id: authUser.id },
+        body: { 
+          action: 'status', 
+          supabase_user_id: authUser.id,
+          user_email: authUser.email,
+        },
       });
 
       if (funcError) throw funcError;
@@ -79,9 +92,12 @@ export function useRecallCalendar() {
       if (data.success) {
         setGoogleConnected(data.google_connected);
         setMicrosoftConnected(data.microsoft_connected);
+        setNeedsRepair(data.needs_repair || false);
+        setRecallUserId(data.recall_user_id || null);
         
         if (data.google_connected || data.microsoft_connected) {
           setStatus('connected');
+          retryCountRef.current = 0;
           // Fetch meetings when connected
           await fetchMeetings();
         } else {
@@ -95,7 +111,7 @@ export function useRecallCalendar() {
     } finally {
       setIsLoading(false);
     }
-  }, [authUser?.id]);
+  }, [authUser?.id, authUser?.email]);
 
   // Check for OAuth callback on mount (for redirect flow)
   useEffect(() => {
@@ -109,18 +125,50 @@ export function useRecallCalendar() {
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
       
-      // Show success message
-      toast.success(`${provider === 'microsoft' ? 'Microsoft' : 'Google'} Kalender erfolgreich verbunden!`);
+      // Show syncing message
+      setStatus('syncing');
+      toast.success(`${provider === 'microsoft' ? 'Microsoft' : 'Google'} Kalender wird synchronisiert...`);
       
-      // Check status immediately - the OAuth should be complete now
-      console.log('[useRecallCalendar] OAuth complete, checking status for user:', authUser?.id);
+      console.log('[useRecallCalendar] OAuth complete, starting status check with retries for user:', authUser?.id);
       
       if (authUser?.id) {
-        // Delay slightly to ensure Recall.ai has processed the OAuth
-        setTimeout(async () => {
-          console.log('[useRecallCalendar] Checking status after OAuth...');
-          await checkStatus();
-        }, 2000);
+        // Start retry loop to catch Recall.ai processing delay
+        const checkWithRetry = async () => {
+          for (let i = 0; i < maxRetries; i++) {
+            console.log(`[useRecallCalendar] Status check attempt ${i + 1}/${maxRetries}`);
+            
+            // Wait longer on each retry (2s, 4s, 6s)
+            await new Promise(resolve => setTimeout(resolve, (i + 1) * 2000));
+            
+            const { data } = await supabase.functions.invoke('recall-calendar-auth', {
+              body: { 
+                action: 'status', 
+                supabase_user_id: authUser.id,
+                user_email: authUser.email,
+              },
+            });
+            
+            if (data?.success) {
+              setGoogleConnected(data.google_connected);
+              setMicrosoftConnected(data.microsoft_connected);
+              setNeedsRepair(data.needs_repair || false);
+              setRecallUserId(data.recall_user_id || null);
+              
+              if (data.google_connected || data.microsoft_connected) {
+                setStatus('connected');
+                toast.success('Kalender erfolgreich verbunden!');
+                await fetchMeetings();
+                return;
+              }
+            }
+          }
+          
+          // After all retries, show sync status
+          setStatus('disconnected');
+          toast.error('Kalender-Verbindung konnte nicht bestätigt werden. Bitte versuche es erneut.');
+        };
+        
+        checkWithRetry();
       }
     }
     
@@ -131,7 +179,7 @@ export function useRecallCalendar() {
       
       toast.error('Kalender-Verbindung fehlgeschlagen. Bitte versuche es erneut.');
     }
-  }, [authUser?.id, checkStatus]);
+  }, [authUser?.id, authUser?.email]);
 
   const connect = useCallback(async (provider: 'google' | 'microsoft' = 'google') => {
     if (!authUser?.id) {
@@ -151,6 +199,7 @@ export function useRecallCalendar() {
         body: { 
           action: 'authenticate', 
           supabase_user_id: authUser.id,
+          user_email: authUser.email,
           provider, 
           redirect_uri: redirectUri 
         },
@@ -212,7 +261,45 @@ export function useRecallCalendar() {
       setStatus('error');
       setIsLoading(false);
     }
-  }, [authUser?.id, checkStatus, googleConnected, microsoftConnected]);
+  }, [authUser?.id, authUser?.email, checkStatus, googleConnected, microsoftConnected]);
+
+  const repairConnection = useCallback(async (targetRecallUserId: string) => {
+    if (!authUser?.id) return false;
+
+    try {
+      setIsLoading(true);
+      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-auth', {
+        body: { 
+          action: 'repair', 
+          supabase_user_id: authUser.id,
+          target_recall_user_id: targetRecallUserId,
+        },
+      });
+
+      if (funcError) throw funcError;
+
+      if (data.success) {
+        setGoogleConnected(data.google_connected);
+        setMicrosoftConnected(data.microsoft_connected);
+        setRecallUserId(data.recall_user_id);
+        setNeedsRepair(false);
+        setStatus('connected');
+        
+        toast.success('Verbindung erfolgreich repariert!');
+        await fetchMeetings();
+        return true;
+      } else {
+        toast.error(data.error || 'Reparatur fehlgeschlagen');
+        return false;
+      }
+    } catch (err: any) {
+      console.error('Error repairing connection:', err);
+      toast.error('Fehler beim Reparieren der Verbindung');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [authUser?.id]);
 
   const disconnectProvider = useCallback(async (provider: 'google' | 'microsoft') => {
     if (!authUser?.id) return;
@@ -360,9 +447,12 @@ export function useRecallCalendar() {
     meetingsError,
     meetings,
     userId: authUser?.id || null,
+    userEmail: authUser?.email || null,
     googleConnected,
     microsoftConnected,
     preferences,
+    needsRepair,
+    recallUserId,
     connect,
     disconnectGoogle,
     disconnectMicrosoft,
@@ -370,5 +460,6 @@ export function useRecallCalendar() {
     fetchMeetings,
     updateMeetingRecording,
     updatePreferences,
+    repairConnection,
   };
 }
