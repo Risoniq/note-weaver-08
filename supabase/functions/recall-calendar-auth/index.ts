@@ -161,9 +161,78 @@ serve(async (req) => {
       return authData.token;
     }
 
+    // New action: reset - delete old entry and create fresh one with email-based ID
+    if (action === 'reset') {
+      if (!supabaseUserId) {
+        throw new Error('supabase_user_id is required for reset');
+      }
+
+      console.log('Resetting calendar user for:', supabaseUserId, 'email:', userEmail);
+
+      // Delete existing entry
+      const { error: deleteError } = await supabase
+        .from('recall_calendar_users')
+        .delete()
+        .eq('supabase_user_id', supabaseUserId);
+
+      if (deleteError) {
+        console.error('Error deleting user:', deleteError);
+      }
+
+      // Create fresh entry with email-based ID
+      const stableId = getStableRecallUserId(userEmail, supabaseUserId);
+      
+      const { error: insertError } = await supabase
+        .from('recall_calendar_users')
+        .insert({ 
+          recall_user_id: stableId,
+          supabase_user_id: supabaseUserId,
+          google_connected: false,
+          microsoft_connected: false,
+        });
+
+      if (insertError) {
+        console.error('Error creating fresh user:', insertError);
+        throw new Error('Failed to reset calendar user');
+      }
+
+      console.log('Reset complete, new recall_user_id:', stableId);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: 'Calendar user reset successfully',
+          recall_user_id: stableId,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (action === 'authenticate') {
       if (!supabaseUserId) {
         throw new Error('supabase_user_id is required for authentication');
+      }
+
+      // Check for mismatch and auto-reset if needed
+      const stableId = getStableRecallUserId(userEmail, supabaseUserId);
+      
+      const { data: existingUser } = await supabase
+        .from('recall_calendar_users')
+        .select('recall_user_id')
+        .eq('supabase_user_id', supabaseUserId)
+        .maybeSingle();
+
+      // If there's a mismatch, delete and recreate with correct ID
+      if (existingUser?.recall_user_id && existingUser.recall_user_id !== stableId) {
+        console.log('Auto-resetting due to mismatch:', {
+          old: existingUser.recall_user_id,
+          new: stableId
+        });
+        
+        await supabase
+          .from('recall_calendar_users')
+          .delete()
+          .eq('supabase_user_id', supabaseUserId);
       }
 
       const { recallUserId } = await getOrCreateRecallUser(supabaseUserId, userEmail);
