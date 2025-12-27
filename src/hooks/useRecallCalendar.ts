@@ -95,6 +95,7 @@ export function useRecallCalendar() {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const oauthComplete = urlParams.get('oauth_complete');
+    const oauthError = urlParams.get('oauth_error');
     const provider = urlParams.get('provider');
     
     if (oauthComplete === 'true') {
@@ -102,15 +103,31 @@ export function useRecallCalendar() {
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
       
-      // Show success message and refresh status
-      toast.success(`${provider === 'microsoft' ? 'Microsoft' : 'Google'} Kalender wird verbunden...`);
+      // Show success message
+      toast.success(`${provider === 'microsoft' ? 'Microsoft' : 'Google'} Kalender erfolgreich verbunden!`);
       
-      // Check status after a short delay to allow backend to process
-      setTimeout(() => {
-        if (userId) {
-          checkStatus();
-        }
-      }, 1000);
+      // Check status immediately - the OAuth should be complete now
+      console.log('[useRecallCalendar] OAuth complete, checking status for user:', userId);
+      
+      // Use stored userId if current one not yet loaded
+      const storedUserId = localStorage.getItem(RECALL_USER_ID_KEY);
+      const effectiveUserId = userId || storedUserId;
+      
+      if (effectiveUserId) {
+        // Delay slightly to ensure Recall.ai has processed the OAuth
+        setTimeout(async () => {
+          console.log('[useRecallCalendar] Checking status after OAuth...');
+          await checkStatus();
+        }, 2000);
+      }
+    }
+    
+    if (oauthError === 'true') {
+      // Clean up URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+      
+      toast.error('Kalender-Verbindung fehlgeschlagen. Bitte versuche es erneut.');
     }
   }, [userId, checkStatus]);
 

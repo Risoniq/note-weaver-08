@@ -76,13 +76,20 @@ serve(async (req) => {
       // Build the OAuth URL based on provider
       const oauthProvider = provider === 'microsoft' ? 'microsoft' : 'google';
       
-      // Build OAuth URL with redirect_uri if provided
+      // Build OAuth URL with success_url and error_url for proper redirect after OAuth
       let oauthUrl = `https://us-west-2.recall.ai/api/v1/calendar/${oauthProvider}/authorize/?token=${authData.token}`;
       
-      // Add redirect_uri for redirect flow (especially important for Microsoft)
+      // CRITICAL: Add success_url and error_url so Recall.ai knows where to redirect after OAuth
       if (redirect_uri) {
-        oauthUrl += `&redirect_uri=${encodeURIComponent(redirect_uri)}`;
+        const successUrl = `${redirect_uri}?oauth_success=true&provider=${oauthProvider}`;
+        const errorUrl = `${redirect_uri}?oauth_error=true&provider=${oauthProvider}`;
+        oauthUrl += `&success_url=${encodeURIComponent(successUrl)}`;
+        oauthUrl += `&error_url=${encodeURIComponent(errorUrl)}`;
+        console.log('OAuth URL built with success_url:', successUrl);
+        console.log('OAuth URL built with error_url:', errorUrl);
       }
+      
+      console.log('Final OAuth URL:', oauthUrl);
 
       return new Response(
         JSON.stringify({

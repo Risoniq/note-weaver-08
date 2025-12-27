@@ -9,17 +9,28 @@ const CalendarCallback = () => {
     const handleCallback = async () => {
       try {
         const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
+        const oauthSuccess = urlParams.get('oauth_success');
+        const oauthError = urlParams.get('oauth_error');
+        const provider = urlParams.get('provider');
         const error = urlParams.get('error');
-        const state = urlParams.get('state');
 
-        console.log('[CalendarCallback] Received params', { hasCode: !!code, error, state });
+        console.log('[CalendarCallback] Received params', { 
+          oauthSuccess, 
+          oauthError, 
+          provider, 
+          error,
+          fullUrl: window.location.href 
+        });
 
-        // Check if this is from a redirect flow (sessionStorage will have the provider)
+        // Check stored provider from session (set before redirect)
         const storedProvider = sessionStorage.getItem('recall_oauth_provider');
-        
-        if (error) {
-          setMessage('Verbindung fehlgeschlagen: ' + error);
+        const effectiveProvider = provider || storedProvider;
+
+        // Handle error cases
+        if (oauthError === 'true' || error) {
+          console.error('[CalendarCallback] OAuth failed:', error || 'Unknown error');
+          setMessage('Verbindung fehlgeschlagen. Bitte versuche es erneut.');
+          sessionStorage.removeItem('recall_oauth_provider');
           setTimeout(() => navigate('/?oauth_error=true'), 2000);
           return;
         }
@@ -28,7 +39,8 @@ const CalendarCallback = () => {
         if (window.opener && !window.opener.closed) {
           const callbackMessage = {
             type: 'google-auth-callback' as const,
-            code,
+            success: oauthSuccess === 'true',
+            provider: effectiveProvider,
             error: error || undefined,
           };
           window.opener.postMessage(callbackMessage, window.location.origin);
@@ -37,25 +49,28 @@ const CalendarCallback = () => {
           return;
         }
 
-        // Redirect flow: Navigate back to main page with success indicator
-        // The Recall.ai OAuth flow handles the token exchange on their end,
-        // so we just need to tell the app to check status
-        if (storedProvider) {
+        // Redirect flow: OAuth was successful
+        if (oauthSuccess === 'true' || storedProvider) {
           sessionStorage.removeItem('recall_oauth_provider');
-          setMessage('Erfolgreich verbunden! Weiterleitung...');
+          setMessage('Kalender erfolgreich verbunden! Lade Termine...');
+          
+          console.log('[CalendarCallback] OAuth successful, redirecting to home with provider:', effectiveProvider);
           
           // Redirect back to main page with success flag
           setTimeout(() => {
-            navigate(`/?oauth_complete=true&provider=${storedProvider}`);
+            navigate(`/?oauth_complete=true&provider=${effectiveProvider}`);
           }, 1000);
-        } else {
-          // No opener and no stored provider - just redirect home
-          setMessage('Weiterleitung zur Startseite...');
-          setTimeout(() => navigate('/'), 1500);
+          return;
         }
+
+        // Fallback: No clear state, just redirect home
+        console.log('[CalendarCallback] No clear OAuth state, redirecting home');
+        setMessage('Weiterleitung zur Startseite...');
+        setTimeout(() => navigate('/'), 1500);
       } catch (err) {
         console.error('[CalendarCallback] Error handling callback', err);
         setMessage('Ein Fehler ist aufgetreten');
+        sessionStorage.removeItem('recall_oauth_provider');
         setTimeout(() => navigate('/'), 2000);
       }
     };
