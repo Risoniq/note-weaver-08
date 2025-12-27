@@ -208,14 +208,23 @@ export function useRecallCalendar() {
       if (funcError) throw funcError;
 
       if (data.success && data.oauth_url) {
-        // For Microsoft: Open in new tab to avoid iframe restrictions
+        // For Microsoft: Open in popup window (same as Google)
         if (provider === 'microsoft') {
           sessionStorage.setItem('recall_oauth_provider', 'microsoft');
           
-          // Open in new tab instead of redirect (avoids iframe restrictions)
-          const newTab = window.open(data.oauth_url, '_blank');
+          // Open in centered popup window
+          const width = 600;
+          const height = 700;
+          const left = window.screenX + (window.outerWidth - width) / 2;
+          const top = window.screenY + (window.outerHeight - height) / 2;
           
-          if (!newTab) {
+          const popup = window.open(
+            data.oauth_url,
+            'recall-calendar-oauth-microsoft',
+            `width=${width},height=${height},left=${left},top=${top},popup=1`
+          );
+          
+          if (!popup) {
             // Fallback: Try direct redirect if popup is blocked
             toast.info('Popup wurde blockiert, leite weiter...');
             window.location.href = data.oauth_url;
@@ -224,7 +233,7 @@ export function useRecallCalendar() {
           
           // Show helpful message with longer duration
           toast.info(
-            'Microsoft Login geöffnet. Schließe den Tab nach der Anmeldung - die Verbindung wird automatisch erkannt.',
+            'Microsoft Login geöffnet. Schließe das Fenster nach der Anmeldung - die Verbindung wird automatisch erkannt.',
             { duration: 15000 }
           );
           
