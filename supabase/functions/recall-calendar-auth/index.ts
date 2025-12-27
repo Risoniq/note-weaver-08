@@ -94,11 +94,41 @@ serve(async (req) => {
         throw new Error('user_id is required for status check');
       }
 
-      // Get user status from Recall.ai
-      const userResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${user_id}`, {
-        method: 'GET',
+      // First, get a fresh auth token for this user
+      const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
+        method: 'POST',
         headers: {
           'Authorization': `Token ${RECALL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user_id,
+        }),
+      });
+
+      if (!authResponse.ok) {
+        const errorText = await authResponse.text();
+        console.error('Recall auth token error:', authResponse.status, errorText);
+        // If we can't get a token, user probably doesn't exist yet
+        return new Response(
+          JSON.stringify({
+            success: true,
+            connected: false,
+            google_connected: false,
+            microsoft_connected: false,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const authData = await authResponse.json();
+      console.log('Got auth token for status check');
+
+      // Get user status from Recall.ai using the calendar auth token
+      const userResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/user/', {
+        method: 'GET',
+        headers: {
+          'x-recallcalendarauthtoken': authData.token,
           'Content-Type': 'application/json',
         },
       });
@@ -156,18 +186,33 @@ serve(async (req) => {
         throw new Error('user_id is required for disconnect');
       }
 
-      // Disconnect from Recall.ai
-      const disconnectResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${user_id}`, {
-        method: 'DELETE',
+      // First get a token for this user
+      const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
+        method: 'POST',
         headers: {
           'Authorization': `Token ${RECALL_API_KEY}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          user_id: user_id,
+        }),
       });
 
-      if (!disconnectResponse.ok && disconnectResponse.status !== 404) {
-        const errorText = await disconnectResponse.text();
-        console.error('Recall disconnect error:', disconnectResponse.status, errorText);
-        throw new Error(`Failed to disconnect calendar: ${errorText}`);
+      if (authResponse.ok) {
+        const authData = await authResponse.json();
+        
+        // Disconnect from Recall.ai using the calendar auth token
+        const disconnectResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/user/', {
+          method: 'DELETE',
+          headers: {
+            'x-recallcalendarauthtoken': authData.token,
+          },
+        });
+
+        if (!disconnectResponse.ok && disconnectResponse.status !== 404) {
+          const errorText = await disconnectResponse.text();
+          console.error('Recall disconnect error:', disconnectResponse.status, errorText);
+        }
       }
 
       // Update our database
