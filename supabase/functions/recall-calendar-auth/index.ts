@@ -81,9 +81,21 @@ serve(async (req) => {
       let oauthUrl: string;
       
       if (provider === 'microsoft') {
+        const msClientId = (Deno.env.get('MS_OAUTH_CLIENT_ID') || '').trim();
+        if (!msClientId) {
+          throw new Error('MS_OAUTH_CLIENT_ID is not configured');
+        }
+
         // Microsoft OAuth URL structure
         const msScopes = 'offline_access openid email https://graph.microsoft.com/Calendars.Read';
         const msRedirectUri = `https://${recallRegion}.recall.ai/api/v1/calendar/ms_oauth_callback/`;
+
+        // Basic sanity check: Microsoft client IDs are typically GUIDs
+        const looksLikeGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(msClientId);
+        if (!looksLikeGuid) {
+          console.error('MS_OAUTH_CLIENT_ID does not look like a GUID:', msClientId);
+          throw new Error('Microsoft OAuth Client ID scheint ungültig zu sein (erwartet: Application (client) ID)');
+        }
         
         // Build state object with Recall.ai auth token and redirect URLs
         const stateObj = {
@@ -99,7 +111,7 @@ serve(async (req) => {
           `&response_type=code` +
           `&state=${encodeURIComponent(JSON.stringify(stateObj))}` +
           `&redirect_uri=${encodeURIComponent(msRedirectUri)}` +
-          `&client_id=${Deno.env.get('MS_OAUTH_CLIENT_ID') || ''}`;
+          `&client_id=${encodeURIComponent(msClientId)}`;
           
         console.log('Microsoft OAuth URL built with state:', stateObj);
       } else {
