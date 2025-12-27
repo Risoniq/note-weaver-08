@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      recall_calendar_users: {
+        Row: {
+          created_at: string
+          google_connected: boolean
+          id: string
+          microsoft_connected: boolean
+          recall_user_id: string
+          recording_preferences: Json | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          google_connected?: boolean
+          id?: string
+          microsoft_connected?: boolean
+          recall_user_id: string
+          recording_preferences?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          google_connected?: boolean
+          id?: string
+          microsoft_connected?: boolean
+          recall_user_id?: string
+          recording_preferences?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       recordings: {
         Row: {
           action_items: string[] | null

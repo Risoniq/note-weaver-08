@@ -4,8 +4,10 @@ import { MeetingBot } from "@/components/MeetingBot";
 import { RecordingViewer } from "@/components/RecordingViewer";
 import { RecordingsList } from "@/components/recordings/RecordingsList";
 import { RecentActivityList } from "@/components/recordings/RecentActivityList";
+import { RecallCalendarView } from "@/components/calendar/RecallCalendarView";
 import { Toaster } from "@/components/ui/toaster";
-import { Mic, Settings } from "lucide-react";
+import { Mic, Settings, Calendar } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Index = () => {
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
@@ -35,13 +37,34 @@ const Index = () => {
 
         {/* Main Content */}
         <div className="flex flex-col items-center gap-8 max-w-5xl mx-auto">
-          {/* Meeting Bot Input */}
-          <MeetingBot onRecordingCreated={setActiveRecordingId} />
-          
-          {/* Active Recording Status */}
-          {activeRecordingId && (
-            <RecordingViewer recordingId={activeRecordingId} />
-          )}
+          <Tabs defaultValue="calendar" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger value="calendar" className="gap-2">
+                <Calendar size={16} />
+                Kalender-Automatik
+              </TabsTrigger>
+              <TabsTrigger value="manual" className="gap-2">
+                <Mic size={16} />
+                Manuell
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="calendar">
+              <RecallCalendarView />
+            </TabsContent>
+
+            <TabsContent value="manual">
+              {/* Meeting Bot Input */}
+              <MeetingBot onRecordingCreated={setActiveRecordingId} />
+              
+              {/* Active Recording Status */}
+              {activeRecordingId && (
+                <div className="mt-6">
+                  <RecordingViewer recordingId={activeRecordingId} />
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
 
           {/* Recent Activity List */}
           <RecentActivityList />

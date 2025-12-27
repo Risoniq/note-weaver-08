@@ -23,3 +23,9 @@ verify_jwt = false
 
 [functions.analyze-transcript]
 verify_jwt = false
+
+[functions.recall-calendar-auth]
+verify_jwt = false
+
+[functions.recall-calendar-meetings]
+verify_jwt = false
