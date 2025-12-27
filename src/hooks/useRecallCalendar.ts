@@ -108,7 +108,46 @@ export function useRecallCalendar() {
         localStorage.setItem(RECALL_USER_ID_KEY, data.user_id);
         setUserId(data.user_id);
 
-        // Open OAuth popup
+        // Open OAuth flow
+        // Microsoft authorize endpoints often block popup windows inside embedded previews,
+        // so we open a new tab for Microsoft and re-check status when the user returns.
+        if (provider === 'microsoft') {
+          const tab = window.open(data.oauth_url, '_blank', 'noopener,noreferrer');
+          if (!tab) {
+            toast.error('Popup/Tab wurde blockiert – bitte Popups erlauben und erneut versuchen.');
+            setStatus('disconnected');
+            setIsLoading(false);
+            return;
+          }
+
+          toast.message('Microsoft-Verbindung geöffnet', {
+            description: 'Bitte den Login im neuen Tab abschließen und anschließend hierher zurückkehren.',
+          });
+
+           // Re-check status when the user returns to this tab (plus a short polling window)
+          const start = Date.now();
+          const maxMs = 2 * 60 * 1000;
+
+          const onFocus = async () => {
+            await checkStatus();
+          };
+
+          window.addEventListener('focus', onFocus);
+
+          const poll = setInterval(async () => {
+            if (Date.now() - start > maxMs) {
+              clearInterval(poll);
+              window.removeEventListener('focus', onFocus);
+              setIsLoading(false);
+              return;
+            }
+            await checkStatus();
+          }, 2000);
+
+          return;
+        }
+
+        // Default: open a centered OAuth popup
         const width = 600;
         const height = 700;
         const left = window.screenX + (window.outerWidth - width) / 2;
