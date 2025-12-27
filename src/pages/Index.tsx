@@ -6,11 +6,25 @@ import { RecordingsList } from "@/components/recordings/RecordingsList";
 import { RecentActivityList } from "@/components/recordings/RecentActivityList";
 import { RecallCalendarView } from "@/components/calendar/RecallCalendarView";
 import { Toaster } from "@/components/ui/toaster";
-import { Mic, Settings, Calendar } from "lucide-react";
+import { Mic, Settings, Calendar, LogOut } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/hooks/use-toast";
 const Index = () => {
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
+  const { user, signOut } = useAuth();
+
+  const handleLogout = async () => {
+    const { error } = await signOut();
+    if (error) {
+      toast({
+        title: 'Fehler beim Abmelden',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -26,6 +40,15 @@ const Index = () => {
                 <Settings className="h-8 w-8 text-primary" />
               </div>
             </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleLogout}
+              className="rounded-full bg-primary/10 hover:bg-primary/20 h-14 w-14"
+              title={`Abmelden (${user?.email})`}
+            >
+              <LogOut className="h-6 w-6 text-primary" />
+            </Button>
           </div>
           <h1 className="text-4xl font-bold text-foreground mb-2">
             AI Meeting Recorder
@@ -33,6 +56,11 @@ const Index = () => {
           <p className="text-muted-foreground text-lg">
             Lass einen Bot deine Meetings aufnehmen und transkribieren
           </p>
+          {user?.email && (
+            <p className="text-sm text-muted-foreground mt-2">
+              Angemeldet als: {user.email}
+            </p>
+          )}
         </div>
 
         {/* Main Content */}
