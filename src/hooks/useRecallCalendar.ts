@@ -108,46 +108,7 @@ export function useRecallCalendar() {
         localStorage.setItem(RECALL_USER_ID_KEY, data.user_id);
         setUserId(data.user_id);
 
-        // Open OAuth flow
-        // Microsoft authorize endpoints often block popup windows inside embedded previews,
-        // so we open a new tab for Microsoft and re-check status when the user returns.
-        if (provider === 'microsoft') {
-          const tab = window.open(data.oauth_url, '_blank', 'noopener,noreferrer');
-          if (!tab) {
-            toast.error('Popup/Tab wurde blockiert – bitte Popups erlauben und erneut versuchen.');
-            setStatus('disconnected');
-            setIsLoading(false);
-            return;
-          }
-
-          toast.message('Microsoft-Verbindung geöffnet', {
-            description: 'Bitte den Login im neuen Tab abschließen und anschließend hierher zurückkehren.',
-          });
-
-           // Re-check status when the user returns to this tab (plus a short polling window)
-          const start = Date.now();
-          const maxMs = 2 * 60 * 1000;
-
-          const onFocus = async () => {
-            await checkStatus();
-          };
-
-          window.addEventListener('focus', onFocus);
-
-          const poll = setInterval(async () => {
-            if (Date.now() - start > maxMs) {
-              clearInterval(poll);
-              window.removeEventListener('focus', onFocus);
-              setIsLoading(false);
-              return;
-            }
-            await checkStatus();
-          }, 2000);
-
-          return;
-        }
-
-        // Default: open a centered OAuth popup
+        // Open OAuth popup (same for both providers)
         const width = 600;
         const height = 700;
         const left = window.screenX + (window.outerWidth - width) / 2;
@@ -155,9 +116,16 @@ export function useRecallCalendar() {
 
         const popup = window.open(
           data.oauth_url,
-          'recall-calendar-oauth',
+          `recall-calendar-oauth-${provider}`,
           `width=${width},height=${height},left=${left},top=${top},popup=1`
         );
+
+        if (!popup) {
+          toast.error('Popup wurde blockiert – bitte Popups erlauben und erneut versuchen.');
+          setStatus(googleConnected || microsoftConnected ? 'connected' : 'disconnected');
+          setIsLoading(false);
+          return;
+        }
 
         // Poll for popup close
         const pollTimer = setInterval(async () => {
@@ -174,7 +142,7 @@ export function useRecallCalendar() {
           if (!popup?.closed) {
             popup?.close();
           }
-          setStatus('disconnected');
+          setStatus(googleConnected || microsoftConnected ? 'connected' : 'disconnected');
           setIsLoading(false);
         }, 300000);
       }
@@ -186,34 +154,44 @@ export function useRecallCalendar() {
     }
   }, [userId, checkStatus]);
 
-  const disconnect = useCallback(async () => {
+  const disconnectProvider = useCallback(async (provider: 'google' | 'microsoft') => {
     if (!userId) return;
 
     try {
       setIsLoading(true);
       const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-auth', {
-        body: { action: 'disconnect', user_id: userId },
+        body: { action: 'disconnect_provider', user_id: userId, provider },
       });
 
       if (funcError) throw funcError;
 
       if (data.success) {
-        localStorage.removeItem(RECALL_USER_ID_KEY);
-        setUserId(null);
-        setStatus('disconnected');
-        setGoogleConnected(false);
-        setMicrosoftConnected(false);
-        setMeetings([]);
-        toast.success('Kalender getrennt');
+        if (provider === 'google') {
+          setGoogleConnected(false);
+        } else {
+          setMicrosoftConnected(false);
+        }
+        
+        // Check if still connected to any provider
+        if (!data.still_connected) {
+          localStorage.removeItem(RECALL_USER_ID_KEY);
+          setUserId(null);
+          setStatus('disconnected');
+          setMeetings([]);
+        }
+        
+        toast.success(`${provider === 'google' ? 'Google' : 'Microsoft'} Kalender getrennt`);
       }
     } catch (err: any) {
-      console.error('Error disconnecting:', err);
-      setError(err.message || 'Fehler beim Trennen');
-      toast.error('Fehler beim Trennen des Kalenders');
+      console.error('Error disconnecting provider:', err);
+      toast.error(`Fehler beim Trennen des ${provider === 'google' ? 'Google' : 'Microsoft'} Kalenders`);
     } finally {
       setIsLoading(false);
     }
   }, [userId]);
+
+  const disconnectGoogle = useCallback(() => disconnectProvider('google'), [disconnectProvider]);
+  const disconnectMicrosoft = useCallback(() => disconnectProvider('microsoft'), [disconnectProvider]);
 
   const fetchMeetings = useCallback(async () => {
     if (!userId) return;
@@ -328,7 +306,8 @@ export function useRecallCalendar() {
     microsoftConnected,
     preferences,
     connect,
-    disconnect,
+    disconnectGoogle,
+    disconnectMicrosoft,
     checkStatus,
     fetchMeetings,
     updateMeetingRecording,

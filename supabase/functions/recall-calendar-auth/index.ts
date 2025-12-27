@@ -183,6 +183,52 @@ serve(async (req) => {
       );
     }
 
+    if (action === 'disconnect_provider') {
+      // Disconnect a single provider (Google or Microsoft)
+      if (!user_id || !provider) {
+        throw new Error('user_id and provider are required for disconnect_provider');
+      }
+
+      // Get user data from our database first
+      const { data: userData, error: fetchError } = await supabase
+        .from('recall_calendar_users')
+        .select('google_connected, microsoft_connected')
+        .eq('recall_user_id', user_id)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error('Error fetching user:', fetchError);
+      }
+
+      // Update our database - only disconnect the specified provider
+      const updateData = provider === 'google' 
+        ? { google_connected: false }
+        : { microsoft_connected: false };
+
+      const { error: updateError } = await supabase
+        .from('recall_calendar_users')
+        .update(updateData)
+        .eq('recall_user_id', user_id);
+
+      if (updateError) {
+        console.error('Error updating user after disconnect:', updateError);
+      }
+
+      // Check if still connected to any provider
+      const stillConnected = provider === 'google' 
+        ? userData?.microsoft_connected 
+        : userData?.google_connected;
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: `${provider} calendar disconnected`,
+          still_connected: stillConnected,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (action === 'disconnect') {
       if (!user_id) {
         throw new Error('user_id is required for disconnect');
