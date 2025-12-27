@@ -125,10 +125,13 @@ serve(async (req) => {
       console.log('Got auth token for status check');
 
       // Get user status from Recall.ai using the calendar auth token
-      const userResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/user/', {
+      // Some Recall endpoints accept the token in different header names; we send both for compatibility.
+      const userResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${user_id}`, {
         method: 'GET',
         headers: {
           'x-recallcalendarauthtoken': authData.token,
+          'x-recall-calendar-auth-token': authData.token,
+          'Authorization': `Bearer ${authData.token}`,
           'Content-Type': 'application/json',
         },
       });
@@ -202,10 +205,12 @@ serve(async (req) => {
         const authData = await authResponse.json();
         
         // Disconnect from Recall.ai using the calendar auth token
-        const disconnectResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/user/', {
+        const disconnectResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${user_id}`, {
           method: 'DELETE',
           headers: {
             'x-recallcalendarauthtoken': authData.token,
+            'x-recall-calendar-auth-token': authData.token,
+            'Authorization': `Bearer ${authData.token}`,
           },
         });
 
