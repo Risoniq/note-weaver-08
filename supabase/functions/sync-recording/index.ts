@@ -63,13 +63,14 @@ Deno.serve(async (req) => {
     
     // Status aus status_changes Array extrahieren (letzter Eintrag)
     const latestStatus = botData.status_changes?.[botData.status_changes.length - 1]?.code || 'pending'
-    console.log(`Bot Status (raw): ${latestStatus}`)
+    const latestSubCode = botData.status_changes?.[botData.status_changes.length - 1]?.sub_code || null
+    console.log(`Bot Status (raw): ${latestStatus}, SubCode: ${latestSubCode}`)
     
-    // Status mapping
+    // Status mapping - erweitert um waiting_room Status
     const statusMap: Record<string, string> = {
       "ready": "pending",
       "joining_call": "joining",
-      "in_waiting_room": "joining",
+      "in_waiting_room": "waiting_room", // Eigener Status für Wartebereich
       "in_call_not_recording": "joining",
       "in_call_recording": "recording",
       "recording_permission_allowed": "recording",
@@ -82,7 +83,17 @@ Deno.serve(async (req) => {
       "fatal": "error",
     }
     
-    const status = statusMap[latestStatus] || latestStatus
+    let status = statusMap[latestStatus] || latestStatus
+    
+    // Spezielle Fehlerbehandlung für bot_kicked aus Wartebereich
+    if (latestSubCode === 'bot_kicked_from_waiting_room') {
+      status = 'waiting_room_rejected'
+      console.log('Bot wurde aus dem Wartebereich entfernt/abgelehnt')
+    } else if (latestSubCode === 'waiting_room_timeout') {
+      status = 'waiting_room_timeout'
+      console.log('Wartebereich-Timeout erreicht')
+    }
+    
     console.log(`Bot Status (mapped): ${status}`)
 
     // 5. Daten vorbereiten für Update

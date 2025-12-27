@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Video, FileText, Download, Loader2, CheckCircle, Clock } from "lucide-react";
+import { Video, FileText, Download, Loader2, CheckCircle, Clock, AlertCircle } from "lucide-react";
 
 interface Recording {
   id: string;
@@ -107,10 +107,31 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
             Bot tritt bei
           </Badge>
         );
-      case "error":
+      case "waiting_room":
+        return (
+          <Badge className="bg-amber-500 text-white">
+            <Clock className="h-3 w-3 mr-1" />
+            Im Wartebereich
+          </Badge>
+        );
+      case "waiting_room_rejected":
+        return (
+          <Badge variant="destructive">
+            <AlertCircle className="h-3 w-3 mr-1" />
+            Abgelehnt
+          </Badge>
+        );
+      case "waiting_room_timeout":
         return (
           <Badge variant="destructive">
             <Clock className="h-3 w-3 mr-1" />
+            Timeout
+          </Badge>
+        );
+      case "error":
+        return (
+          <Badge variant="destructive">
+            <AlertCircle className="h-3 w-3 mr-1" />
             Fehler
           </Badge>
         );
@@ -121,6 +142,51 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
             Warte auf Bot
           </Badge>
         );
+    }
+  };
+
+  const getStatusMessage = () => {
+    switch (status) {
+      case "recording":
+        return "Der Bot nimmt das Meeting auf...";
+      case "processing":
+        return "Die Aufnahme wird verarbeitet...";
+      case "joining":
+        return "Bot tritt dem Meeting bei...";
+      case "waiting_room":
+        return (
+          <div className="space-y-2">
+            <p className="font-medium">Der Bot wartet im Wartebereich</p>
+            <p className="text-sm">
+              Bitte den Meeting-Host bitten, den Bot aus dem Wartebereich hereinzulassen.
+              Bei externen Teams-Meetings erscheint der Bot möglicherweise als "Unverified".
+            </p>
+          </div>
+        );
+      case "waiting_room_rejected":
+        return (
+          <div className="space-y-2">
+            <p className="font-medium text-destructive">Der Bot wurde abgelehnt</p>
+            <p className="text-sm">
+              Der Meeting-Host hat den Bot nicht aus dem Wartebereich gelassen oder der Bot wurde entfernt.
+              Bei externen Meetings muss der Host den Bot manuell zulassen.
+            </p>
+          </div>
+        );
+      case "waiting_room_timeout":
+        return (
+          <div className="space-y-2">
+            <p className="font-medium text-destructive">Wartebereich-Timeout</p>
+            <p className="text-sm">
+              Der Bot hat zu lange im Wartebereich gewartet und wurde automatisch entfernt.
+              Bitte versuche es erneut und lasse den Bot schneller herein.
+            </p>
+          </div>
+        );
+      case "error":
+        return "Ein Fehler ist aufgetreten.";
+      default:
+        return "Warte auf den Bot...";
     }
   };
 
@@ -150,18 +216,15 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
       <CardContent className="space-y-4">
         {status !== "done" ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Loader2 className="h-12 w-12 text-primary animate-spin mb-4" />
-            <p className="text-muted-foreground">
-              {status === "recording"
-                ? "Der Bot nimmt das Meeting auf..."
-                : status === "processing"
-                ? "Die Aufnahme wird verarbeitet..."
-                : status === "joining"
-                ? "Bot tritt dem Meeting bei..."
-                : status === "error"
-                ? "Ein Fehler ist aufgetreten."
-                : "Warte auf den Bot..."}
-            </p>
+            {!["waiting_room_rejected", "waiting_room_timeout", "error"].includes(status) && (
+              <Loader2 className="h-12 w-12 text-primary animate-spin mb-4" />
+            )}
+            {["waiting_room_rejected", "waiting_room_timeout", "error"].includes(status) && (
+              <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+            )}
+            <div className="text-muted-foreground">
+              {getStatusMessage()}
+            </div>
             <p className="text-sm text-muted-foreground mt-2">
               Recording ID: {recordingId}
             </p>

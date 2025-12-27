@@ -73,6 +73,12 @@ Deno.serve(async (req) => {
       speaker_timeline: {
         enabled: true
       },
+      // Automatisches Verlassen konfigurieren - längere Wartezeit im Wartebereich
+      automatic_leave: {
+        waiting_room_timeout: 600, // 10 Minuten im Wartebereich warten
+        noone_joined_timeout: 300, // 5 Minuten warten wenn niemand beitritt
+        everyone_left_timeout: 60  // 1 Minute warten nachdem alle gegangen sind
+      },
       recording_config: {
         transcript: {
           provider: { 

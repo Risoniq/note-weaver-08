@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Send, Loader2 } from "lucide-react";
+import { Bot, Send, Loader2, AlertTriangle } from "lucide-react";
 
 interface MeetingBotProps {
   onRecordingCreated: (recordingId: string) => void;
@@ -14,6 +15,15 @@ export function MeetingBot({ onRecordingCreated }: MeetingBotProps) {
   const [meetingUrl, setMeetingUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+
+  // Erkennung von externen Teams-Meetings (Business/Enterprise)
+  const isExternalTeamsMeeting = useMemo(() => {
+    const url = meetingUrl.toLowerCase();
+    // teams.microsoft.com/meet/ ist die neue URL-Struktur für Business/Enterprise
+    // teams.live.com ist für persönliche Konten (funktioniert besser)
+    return url.includes('teams.microsoft.com/meet/') || 
+           url.includes('teams.microsoft.com/l/meetup-join');
+  }, [meetingUrl]);
 
   const handleSendBot = async () => {
     if (!meetingUrl.trim()) {
@@ -39,7 +49,9 @@ export function MeetingBot({ onRecordingCreated }: MeetingBotProps) {
 
       toast({
         title: "Erfolgreich",
-        description: "Bot wurde zum Meeting gesendet!",
+        description: isExternalTeamsMeeting 
+          ? "Bot wurde gesendet! Der Meeting-Host muss den Bot aus dem Wartebereich lassen."
+          : "Bot wurde zum Meeting gesendet!",
       });
 
       // Nutze die Recording UUID (id) für sync-recording
@@ -89,6 +101,18 @@ export function MeetingBot({ onRecordingCreated }: MeetingBotProps) {
             )}
           </Button>
         </div>
+        
+        {isExternalTeamsMeeting && (
+          <Alert className="border-amber-500 bg-amber-500/10">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <AlertDescription className="text-sm">
+              <strong>Externes Teams-Meeting erkannt:</strong> Bei Microsoft Teams Business/Enterprise 
+              Meetings muss der Meeting-Host den Bot manuell aus dem Wartebereich lassen. 
+              Der Bot erscheint möglicherweise als "Unverified".
+            </AlertDescription>
+          </Alert>
+        )}
+        
         <p className="text-sm text-muted-foreground">
           Füge die URL deines Meetings ein, um den Aufnahme-Bot zu starten.
         </p>
