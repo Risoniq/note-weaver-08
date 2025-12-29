@@ -1,11 +1,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// Dynamic CORS headers based on origin
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigins = [
+    Deno.env.get('APP_URL') || '',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
+  ].filter(Boolean);
+  
+  const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0] || '*';
+  
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -91,9 +107,8 @@ serve(async (req) => {
     });
 
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Error in google-calendar-events:', errorMessage);
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    console.error('[Internal] Error in google-calendar-events:', error);
+    return new Response(JSON.stringify({ error: 'An error occurred processing your request' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

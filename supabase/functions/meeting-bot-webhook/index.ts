@@ -1,9 +1,23 @@
 /// <reference types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts" />
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-timestamp, x-webhook-signature',
-};
+// Dynamic CORS headers based on origin
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigins = [
+    Deno.env.get('APP_URL') || '',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
+  ].filter(Boolean);
+  
+  const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0] || '*';
+  
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-timestamp, x-webhook-signature',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
 
 interface MeetingWebhookPayload {
   meeting_id: string;
@@ -53,6 +67,8 @@ async function verifySignature(payload: string, signature: string, timestamp: st
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -173,10 +189,9 @@ Deno.serve(async (req) => {
     );
 
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Error processing webhook:', errorMessage);
+    console.error('[Internal] Error processing webhook:', error);
     return new Response(
-      JSON.stringify({ error: 'Failed to process webhook', details: errorMessage }),
+      JSON.stringify({ error: 'Failed to process webhook' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

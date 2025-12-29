@@ -1,10 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// Dynamic CORS headers based on origin
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigins = [
+    Deno.env.get('APP_URL') || '',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
+  ].filter(Boolean);
+  
+  const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0] || '*';
+  
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
 
 // Helper: Authenticate user from request
 async function authenticateUser(req: Request): Promise<{ user: { id: string } | null; error?: string; isServiceRole?: boolean }> {
@@ -36,6 +50,8 @@ async function authenticateUser(req: Request): Promise<{ user: { id: string } | 
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -154,23 +170,23 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
     });
 
     if (!aiResponse.ok) {
-      console.error(`AI API error: ${aiResponse.status}`);
+      console.error('[Internal] AI API error:', aiResponse.status);
       
       if (aiResponse.status === 429) {
         return new Response(
-          JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
+          JSON.stringify({ error: 'Service temporarily unavailable. Please try again later.' }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
       if (aiResponse.status === 402) {
         return new Response(
-          JSON.stringify({ error: 'AI credits exhausted. Please add credits.' }),
+          JSON.stringify({ error: 'Service unavailable. Please contact support.' }),
           { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
       
       return new Response(
-        JSON.stringify({ error: 'AI analysis failed' }),
+        JSON.stringify({ error: 'Analysis failed. Please try again.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

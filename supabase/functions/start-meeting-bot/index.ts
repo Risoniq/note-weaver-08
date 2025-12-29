@@ -1,9 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-timestamp, x-webhook-signature',
-};
+// Dynamic CORS headers based on origin
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigins = [
+    Deno.env.get('APP_URL') || '',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
+  ].filter(Boolean);
+  
+  const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0] || '*';
+  
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-timestamp, x-webhook-signature',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
 
 interface StartMeetingPayload {
   meetingUrl: string;
@@ -54,6 +68,8 @@ async function verifySignature(
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -129,10 +145,9 @@ serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Error processing start-meeting-bot webhook:', errorMessage);
+    console.error('[Internal] Error processing start-meeting-bot webhook:', error);
     return new Response(
-      JSON.stringify({ error: `Internal Server Error: ${errorMessage}` }),
+      JSON.stringify({ error: 'An error occurred processing your request' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

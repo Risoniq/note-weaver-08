@@ -1,12 +1,28 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// Dynamic CORS headers based on origin
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigins = [
+    Deno.env.get('APP_URL') || '',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
+  ].filter(Boolean);
+  
+  const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0] || '*';
+  
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -71,9 +87,8 @@ serve(async (req) => {
       });
 
       if (!authResponse.ok) {
-        const errorText = await authResponse.text();
-        console.error('Recall auth token error:', authResponse.status, errorText);
-        throw new Error(`Failed to get calendar auth token: ${errorText}`);
+        console.error('[Internal] Recall auth token error:', authResponse.status, await authResponse.text());
+        throw new Error('Failed to authenticate with calendar service');
       }
 
       const authData = await authResponse.json();
@@ -92,9 +107,8 @@ serve(async (req) => {
       );
 
       if (!meetingsResponse.ok) {
-        const errorText = await meetingsResponse.text();
-        console.error('Recall meetings error:', meetingsResponse.status, errorText);
-        throw new Error(`Failed to fetch meetings: ${errorText}`);
+        console.error('[Internal] Recall meetings error:', meetingsResponse.status, await meetingsResponse.text());
+        throw new Error('Failed to fetch meetings');
       }
 
       const meetingsData = await meetingsResponse.json();
@@ -141,9 +155,8 @@ serve(async (req) => {
       });
 
       if (!authResponse.ok) {
-        const errorText = await authResponse.text();
-        console.error('Recall auth token error:', authResponse.status, errorText);
-        throw new Error(`Failed to get calendar auth token: ${errorText}`);
+        console.error('[Internal] Recall auth token error:', authResponse.status, await authResponse.text());
+        throw new Error('Failed to authenticate with calendar service');
       }
 
       const authData = await authResponse.json();
@@ -164,9 +177,8 @@ serve(async (req) => {
       );
 
       if (!updateResponse.ok) {
-        const errorText = await updateResponse.text();
-        console.error('Recall update meeting error:', updateResponse.status, errorText);
-        throw new Error(`Failed to update meeting: ${errorText}`);
+        console.error('[Internal] Recall update meeting error:', updateResponse.status, await updateResponse.text());
+        throw new Error('Failed to update meeting');
       }
 
       const updatedMeeting = await updateResponse.json();
@@ -245,12 +257,11 @@ serve(async (req) => {
       );
     }
 
-    throw new Error(`Unknown action: ${action}`);
+    throw new Error('Unknown action');
   } catch (error: unknown) {
-    console.error('Calendar meetings error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[Internal] Calendar meetings error:', error);
     return new Response(
-      JSON.stringify({ success: false, error: errorMessage }),
+      JSON.stringify({ success: false, error: 'An error occurred processing your request' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
