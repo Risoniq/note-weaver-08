@@ -161,20 +161,74 @@ serve(async (req) => {
       const meetingsData = await meetingsResponse.json();
       console.log('Recall meetings:', meetingsData);
 
-      const meetings = (meetingsData.results || []).map((meeting: any) => ({
-        id: meeting.id,
-        title: meeting.title || 'Untitled Meeting',
-        start_time: meeting.start_time,
-        end_time: meeting.end_time,
-        meeting_url: meeting.meeting_url,
-        platform: meeting.platform,
-        bot_id: meeting.bot_id,
-        will_record: meeting.bot_id !== null,
-        override_should_record: meeting.override_should_record,
-        attendees: meeting.attendees || [],
-        organizer: meeting.organizer,
-        is_organizer: meeting.is_organizer,
-      }));
+      // Helper function to extract meeting URL from various sources
+      const extractMeetingUrl = (meeting: any): string | null => {
+        // Direct meeting_url if available
+        if (meeting.meeting_url) {
+          return meeting.meeting_url;
+        }
+        
+        // Microsoft Teams: Build URL from teams_invite
+        if (meeting.teams_invite?.meeting_id) {
+          const password = meeting.teams_invite.meeting_password || '';
+          return `https://teams.live.com/meet/${meeting.teams_invite.meeting_id}${password ? `?p=${password}` : ''}`;
+        }
+        
+        // Zoom: Build URL from zoom_invite
+        if (meeting.zoom_invite?.meeting_id) {
+          return `https://zoom.us/j/${meeting.zoom_invite.meeting_id}`;
+        }
+        
+        // Google Meet: Build URL from meet_invite
+        if (meeting.meet_invite?.meeting_code) {
+          return `https://meet.google.com/${meeting.meet_invite.meeting_code}`;
+        }
+        
+        // WebEx: Build URL from webex_invite
+        if (meeting.webex_invite?.meeting_link) {
+          return meeting.webex_invite.meeting_link;
+        }
+        
+        // GoTo Meeting: Build URL from goto_meeting_invite
+        if (meeting.goto_meeting_invite?.meeting_id) {
+          return `https://www.gotomeet.me/${meeting.goto_meeting_invite.meeting_id}`;
+        }
+        
+        // Fallback: Try to extract from description HTML
+        if (meeting.description) {
+          // Look for Teams meeting link
+          const teamsMatch = meeting.description.match(/href="(https:\/\/teams\.(microsoft|live)\.com\/[^"]+)"/);
+          if (teamsMatch) return teamsMatch[1];
+          
+          // Look for Zoom link
+          const zoomMatch = meeting.description.match(/href="(https:\/\/[\w.]*zoom\.us\/[^"]+)"/);
+          if (zoomMatch) return zoomMatch[1];
+          
+          // Look for Google Meet link
+          const meetMatch = meeting.description.match(/href="(https:\/\/meet\.google\.com\/[^"]+)"/);
+          if (meetMatch) return meetMatch[1];
+        }
+        
+        return null;
+      };
+
+      const meetings = (meetingsData.results || []).map((meeting: any) => {
+        const meetingUrl = extractMeetingUrl(meeting);
+        return {
+          id: meeting.id,
+          title: meeting.title || 'Untitled Meeting',
+          start_time: meeting.start_time,
+          end_time: meeting.end_time,
+          meeting_url: meetingUrl,
+          platform: meeting.meeting_platform || meeting.platform,
+          bot_id: meeting.bot_id,
+          will_record: meeting.will_record ?? (meeting.bot_id !== null),
+          override_should_record: meeting.override_should_record,
+          attendees: meeting.attendees || [],
+          organizer: meeting.organizer_email || meeting.organizer,
+          is_organizer: meeting.is_hosted_by_me ?? meeting.is_organizer,
+        };
+      });
 
       return new Response(
         JSON.stringify({ success: true, meetings }),
