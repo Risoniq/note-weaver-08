@@ -5,13 +5,46 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Helper: Authenticate user from request
+async function authenticateUser(req: Request): Promise<{ user: { id: string } | null; error?: string }> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return { user: null, error: 'Authorization header required' };
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  
+  if (authError || !user) {
+    console.error('[Auth] Authentication failed:', authError?.message);
+    return { user: null, error: 'Invalid or expired token' };
+  }
+
+  return { user: { id: user.id } };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // 1. Supabase Client & Secrets laden
+    // 1. Authenticate user
+    const { user, error: authError } = await authenticateUser(req);
+    if (!user) {
+      return new Response(
+        JSON.stringify({ error: authError || 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`[Auth] Authenticated user: ${user.id}`);
+
+    // 2. Supabase Client & Secrets laden
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     const supabase = createClient(supabaseUrl, supabaseKey)
@@ -19,11 +52,11 @@ Deno.serve(async (req) => {
     const recallApiKey = Deno.env.get('RECALL_API_KEY')
     const recallApiUrl = Deno.env.get('RECALL_API_URL') || 'https://us-west-2.recall.ai/api/v1/bot'
 
-    // 2. ID aus dem Request holen (vom Frontend gesendet)
+    // 3. ID aus dem Request holen (vom Frontend gesendet)
     const { id } = await req.json()
     console.log(`Sync-Recording aufgerufen für ID: ${id}`)
 
-    // 3. Datenbank-Eintrag holen, um die recall_bot_id zu bekommen
+    // 4. Datenbank-Eintrag holen, um die recall_bot_id zu bekommen
     const { data: recording, error: dbError } = await supabase
       .from('recordings')
       .select('*')
@@ -32,20 +65,38 @@ Deno.serve(async (req) => {
 
     if (dbError) {
       console.error('DB Fehler:', dbError)
-      throw new Error("Datenbankfehler beim Abrufen der Aufnahme.")
+      return new Response(
+        JSON.stringify({ error: 'Failed to fetch recording' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     if (!recording) {
-      throw new Error("Keine Aufnahme mit dieser ID gefunden.")
+      return new Response(
+        JSON.stringify({ error: 'Recording not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 5. Verify ownership - user can only sync their own recordings
+    if (recording.user_id && recording.user_id !== user.id) {
+      console.error(`[Auth] User ${user.id} tried to access recording owned by ${recording.user_id}`);
+      return new Response(
+        JSON.stringify({ error: 'Access denied' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     if (!recording.recall_bot_id) {
-      throw new Error("Keine Recall Bot ID in der Datenbank gefunden.")
+      return new Response(
+        JSON.stringify({ error: 'No bot associated with this recording' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     console.log(`Prüfe Status für Bot: ${recording.recall_bot_id}`)
 
-    // 4. Status bei Recall.ai abfragen
+    // 6. Status bei Recall.ai abfragen
     const response = await fetch(`${recallApiUrl}/${recording.recall_bot_id}`, {
       method: 'GET',
       headers: {
@@ -56,7 +107,10 @@ Deno.serve(async (req) => {
 
     if (!response.ok) {
       console.error('Recall API Fehler:', response.status, response.statusText)
-      throw new Error("Fehler beim Abruf von Recall.ai")
+      return new Response(
+        JSON.stringify({ error: 'Failed to fetch recording status' }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
     
     const botData = await response.json()
@@ -96,7 +150,7 @@ Deno.serve(async (req) => {
     
     console.log(`Bot Status (mapped): ${status}`)
 
-    // 5. Daten vorbereiten für Update
+    // 7. Daten vorbereiten für Update
     const updates: Record<string, unknown> = { status: status }
 
     // Wenn der Bot fertig ist ('done'), holen wir die Video- und Transkript-URLs sowie Teilnehmer
@@ -242,7 +296,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 7. Wenn fertig und Transkript vorhanden, automatisch Analyse starten
+    // 8. Wenn fertig und Transkript vorhanden, automatisch Analyse starten
     if (status === 'done' && updates.transcript_text) {
       console.log('Starte automatische Transkript-Analyse...')
       try {
@@ -265,7 +319,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 6. Datenbank aktualisieren
+    // 9. Datenbank aktualisieren
     const { error: updateError } = await supabase
       .from('recordings')
       .update(updates)
@@ -273,7 +327,10 @@ Deno.serve(async (req) => {
 
     if (updateError) {
       console.error('Update Fehler:', updateError)
-      throw new Error("Fehler beim Update der DB")
+      return new Response(
+        JSON.stringify({ error: 'Failed to update recording' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     console.log('Datenbank aktualisiert:', updates)
@@ -284,10 +341,9 @@ Deno.serve(async (req) => {
 
   } catch (error: unknown) {
     console.error('Sync-Recording Fehler:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Unbekannter Fehler'
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return new Response(
+      JSON.stringify({ error: 'An error occurred processing your request' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 })

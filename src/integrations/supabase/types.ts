@@ -64,6 +64,7 @@ export type Database = {
           transcript_text: string | null
           transcript_url: string | null
           updated_at: string
+          user_id: string | null
           video_url: string | null
           word_count: number | null
         }
@@ -83,6 +84,7 @@ export type Database = {
           transcript_text?: string | null
           transcript_url?: string | null
           updated_at?: string
+          user_id?: string | null
           video_url?: string | null
           word_count?: number | null
         }
@@ -102,6 +104,7 @@ export type Database = {
           transcript_text?: string | null
           transcript_url?: string | null
           updated_at?: string
+          user_id?: string | null
           video_url?: string | null
           word_count?: number | null
         }
