@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,11 +9,33 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, Mic, Lock, Mail, ArrowLeft } from 'lucide-react';
+import { Loader2, Mic, Lock, Mail, Check, X } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
 
-const authSchema = z.object({
+// Password requirements for signup
+const passwordRequirements = [
+  { id: 'length', label: 'Mindestens 8 Zeichen', test: (pw: string) => pw.length >= 8 },
+  { id: 'uppercase', label: 'Ein Großbuchstabe', test: (pw: string) => /[A-Z]/.test(pw) },
+  { id: 'lowercase', label: 'Ein Kleinbuchstabe', test: (pw: string) => /[a-z]/.test(pw) },
+  { id: 'number', label: 'Eine Zahl', test: (pw: string) => /[0-9]/.test(pw) },
+  { id: 'special', label: 'Ein Sonderzeichen (!@#$%^&*)', test: (pw: string) => /[!@#$%^&*(),.?":{}|<>]/.test(pw) },
+];
+
+// Login only needs basic validation
+const loginSchema = z.object({
   email: z.string().trim().email({ message: 'Ungültige E-Mail-Adresse' }),
-  password: z.string().min(6, { message: 'Passwort muss mindestens 6 Zeichen haben' }),
+  password: z.string().min(1, { message: 'Passwort erforderlich' }),
+});
+
+// Signup requires strong password
+const signupSchema = z.object({
+  email: z.string().trim().email({ message: 'Ungültige E-Mail-Adresse' }),
+  password: z.string()
+    .min(8, { message: 'Passwort muss mindestens 8 Zeichen haben' })
+    .regex(/[A-Z]/, { message: 'Passwort muss einen Großbuchstaben enthalten' })
+    .regex(/[a-z]/, { message: 'Passwort muss einen Kleinbuchstaben enthalten' })
+    .regex(/[0-9]/, { message: 'Passwort muss eine Zahl enthalten' })
+    .regex(/[!@#$%^&*(),.?":{}|<>]/, { message: 'Passwort muss ein Sonderzeichen enthalten' }),
 });
 
 const emailSchema = z.string().trim().email({ message: 'Ungültige E-Mail-Adresse' });
@@ -40,8 +62,38 @@ export default function Auth() {
     }
   }, [isAuthenticated, loading, navigate, from]);
 
-  const validateForm = () => {
-    const result = authSchema.safeParse({ email, password });
+  // Calculate password strength for visual indicator
+  const passwordStrength = useMemo(() => {
+    const passed = passwordRequirements.filter(req => req.test(password)).length;
+    return {
+      score: passed,
+      percentage: (passed / passwordRequirements.length) * 100,
+      requirements: passwordRequirements.map(req => ({
+        ...req,
+        passed: req.test(password)
+      }))
+    };
+  }, [password]);
+
+  const getStrengthColor = (percentage: number) => {
+    if (percentage <= 20) return 'bg-destructive';
+    if (percentage <= 40) return 'bg-orange-500';
+    if (percentage <= 60) return 'bg-yellow-500';
+    if (percentage <= 80) return 'bg-lime-500';
+    return 'bg-green-500';
+  };
+
+  const getStrengthLabel = (percentage: number) => {
+    if (percentage <= 20) return 'Sehr schwach';
+    if (percentage <= 40) return 'Schwach';
+    if (percentage <= 60) return 'Mittel';
+    if (percentage <= 80) return 'Stark';
+    return 'Sehr stark';
+  };
+
+  const validateForm = (isSignup: boolean) => {
+    const schema = isSignup ? signupSchema : loginSchema;
+    const result = schema.safeParse({ email, password });
     if (!result.success) {
       const fieldErrors: { email?: string; password?: string } = {};
       result.error.issues.forEach((issue) => {
@@ -57,7 +109,7 @@ export default function Auth() {
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    if (!validateForm(false)) return;
     
     setIsSubmitting(true);
     const { error } = await signIn(email, password);
@@ -82,7 +134,7 @@ export default function Auth() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    if (!validateForm(true)) return;
     
     setIsSubmitting(true);
     const { error } = await signUp(email, password);
@@ -304,6 +356,44 @@ export default function Auth() {
                     </div>
                     {errors.password && (
                       <p className="text-sm text-destructive">{errors.password}</p>
+                    )}
+                    
+                    {/* Password strength indicator */}
+                    {password.length > 0 && (
+                      <div className="space-y-2 mt-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Passwortstärke:</span>
+                          <span className={`font-medium ${
+                            passwordStrength.percentage <= 40 ? 'text-destructive' : 
+                            passwordStrength.percentage <= 60 ? 'text-yellow-600' : 
+                            'text-green-600'
+                          }`}>
+                            {getStrengthLabel(passwordStrength.percentage)}
+                          </span>
+                        </div>
+                        <Progress 
+                          value={passwordStrength.percentage} 
+                          className="h-1.5"
+                          indicatorClassName={getStrengthColor(passwordStrength.percentage)}
+                        />
+                        <ul className="space-y-1 mt-2">
+                          {passwordStrength.requirements.map(req => (
+                            <li 
+                              key={req.id} 
+                              className={`flex items-center gap-2 text-xs ${
+                                req.passed ? 'text-green-600' : 'text-muted-foreground'
+                              }`}
+                            >
+                              {req.passed ? (
+                                <Check className="h-3 w-3" />
+                              ) : (
+                                <X className="h-3 w-3" />
+                              )}
+                              {req.label}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
                   <Button type="submit" className="w-full" disabled={isSubmitting}>
