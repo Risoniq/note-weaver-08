@@ -139,9 +139,15 @@ serve(async (req) => {
 1. Einen kurzen Titel für das Meeting (max 50 Zeichen)
 2. Eine prägnante Zusammenfassung (2-3 Sätze)
 3. Die 3-5 wichtigsten Punkte als Liste
-4. Konkrete Action Items mit Verantwortlichen (falls erwähnt)
+4. Konkrete Action Items mit Verantwortlichen
 
-WICHTIGE REGELN:
+WICHTIGE REGELN FÜR ACTION ITEMS:
+- Extrahiere die Namen der verantwortlichen Personen DIREKT aus dem Transkript (z.B. "Speaker 1", "Max", "Anna", etc.)
+- Wenn eine Person eine Aufgabe übernimmt oder zugewiesen bekommt, nutze deren Namen aus dem Transkript
+- Wenn im Transkript keine konkrete Person genannt wird, die die Aufgabe übernimmt, schreibe "Verantwortlicher: Nicht zugewiesen" statt "Unbekannt"
+- Format für Action Items: "Aufgabenbeschreibung (Verantwortlicher: [Name aus Transkript])"
+
+WEITERE REGELN:
 - Schreibe IMMER professionell und freundlich
 - Verwende KEINE Markdown-Formatierung (keine Sterne *, keine Unterstriche _)
 - Übernimme NIEMALS Schimpfwörter, Beleidigungen oder unangemessene Sprache - formuliere diese neutral um
@@ -153,7 +159,7 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
   "title": "Meeting-Titel",
   "summary": "Zusammenfassung des Meetings...",
   "key_points": ["Punkt 1", "Punkt 2", "Punkt 3"],
-  "action_items": ["Action Item 1", "Action Item 2"]
+  "action_items": ["Aufgabe (Verantwortlicher: Name)", "Aufgabe (Verantwortlicher: Nicht zugewiesen)"]
 }`;
 
     console.log('Calling Lovable AI for analysis...');
