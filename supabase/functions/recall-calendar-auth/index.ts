@@ -94,6 +94,39 @@ serve(async (req) => {
       }
 
       console.log('Created new Recall user:', recallUserId);
+      
+      // Sync default recording preferences to Recall.ai for new users
+      const defaultRecallPreferences = {
+        record_non_host: true,
+        record_recurring: true,
+        record_external: true,
+        record_internal: true,
+        record_confirmed: true,
+        record_only_host: false,
+      };
+
+      console.log('Setting default preferences for new Recall user:', defaultRecallPreferences);
+
+      try {
+        const prefsResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(defaultRecallPreferences),
+        });
+
+        if (!prefsResponse.ok) {
+          const errorText = await prefsResponse.text();
+          console.error('Failed to set default preferences:', prefsResponse.status, errorText);
+        } else {
+          console.log('Default preferences set successfully for new user');
+        }
+      } catch (prefError) {
+        console.error('Error setting default preferences:', prefError);
+      }
+
       return { recallUserId, isNew: true };
     }
 

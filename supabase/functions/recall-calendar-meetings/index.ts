@@ -207,6 +207,38 @@ serve(async (req) => {
         throw new Error('Failed to update preferences');
       }
 
+      // Sync preferences to Recall.ai
+      const recallUserId = await getRecallUserId(supabaseUserId);
+      if (recallUserId) {
+        const recallPreferences = {
+          record_non_host: newPrefs.record_all ?? true,
+          record_recurring: true,
+          record_external: newPrefs.record_external ?? true,
+          record_internal: true,
+          record_confirmed: true,
+          record_only_host: newPrefs.record_only_owned ?? false,
+        };
+
+        console.log('Syncing preferences to Recall.ai:', recallPreferences);
+
+        const recallResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(recallPreferences),
+        });
+
+        if (!recallResponse.ok) {
+          const errorText = await recallResponse.text();
+          console.error('Failed to sync preferences to Recall.ai:', recallResponse.status, errorText);
+          // Don't throw - we still saved locally
+        } else {
+          console.log('Preferences synced to Recall.ai successfully');
+        }
+      }
+
       return new Response(
         JSON.stringify({ success: true, preferences: newPrefs }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
