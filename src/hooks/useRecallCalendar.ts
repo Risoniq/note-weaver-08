@@ -234,37 +234,27 @@ export function useRecallCalendar() {
       return;
     }
 
-    // In the Lovable preview, the app runs inside an iframe. Many providers (incl. Recall.ai)
-    // refuse to be embedded, which triggers ERR_BLOCKED_BY_RESPONSE.
-    // So: never navigate the current window; prefer a user-clicked new tab.
-    const isInIframe = (() => {
-      try {
-        return window.self !== window.top;
-      } catch {
-        return true;
-      }
-    })();
-
+    // Always try to open a popup - modern browsers allow this on user interaction
+    // even when inside an iframe. The popup blocking check happens afterward.
     const width = 600;
     const height = 700;
     const left = window.screenX + (window.outerWidth - width) / 2;
     const top = window.screenY + (window.outerHeight - height) / 2;
     const popupName = `recall-calendar-oauth-${provider}`;
 
-    const popup = isInIframe
-      ? null
-      : window.open(
-          'about:blank',
-          popupName,
-          `width=${width},height=${height},left=${left},top=${top},popup=1`
-        );
+    // Open popup synchronously on user click to avoid popup blockers
+    const popup = window.open(
+      'about:blank',
+      popupName,
+      `width=${width},height=${height},left=${left},top=${top},popup=1`
+    );
 
     if (popup) {
       try {
         popup.document.title = 'Kalender verbinden…';
         popup.document.body.innerHTML = '<p style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 16px;">Lade Anmeldung…</p>';
       } catch {
-        // ignore
+        // ignore - cross-origin restrictions may apply
       }
     }
 
