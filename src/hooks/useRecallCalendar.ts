@@ -38,6 +38,8 @@ export function useRecallCalendar() {
   const [microsoftConnected, setMicrosoftConnected] = useState(false);
   const [needsRepair, setNeedsRepair] = useState(false);
   const [recallUserId, setRecallUserId] = useState<string | null>(null);
+  const [pendingOauthUrl, setPendingOauthUrl] = useState<string | null>(null);
+  const [pendingOauthProvider, setPendingOauthProvider] = useState<'google' | 'microsoft' | null>(null);
   const [preferences, setPreferences] = useState<RecordingPreferences>({
     record_all: true,
     record_only_owned: false,
@@ -181,146 +183,200 @@ export function useRecallCalendar() {
     }
   }, [authUser?.id, authUser?.email]);
 
+
+  const fetchMeetings = useCallback(async () => {
+    if (!authUser?.id) return;
+
+    try {
+      setIsLoading(true);
+      setMeetingsError(null);
+      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-meetings', {
+        body: { action: 'list', supabase_user_id: authUser.id },
+      });
+
+      if (funcError) throw funcError;
+
+      if (data.success) {
+        setMeetings(data.meetings || []);
+        setMeetingsError(null);
+      } else {
+        const errorMsg = data.error || '';
+        let friendlyError = 'Meetings konnten nicht geladen werden.';
+
+        if (errorMsg.includes('not_authenticated') || errorMsg.includes('credentials')) {
+          friendlyError = 'Die Kalender-Verbindung muss möglicherweise erneuert werden.';
+        } else if (errorMsg.includes('network') || errorMsg.includes('fetch')) {
+          friendlyError = 'Verbindung zum Server fehlgeschlagen.';
+        }
+
+        setMeetingsError(friendlyError);
+      }
+    } catch (err: any) {
+      console.error('Error fetching meetings:', err);
+      const errorMsg = err.message || '';
+      let friendlyError = 'Meetings konnten nicht geladen werden.';
+
+      if (errorMsg.includes('not_authenticated') || errorMsg.includes('credentials')) {
+        friendlyError = 'Die Kalender-Verbindung muss möglicherweise erneuert werden.';
+      } else if (errorMsg.includes('network') || errorMsg.includes('fetch') || errorMsg.includes('Failed to fetch')) {
+        friendlyError = 'Verbindung zum Server fehlgeschlagen.';
+      }
+
+      setMeetingsError(friendlyError);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [authUser?.id]);
+
   const connect = useCallback(async (provider: 'google' | 'microsoft' = 'google') => {
     if (!authUser?.id) {
       toast.error('Du musst angemeldet sein, um deinen Kalender zu verbinden.');
       return;
     }
 
+    // In the Lovable preview, the app runs inside an iframe. Many providers (incl. Recall.ai)
+    // refuse to be embedded, which triggers ERR_BLOCKED_BY_RESPONSE.
+    // So: never navigate the current window; prefer a user-clicked new tab.
+    const isInIframe = (() => {
+      try {
+        return window.self !== window.top;
+      } catch {
+        return true;
+      }
+    })();
+
+    const width = 600;
+    const height = 700;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+    const popupName = `recall-calendar-oauth-${provider}`;
+
+    const popup = isInIframe
+      ? null
+      : window.open(
+          'about:blank',
+          popupName,
+          `width=${width},height=${height},left=${left},top=${top},popup=1`
+        );
+
+    if (popup) {
+      try {
+        popup.document.title = 'Kalender verbinden…';
+        popup.document.body.innerHTML = '<p style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 16px;">Lade Anmeldung…</p>';
+      } catch {
+        // ignore
+      }
+    }
+
     try {
       setIsLoading(true);
       setStatus('connecting');
       setError(null);
+      setPendingOauthUrl(null);
+      setPendingOauthProvider(null);
 
       // Build redirect URI for callback
       const redirectUri = `${window.location.origin}/calendar-callback`;
 
       const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-auth', {
-        body: { 
-          action: 'authenticate', 
+        body: {
+          action: 'authenticate',
           supabase_user_id: authUser.id,
           user_email: authUser.email,
-          provider, 
-          redirect_uri: redirectUri 
+          provider,
+          redirect_uri: redirectUri,
         },
       });
 
       if (funcError) throw funcError;
 
       if (data.success && data.oauth_url) {
-        // For Microsoft: Open in popup window (same as Google)
-        if (provider === 'microsoft') {
-          sessionStorage.setItem('recall_oauth_provider', 'microsoft');
-          
-          // Open in centered popup window
-          const width = 600;
-          const height = 700;
-          const left = window.screenX + (window.outerWidth - width) / 2;
-          const top = window.screenY + (window.outerHeight - height) / 2;
-          
-          const popup = window.open(
-            data.oauth_url,
-            'recall-calendar-oauth-microsoft',
-            `width=${width},height=${height},left=${left},top=${top},popup=1`
-          );
-          
-          if (!popup) {
-            // Fallback: Try direct redirect if popup is blocked
-            toast.info('Popup wurde blockiert, leite weiter...');
-            window.location.href = data.oauth_url;
-            return;
-          }
-          
-          // Show helpful message with longer duration
-          toast.info(
-            'Microsoft Login geöffnet. Schließe das Fenster nach der Anmeldung - die Verbindung wird automatisch erkannt.',
-            { duration: 15000 }
-          );
-          
+        // If popup was blocked, show a manual "Open" button in the UI.
+        if (!popup) {
+          setPendingOauthUrl(data.oauth_url);
+          setPendingOauthProvider(provider);
+          toast.error('Popup wurde blockiert. Bitte öffne die Anmeldung manuell.');
           setIsLoading(false);
-          setStatus('connecting');
-          
-          // Enhanced polling - check every 2 seconds for up to 5 minutes
-          let pollCount = 0;
-          const maxPolls = 150; // 5 minutes at 2 second intervals
-          
-          const pollForConnection = setInterval(async () => {
-            pollCount++;
-            
-            try {
-              const { data: statusData } = await supabase.functions.invoke('recall-calendar-auth', {
-                body: { 
-                  action: 'status', 
-                  supabase_user_id: authUser.id,
-                  user_email: authUser.email 
-                },
-              });
-              
-              if (statusData?.microsoft_connected) {
-                clearInterval(pollForConnection);
-                setMicrosoftConnected(true);
-                setStatus('connected');
-                toast.success('Microsoft Kalender erfolgreich verbunden!');
-                await fetchMeetings();
-              }
-            } catch (err) {
-              console.error('Polling error:', err);
-            }
-            
-            if (pollCount >= maxPolls) {
-              clearInterval(pollForConnection);
-              setStatus('disconnected');
-            }
-          }, 2000);
-          
           return;
         }
 
-        // For Google: Try popup first, fallback to redirect
-        const width = 600;
-        const height = 700;
-        const left = window.screenX + (window.outerWidth - width) / 2;
-        const top = window.screenY + (window.outerHeight - height) / 2;
+        sessionStorage.setItem('recall_oauth_provider', provider);
 
-        const popup = window.open(
-          data.oauth_url,
-          `recall-calendar-oauth-${provider}`,
-          `width=${width},height=${height},left=${left},top=${top},popup=1`
+        try {
+          popup.location.href = data.oauth_url;
+        } catch (navErr) {
+          console.error('Could not navigate popup:', navErr);
+          setPendingOauthUrl(data.oauth_url);
+          setPendingOauthProvider(provider);
+          toast.error('Konnte Popup nicht navigieren. Bitte öffne die Anmeldung manuell.');
+          setIsLoading(false);
+          return;
+        }
+
+        toast.info(
+          `${provider === 'microsoft' ? 'Microsoft' : 'Google'} Login geöffnet. Schließe das Fenster nach der Anmeldung – die Verbindung wird automatisch erkannt.`,
+          { duration: 15000 }
         );
 
-        if (!popup) {
-          // Fallback to redirect flow if popup is blocked
-          sessionStorage.setItem('recall_oauth_provider', 'google');
-          window.location.href = data.oauth_url;
-          return;
-        }
+        setIsLoading(false);
+        setStatus('connecting');
 
-        // Poll for popup close
-        const pollTimer = setInterval(async () => {
-          if (popup?.closed) {
-            clearInterval(pollTimer);
-            // Check status after popup closes
-            await checkStatus();
-          }
-        }, 500);
+        // Poll for connection status until connected or timeout
+        let pollCount = 0;
+        const maxPolls = 150; // 5 minutes at 2s
 
-        // Timeout after 5 minutes
-        setTimeout(() => {
-          clearInterval(pollTimer);
-          if (!popup?.closed) {
-            popup?.close();
+        const pollForConnection = setInterval(async () => {
+          pollCount++;
+
+          try {
+            const { data: statusData } = await supabase.functions.invoke('recall-calendar-auth', {
+              body: {
+                action: 'status',
+                supabase_user_id: authUser.id,
+                user_email: authUser.email,
+              },
+            });
+
+            if (statusData?.success) {
+              setGoogleConnected(statusData.google_connected);
+              setMicrosoftConnected(statusData.microsoft_connected);
+              setNeedsRepair(statusData.needs_repair || false);
+              setRecallUserId(statusData.recall_user_id || null);
+
+              const connectedNow = Boolean(statusData.google_connected || statusData.microsoft_connected);
+              if (connectedNow) {
+                clearInterval(pollForConnection);
+                setPendingOauthUrl(null);
+                setPendingOauthProvider(null);
+                setStatus('connected');
+                toast.success('Kalender erfolgreich verbunden!');
+                await fetchMeetings();
+              }
+            }
+          } catch (err) {
+            console.error('Polling error:', err);
           }
-          setStatus(googleConnected || microsoftConnected ? 'connected' : 'disconnected');
-          setIsLoading(false);
-        }, 300000);
+
+          if (pollCount >= maxPolls) {
+            clearInterval(pollForConnection);
+            setStatus('disconnected');
+          }
+        }, 2000);
+
+        return;
       }
     } catch (err: any) {
       console.error('Error connecting:', err);
       setError(err.message || 'Fehler beim Verbinden');
       setStatus('error');
       setIsLoading(false);
+      try {
+        popup?.close();
+      } catch {
+        // ignore
+      }
     }
-  }, [authUser?.id, authUser?.email, checkStatus, googleConnected, microsoftConnected]);
+  }, [authUser?.id, authUser?.email, fetchMeetings]);
 
   const repairConnection = useCallback(async (targetRecallUserId: string) => {
     if (!authUser?.id) return false;
@@ -397,51 +453,7 @@ export function useRecallCalendar() {
   const disconnectGoogle = useCallback(() => disconnectProvider('google'), [disconnectProvider]);
   const disconnectMicrosoft = useCallback(() => disconnectProvider('microsoft'), [disconnectProvider]);
 
-  const fetchMeetings = useCallback(async () => {
-    if (!authUser?.id) return;
 
-    try {
-      setIsLoading(true);
-      setMeetingsError(null);
-      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-meetings', {
-        body: { action: 'list', supabase_user_id: authUser.id },
-      });
-
-      if (funcError) throw funcError;
-
-      if (data.success) {
-        setMeetings(data.meetings || []);
-        setMeetingsError(null);
-      } else {
-        // Translate error to user-friendly message
-        const errorMsg = data.error || '';
-        let friendlyError = 'Meetings konnten nicht geladen werden.';
-        
-        if (errorMsg.includes('not_authenticated') || errorMsg.includes('credentials')) {
-          friendlyError = 'Die Kalender-Verbindung muss möglicherweise erneuert werden.';
-        } else if (errorMsg.includes('network') || errorMsg.includes('fetch')) {
-          friendlyError = 'Verbindung zum Server fehlgeschlagen.';
-        }
-        
-        setMeetingsError(friendlyError);
-      }
-    } catch (err: any) {
-      console.error('Error fetching meetings:', err);
-      // Translate error to user-friendly message
-      const errorMsg = err.message || '';
-      let friendlyError = 'Meetings konnten nicht geladen werden.';
-      
-      if (errorMsg.includes('not_authenticated') || errorMsg.includes('credentials')) {
-        friendlyError = 'Die Kalender-Verbindung muss möglicherweise erneuert werden.';
-      } else if (errorMsg.includes('network') || errorMsg.includes('fetch') || errorMsg.includes('Failed to fetch')) {
-        friendlyError = 'Verbindung zum Server fehlgeschlagen.';
-      }
-      
-      setMeetingsError(friendlyError);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [authUser?.id]);
 
   const updateMeetingRecording = useCallback(async (meetingId: string, shouldRecord: boolean) => {
     if (!authUser?.id) return;
@@ -498,6 +510,29 @@ export function useRecallCalendar() {
       toast.error('Fehler beim Speichern der Einstellungen');
     }
   }, [authUser?.id]);
+
+  return {
+    status,
+    isLoading,
+    error,
+    meetingsError,
+    meetings,
+    googleConnected,
+    microsoftConnected,
+    preferences,
+    needsRepair,
+    recallUserId,
+    pendingOauthUrl,
+    pendingOauthProvider,
+    connect,
+    disconnectGoogle,
+    disconnectMicrosoft,
+    checkStatus,
+    fetchMeetings,
+    updateMeetingRecording,
+    updatePreferences,
+    repairConnection,
+  };
 
   return {
     status,

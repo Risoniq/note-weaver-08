@@ -17,6 +17,8 @@ interface RecallCalendarConnectionProps {
   isLoading: boolean;
   needsRepair?: boolean;
   recallUserId?: string | null;
+  pendingOauthUrl?: string | null;
+  pendingOauthProvider?: 'google' | 'microsoft' | null;
 }
 
 // Microsoft icon component
@@ -142,6 +144,8 @@ export const RecallCalendarConnection = ({
   isLoading,
   needsRepair,
   recallUserId,
+  pendingOauthUrl,
+  pendingOauthProvider,
 }: RecallCalendarConnectionProps) => {
   const isConnecting = status === 'connecting';
   const isSyncing = status === 'syncing';
@@ -178,21 +182,38 @@ export const RecallCalendarConnection = ({
 
       {/* Show manual check button when connecting (polling in progress) */}
       {isConnecting && (
-        <div className="p-3 bg-blue-500/10 rounded-lg flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <RefreshCw size={16} className="text-blue-500 animate-spin" />
-            <p className="text-sm text-blue-600 dark:text-blue-400">
-              Warte auf Anmeldung... Schließe das Fenster nach dem Login.
-            </p>
+        <div className="p-3 bg-blue-500/10 rounded-lg flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <RefreshCw size={16} className="text-blue-500 animate-spin" />
+              <p className="text-sm text-blue-600 dark:text-blue-400">
+                Warte auf Anmeldung... Schließe das Fenster nach dem Login.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onCheckStatus}
+              disabled={isLoading}
+            >
+              Status prüfen
+            </Button>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={onCheckStatus}
-            disabled={isLoading}
-          >
-            Status prüfen
-          </Button>
+
+          {pendingOauthUrl && (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-blue-600/90 dark:text-blue-400/90">
+                Popup blockiert? Öffne die Anmeldung manuell.
+              </p>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => window.open(pendingOauthUrl, '_blank', 'noopener,noreferrer')}
+              >
+                {pendingOauthProvider === 'microsoft' ? 'Microsoft Login öffnen' : 'Google Login öffnen'}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

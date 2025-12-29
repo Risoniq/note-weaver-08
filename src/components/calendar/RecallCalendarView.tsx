@@ -19,6 +19,8 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
     preferences,
     needsRepair,
     recallUserId,
+    pendingOauthUrl,
+    pendingOauthProvider,
     connect,
     disconnectGoogle,
     disconnectMicrosoft,
@@ -42,6 +44,8 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
         error={error}
         googleConnected={googleConnected}
         microsoftConnected={microsoftConnected}
+        pendingOauthUrl={pendingOauthUrl}
+        pendingOauthProvider={pendingOauthProvider}
         onConnectGoogle={() => connect('google')}
         onConnectMicrosoft={() => connect('microsoft')}
         onDisconnectGoogle={disconnectGoogle}
