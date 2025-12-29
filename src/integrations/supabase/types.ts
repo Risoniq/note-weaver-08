@@ -22,7 +22,7 @@ export type Database = {
           microsoft_connected: boolean
           recall_user_id: string
           recording_preferences: Json | null
-          supabase_user_id: string | null
+          supabase_user_id: string
           updated_at: string
         }
         Insert: {
@@ -32,7 +32,7 @@ export type Database = {
           microsoft_connected?: boolean
           recall_user_id: string
           recording_preferences?: Json | null
-          supabase_user_id?: string | null
+          supabase_user_id: string
           updated_at?: string
         }
         Update: {
@@ -42,7 +42,7 @@ export type Database = {
           microsoft_connected?: boolean
           recall_user_id?: string
           recording_preferences?: Json | null
-          supabase_user_id?: string | null
+          supabase_user_id?: string
           updated_at?: string
         }
         Relationships: []
