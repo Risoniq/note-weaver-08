@@ -6,6 +6,83 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Validate meeting URL - only allow known meeting platforms
+function validateMeetingUrl(url: string): { valid: boolean; error?: string } {
+  try {
+    const parsed = new URL(url);
+    
+    // Only allow HTTPS
+    if (parsed.protocol !== 'https:') {
+      return { valid: false, error: 'Only HTTPS URLs are allowed' };
+    }
+    
+    // Whitelist known meeting platforms
+    const allowedHosts = [
+      'zoom.us',
+      'us02web.zoom.us',
+      'us04web.zoom.us',
+      'us05web.zoom.us',
+      'us06web.zoom.us',
+      'teams.microsoft.com',
+      'teams.live.com',
+      'meet.google.com',
+      'webex.com',
+      'bluejeans.com',
+      'gotomeeting.com',
+      'whereby.com',
+    ];
+    
+    const isAllowed = allowedHosts.some(host => 
+      parsed.hostname === host || 
+      parsed.hostname.endsWith('.' + host)
+    );
+    
+    if (!isAllowed) {
+      return { valid: false, error: 'URL must be from a supported meeting platform (Zoom, Teams, Google Meet, etc.)' };
+    }
+    
+    // Prevent private IP ranges
+    const privateIpPattern = /^(localhost|127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)/;
+    if (privateIpPattern.test(parsed.hostname)) {
+      return { valid: false, error: 'Private IP addresses are not allowed' };
+    }
+    
+    return { valid: true };
+  } catch {
+    return { valid: false, error: 'Invalid URL format' };
+  }
+}
+
+// Validate avatar URL - only allow Supabase storage URLs
+function validateAvatarUrl(url: string): boolean {
+  if (!url) return true; // Optional field
+  
+  try {
+    const parsed = new URL(url);
+    
+    // Only allow HTTPS
+    if (parsed.protocol !== 'https:') return false;
+    
+    // Only allow Supabase storage URLs
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    if (supabaseUrl && parsed.origin === supabaseUrl) {
+      return true;
+    }
+    
+    // Also allow common CDNs and image services
+    const allowedHosts = [
+      'supabase.co',
+      'supabase.com',
+    ];
+    
+    return allowedHosts.some(host => 
+      parsed.hostname.endsWith('.' + host)
+    );
+  } catch {
+    return false;
+  }
+}
+
 // Funktion um ein Bild von einer URL zu laden und als Base64 zu konvertieren
 async function fetchImageAsBase64(imageUrl: string): Promise<string | null> {
   try {
@@ -29,6 +106,28 @@ async function fetchImageAsBase64(imageUrl: string): Promise<string | null> {
   }
 }
 
+// Helper: Authenticate user from request
+async function authenticateUser(req: Request): Promise<{ user: { id: string; email?: string } | null; error?: string }> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return { user: null, error: 'Authorization header required' };
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  
+  if (authError || !user) {
+    console.error('[Auth] Authentication failed:', authError?.message);
+    return { user: null, error: 'Invalid or expired token' };
+  }
+
+  return { user: { id: user.id, email: user.email } };
+}
+
 Deno.serve(async (req) => {
   // CORS Preflight
   if (req.method === "OPTIONS") {
@@ -36,7 +135,18 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // 1. Daten vom Frontend holen
+    // 1. Authenticate user
+    const { user, error: authError } = await authenticateUser(req);
+    if (!user) {
+      return new Response(
+        JSON.stringify({ error: authError || 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`[Auth] Authenticated user: ${user.id}`);
+
+    // 2. Daten vom Frontend holen
     const { meetingUrl, botName, botAvatarUrl } = await req.json();
 
     if (!meetingUrl) {
@@ -46,17 +156,40 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 2. Supabase Client initialisieren
+    // 3. Validate meeting URL
+    const urlValidation = validateMeetingUrl(meetingUrl);
+    if (!urlValidation.valid) {
+      console.error(`[Validation] Invalid meeting URL: ${urlValidation.error}`);
+      return new Response(
+        JSON.stringify({ error: urlValidation.error }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // 4. Validate avatar URL if provided
+    if (botAvatarUrl && !validateAvatarUrl(botAvatarUrl)) {
+      console.error(`[Validation] Invalid avatar URL`);
+      return new Response(
+        JSON.stringify({ error: "Invalid avatar URL. Only Supabase storage URLs are allowed." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // 5. Supabase Client initialisieren (Service Role for DB writes)
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 3. Recall API Konfiguration laden
+    // 6. Recall API Konfiguration laden
     const recallApiKey = Deno.env.get("RECALL_API_KEY");
     const recallApiUrl = Deno.env.get("RECALL_API_URL") || "https://us-west-2.recall.ai/api/v1/bot";
 
     if (!recallApiKey) {
-      throw new Error("RECALL_API_KEY ist nicht gesetzt");
+      console.error('[Config] RECALL_API_KEY is not set');
+      return new Response(
+        JSON.stringify({ error: "Service configuration error" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const finalBotName = botName || "Notetaker Bot";
@@ -64,7 +197,7 @@ Deno.serve(async (req) => {
     console.log(`[Recall] Bot Name: ${finalBotName}`);
     console.log(`[Recall] Bot Avatar URL: ${botAvatarUrl || "nicht gesetzt"}`);
 
-    // 4. Bot-Konfiguration erstellen
+    // 7. Bot-Konfiguration erstellen
     const botConfig: Record<string, unknown> = {
       meeting_url: meetingUrl,
       bot_name: finalBotName,
@@ -115,7 +248,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 5. Bot bei Recall.ai erstellen
+    // 8. Bot bei Recall.ai erstellen
     const recallResponse = await fetch(recallApiUrl, {
       method: "POST",
       headers: {
@@ -128,16 +261,19 @@ Deno.serve(async (req) => {
     if (!recallResponse.ok) {
       const errorText = await recallResponse.text();
       console.error("[Recall] API Fehler:", errorText);
-      throw new Error(`Recall API Fehler: ${recallResponse.status} - ${errorText}`);
+      return new Response(
+        JSON.stringify({ error: "Failed to create meeting bot" }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const botData = await recallResponse.json();
     console.log(`[Recall] Bot erstellt. ID: ${botData.id}`);
 
-    // 5. Generiere eine meeting_id (NOT NULL constraint)
+    // 9. Generiere eine meeting_id (NOT NULL constraint)
     const meetingId = crypto.randomUUID();
 
-    // 6. Bot-Daten in Supabase speichern
+    // 10. Bot-Daten in Supabase speichern mit user_id
     const { data: dbData, error: dbError } = await supabase
       .from("recordings")
       .insert({
@@ -145,18 +281,22 @@ Deno.serve(async (req) => {
         meeting_url: meetingUrl,
         recall_bot_id: botData.id,
         status: "joining",
+        user_id: user.id, // Associate recording with authenticated user
       })
       .select()
       .single();
 
     if (dbError) {
       console.error("[Supabase] DB Fehler:", dbError);
-      throw new Error(`Datenbank Fehler: ${dbError.message}`);
+      return new Response(
+        JSON.stringify({ error: "Failed to save recording" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     console.log(`[Supabase] Recording erstellt: ${dbData.id}`);
 
-    // 7. Erfolgsmeldung zurück ans Frontend
+    // 11. Erfolgsmeldung zurück ans Frontend
     return new Response(
       JSON.stringify({
         success: true,
@@ -168,10 +308,9 @@ Deno.serve(async (req) => {
     );
   } catch (error: unknown) {
     console.error("[create-bot] Fehler:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unbekannter Fehler";
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ error: "An error occurred processing your request" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

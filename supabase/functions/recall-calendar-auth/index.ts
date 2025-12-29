@@ -6,6 +6,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper: Authenticate user from request
+async function authenticateUser(req: Request): Promise<{ user: { id: string; email?: string } | null; error?: string }> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return { user: null, error: 'Authorization header required' };
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  
+  if (authError || !user) {
+    console.error('[Auth] Authentication failed:', authError?.message);
+    return { user: null, error: 'Invalid or expired token' };
+  }
+
+  return { user: { id: user.id, email: user.email || undefined } };
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -13,18 +35,44 @@ serve(async (req) => {
   }
 
   try {
+    // 1. Authenticate user first
+    const { user: authUser, error: authError } = await authenticateUser(req);
+    if (!authUser) {
+      return new Response(
+        JSON.stringify({ success: false, error: authError || 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`[Auth] Authenticated user: ${authUser.id}`);
+
     const RECALL_API_KEY = Deno.env.get('RECALL_API_KEY');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!RECALL_API_KEY) {
-      throw new Error('RECALL_API_KEY is not configured');
+      return new Response(
+        JSON.stringify({ success: false, error: 'Service not configured' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const body = await req.json();
     const { action, supabase_user_id, user_email, provider, redirect_uri } = body;
-    const supabaseUserId = supabase_user_id || null;
-    const userEmail = user_email || null;
+    
+    // 2. Validate that supabase_user_id matches authenticated user
+    const providedUserId = supabase_user_id || null;
+    if (providedUserId && providedUserId !== authUser.id) {
+      console.error(`[Auth] User ID mismatch: provided ${providedUserId} vs authenticated ${authUser.id}`);
+      return new Response(
+        JSON.stringify({ success: false, error: 'User ID mismatch' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Use the authenticated user's ID
+    const supabaseUserId = authUser.id;
+    const userEmail = user_email || authUser.email || null;
     
     console.log('Calendar auth request:', { action, supabase_user_id: supabaseUserId, user_email: userEmail, provider, redirect_uri });
 
@@ -118,8 +166,7 @@ serve(async (req) => {
         });
 
         if (!prefsResponse.ok) {
-          const errorText = await prefsResponse.text();
-          console.error('Failed to set default preferences:', prefsResponse.status, errorText);
+          console.error('Failed to set default preferences:', prefsResponse.status);
         } else {
           console.log('Default preferences set successfully for new user');
         }
@@ -131,7 +178,7 @@ serve(async (req) => {
     }
 
     // Helper: Check connection status with Recall.ai for a given user ID
-    async function checkRecallConnections(recallUserId: string, authToken: string): Promise<{ google: boolean; microsoft: boolean; userData: any }> {
+    async function checkRecallConnections(recallUserId: string, authToken: string): Promise<{ google: boolean; microsoft: boolean; userData: unknown }> {
       const userResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${recallUserId}`, {
         method: 'GET',
         headers: {
@@ -145,8 +192,7 @@ serve(async (req) => {
         if (userResponse.status === 404) {
           return { google: false, microsoft: false, userData: null };
         }
-        const errorText = await userResponse.text();
-        console.error('Recall user status error:', userResponse.status, errorText);
+        console.error('Recall user status error:', userResponse.status);
         return { google: false, microsoft: false, userData: null };
       }
 
@@ -185,8 +231,7 @@ serve(async (req) => {
       });
 
       if (!authResponse.ok) {
-        const errorText = await authResponse.text();
-        console.error('Recall auth token error:', authResponse.status, errorText);
+        console.error('Recall auth token error:', authResponse.status);
         return null;
       }
 
@@ -196,10 +241,6 @@ serve(async (req) => {
 
     // New action: reset - delete old entry and create fresh one with email-based ID
     if (action === 'reset') {
-      if (!supabaseUserId) {
-        throw new Error('supabase_user_id is required for reset');
-      }
-
       console.log('Resetting calendar user for:', supabaseUserId, 'email:', userEmail);
 
       // Delete existing entry
@@ -226,7 +267,10 @@ serve(async (req) => {
 
       if (insertError) {
         console.error('Error creating fresh user:', insertError);
-        throw new Error('Failed to reset calendar user');
+        return new Response(
+          JSON.stringify({ success: false, error: 'Failed to reset calendar user' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
       console.log('Reset complete, new recall_user_id:', stableId);
@@ -242,10 +286,6 @@ serve(async (req) => {
     }
 
     if (action === 'authenticate') {
-      if (!supabaseUserId) {
-        throw new Error('supabase_user_id is required for authentication');
-      }
-
       // Check for mismatch and auto-reset if needed
       const stableId = getStableRecallUserId(userEmail, supabaseUserId);
       
@@ -283,13 +323,15 @@ serve(async (req) => {
       });
 
       if (!authResponse.ok) {
-        const errorText = await authResponse.text();
-        console.error('Recall auth error:', authResponse.status, errorText);
-        throw new Error(`Failed to get calendar auth token: ${errorText}`);
+        console.error('Recall auth error:', authResponse.status);
+        return new Response(
+          JSON.stringify({ success: false, error: 'Failed to get calendar auth token' }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
       const authData = await authResponse.json();
-      console.log('Recall auth response:', authData);
+      console.log('Recall auth response received');
 
       // Build the OAuth URL
       const recallRegion = 'us-west-2';
@@ -298,7 +340,10 @@ serve(async (req) => {
       if (provider === 'microsoft') {
         const msClientId = (Deno.env.get('MS_OAUTH_CLIENT_ID') || '').trim();
         if (!msClientId) {
-          throw new Error('MS_OAUTH_CLIENT_ID is not configured');
+          return new Response(
+            JSON.stringify({ success: false, error: 'Microsoft OAuth not configured' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
 
         const msScopes = 'offline_access openid email https://graph.microsoft.com/Calendars.Read';
@@ -306,8 +351,11 @@ serve(async (req) => {
 
         const looksLikeGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(msClientId);
         if (!looksLikeGuid) {
-          console.error('MS_OAUTH_CLIENT_ID does not look like a GUID:', msClientId);
-          throw new Error('Microsoft OAuth Client ID scheint ungültig zu sein (erwartet: Application (client) ID)');
+          console.error('MS_OAUTH_CLIENT_ID does not look like a GUID');
+          return new Response(
+            JSON.stringify({ success: false, error: 'Microsoft OAuth misconfigured' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
         
         const stateObj = {
@@ -326,7 +374,7 @@ serve(async (req) => {
           `&redirect_uri=${encodeURIComponent(msRedirectUri)}` +
           `&client_id=${encodeURIComponent(msClientId)}`;
           
-        console.log('Microsoft OAuth URL built with state:', stateObj);
+        console.log('Microsoft OAuth URL built');
       } else {
         const googleScopes = 'https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/userinfo.email';
         const googleRedirectUri = `https://${recallRegion}.recall.ai/api/v1/calendar/google_oauth_callback/`;
@@ -348,10 +396,10 @@ serve(async (req) => {
           `&redirect_uri=${encodeURIComponent(googleRedirectUri)}` +
           `&client_id=${Deno.env.get('GOOGLE_CLIENT_ID') || ''}`;
           
-        console.log('Google OAuth URL built with state:', stateObj);
+        console.log('Google OAuth URL built');
       }
       
-      console.log('Final OAuth URL:', oauthUrl);
+      console.log('OAuth URL ready');
 
       return new Response(
         JSON.stringify({
@@ -365,10 +413,6 @@ serve(async (req) => {
     }
 
     if (action === 'status') {
-      if (!supabaseUserId) {
-        throw new Error('supabase_user_id is required for status check');
-      }
-
       // Look up the Recall user ID for this Supabase user
       const { data: calendarUser, error: fetchError } = await supabase
         .from('recall_calendar_users')
@@ -447,13 +491,12 @@ serve(async (req) => {
 
     // New action: repair - try to find and link to an existing Recall user with connections
     if (action === 'repair') {
-      if (!supabaseUserId) {
-        throw new Error('supabase_user_id is required for repair');
-      }
-
       const targetRecallUserId = body.target_recall_user_id;
       if (!targetRecallUserId) {
-        throw new Error('target_recall_user_id is required for repair');
+        return new Response(
+          JSON.stringify({ success: false, error: 'target_recall_user_id is required for repair' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
       console.log('Attempting to repair connection:', { supabaseUserId, targetRecallUserId });
@@ -471,7 +514,7 @@ serve(async (req) => {
       }
 
       // Check if target has connections
-      const { google, microsoft, userData } = await checkRecallConnections(targetRecallUserId, authToken);
+      const { google, microsoft } = await checkRecallConnections(targetRecallUserId, authToken);
 
       if (!google && !microsoft) {
         return new Response(
@@ -519,8 +562,11 @@ serve(async (req) => {
     }
 
     if (action === 'disconnect_provider') {
-      if (!supabaseUserId || !provider) {
-        throw new Error('supabase_user_id and provider are required for disconnect_provider');
+      if (!provider) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'provider is required for disconnect_provider' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
       const { data: userData, error: fetchError } = await supabase
@@ -561,10 +607,6 @@ serve(async (req) => {
     }
 
     if (action === 'disconnect') {
-      if (!supabaseUserId) {
-        throw new Error('supabase_user_id is required for disconnect');
-      }
-
       const { data: calendarUser } = await supabase
         .from('recall_calendar_users')
         .select('recall_user_id')
@@ -584,8 +626,7 @@ serve(async (req) => {
           });
 
           if (!disconnectResponse.ok && disconnectResponse.status !== 404) {
-            const errorText = await disconnectResponse.text();
-            console.error('Recall disconnect error:', disconnectResponse.status, errorText);
+            console.error('Recall disconnect error:', disconnectResponse.status);
           }
         }
       }
@@ -608,12 +649,14 @@ serve(async (req) => {
       );
     }
 
-    throw new Error(`Unknown action: ${action}`);
+    return new Response(
+      JSON.stringify({ success: false, error: `Unknown action: ${action}` }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   } catch (error: unknown) {
     console.error('Calendar auth error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
-      JSON.stringify({ success: false, error: errorMessage }),
+      JSON.stringify({ success: false, error: 'An error occurred processing your request' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

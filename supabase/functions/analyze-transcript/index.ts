@@ -6,6 +6,35 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper: Authenticate user from request
+async function authenticateUser(req: Request): Promise<{ user: { id: string } | null; error?: string; isServiceRole?: boolean }> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return { user: null, error: 'Authorization header required' };
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  
+  // Check if this is a service role call (internal)
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (token === serviceRoleKey) {
+    return { user: { id: 'service-role' }, isServiceRole: true };
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  
+  if (authError || !user) {
+    console.error('[Auth] Authentication failed:', authError?.message);
+    return { user: null, error: 'Invalid or expired token' };
+  }
+
+  return { user: { id: user.id } };
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -13,6 +42,17 @@ serve(async (req) => {
   }
 
   try {
+    // 1. Authenticate user
+    const { user, error: authError, isServiceRole } = await authenticateUser(req);
+    if (!user) {
+      return new Response(
+        JSON.stringify({ error: authError || 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`[Auth] Authenticated: ${isServiceRole ? 'service-role' : user.id}`);
+
     const { recording_id } = await req.json();
     
     if (!recording_id) {
@@ -25,7 +65,7 @@ serve(async (req) => {
 
     console.log(`Analyzing transcript for recording: ${recording_id}`);
 
-    // Initialize Supabase client
+    // Initialize Supabase client with service role
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -33,7 +73,7 @@ serve(async (req) => {
     // Fetch the recording
     const { data: recording, error: fetchError } = await supabase
       .from('recordings')
-      .select('transcript_text, title')
+      .select('transcript_text, title, user_id')
       .eq('id', recording_id)
       .single();
 
@@ -42,6 +82,15 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Recording not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 2. Verify ownership (skip for service role calls)
+    if (!isServiceRole && recording.user_id && recording.user_id !== user.id) {
+      console.error(`[Auth] User ${user.id} tried to analyze recording owned by ${recording.user_id}`);
+      return new Response(
+        JSON.stringify({ error: 'Access denied' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -105,8 +154,7 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
     });
 
     if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error(`AI API error (${aiResponse.status}):`, errorText);
+      console.error(`AI API error: ${aiResponse.status}`);
       
       if (aiResponse.status === 429) {
         return new Response(
@@ -138,7 +186,7 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
       );
     }
 
-    console.log('AI Response:', content);
+    console.log('AI Response received');
 
     // Parse the JSON response
     let analysis;
@@ -148,7 +196,6 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
       analysis = JSON.parse(cleanedContent);
     } catch (parseError) {
       console.error('Failed to parse AI response as JSON:', parseError);
-      console.error('Raw content:', content);
       return new Response(
         JSON.stringify({ error: 'Failed to parse AI response' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -194,9 +241,8 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
 
   } catch (error: unknown) {
     console.error('Error in analyze-transcript:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: 'An error occurred processing your request' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
