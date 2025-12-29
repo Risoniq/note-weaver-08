@@ -325,6 +325,36 @@ Deno.serve(async (req) => {
       } else {
         console.log('Keine Transkript-URL in media_shortcuts gefunden')
       }
+      
+      // 7b. Transkript als Backup-Datei in Storage speichern
+      if (updates.transcript_text && typeof updates.transcript_text === 'string') {
+        try {
+          console.log('Speichere Transkript-Backup in Storage...')
+          const userId = recording.user_id || user.id
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+          const fileName = `${userId}/${id}_${timestamp}.txt`
+          
+          // Transkript als Textdatei hochladen
+          const transcriptBlob = new Blob([updates.transcript_text], { type: 'text/plain' })
+          const transcriptArrayBuffer = await transcriptBlob.arrayBuffer()
+          const transcriptUint8Array = new Uint8Array(transcriptArrayBuffer)
+          
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('transcript-backups')
+            .upload(fileName, transcriptUint8Array, {
+              contentType: 'text/plain; charset=utf-8',
+              upsert: true
+            })
+          
+          if (uploadError) {
+            console.error('Transkript-Backup Upload Fehler:', uploadError)
+          } else {
+            console.log('Transkript-Backup gespeichert:', uploadData?.path)
+          }
+        } catch (backupError) {
+          console.error('Transkript-Backup fehlgeschlagen:', backupError)
+        }
+      }
     }
 
     // 8. Wenn fertig und Transkript vorhanden, automatisch Analyse starten
