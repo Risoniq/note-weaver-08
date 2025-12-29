@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, Mic, Lock, Mail, Check, X } from 'lucide-react';
+import { Loader2, Mic, Lock, Mail, Check, X, Eye, EyeOff } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 
 // Password requirements for signup
@@ -49,6 +49,7 @@ export default function Auth() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [resetError, setResetError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   
   const { signIn, signUp, resetPassword, isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
@@ -249,13 +250,25 @@ export default function Auth() {
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
                         id="login-password"
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         placeholder="••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="pl-10"
+                        className="pl-10 pr-10"
                         disabled={isSubmitting}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        tabIndex={-1}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
                     </div>
                     {errors.password && (
                       <p className="text-sm text-destructive">{errors.password}</p>
@@ -346,13 +359,25 @@ export default function Auth() {
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
                         id="register-password"
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         placeholder="••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="pl-10"
+                        className="pl-10 pr-10"
                         disabled={isSubmitting}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        tabIndex={-1}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
                     </div>
                     {errors.password && (
                       <p className="text-sm text-destructive">{errors.password}</p>
