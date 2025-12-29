@@ -23,7 +23,11 @@ import {
   Check,
   Sparkles,
   Play,
-  RefreshCw
+  RefreshCw,
+  Edit3,
+  Save,
+  X,
+  Replace
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -40,6 +44,14 @@ export default function MeetingDetail() {
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [activeFilter, setActiveFilter] = useState<TimeFilter>('7tage');
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Transkript-Bearbeitung States
+  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
+  const [editedTranscript, setEditedTranscript] = useState('');
+  const [isSavingTranscript, setIsSavingTranscript] = useState(false);
+  const [showReplaceDialog, setShowReplaceDialog] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [replaceTerm, setReplaceTerm] = useState('');
 
   const fetchRecording = useCallback(async () => {
     if (!id) return null;
@@ -196,6 +208,83 @@ export default function MeetingDetail() {
     setCopiedEmail(true);
     toast.success("E-Mail in Zwischenablage kopiert");
     setTimeout(() => setCopiedEmail(false), 2000);
+  };
+
+  // Transkript bearbeiten Funktionen
+  const startEditingTranscript = () => {
+    if (recording?.transcript_text) {
+      setEditedTranscript(recording.transcript_text);
+      setIsEditingTranscript(true);
+    }
+  };
+
+  const cancelEditingTranscript = () => {
+    setIsEditingTranscript(false);
+    setEditedTranscript('');
+    setShowReplaceDialog(false);
+    setSearchTerm('');
+    setReplaceTerm('');
+  };
+
+  const saveTranscript = async () => {
+    if (!id || !editedTranscript) return;
+    
+    setIsSavingTranscript(true);
+    try {
+      // Transkript in der Datenbank aktualisieren
+      const { error: updateError } = await supabase
+        .from('recordings')
+        .update({ transcript_text: editedTranscript })
+        .eq('id', id);
+
+      if (updateError) throw updateError;
+
+      // Lokal aktualisieren
+      setRecording(prev => prev ? { ...prev, transcript_text: editedTranscript } : null);
+      setIsEditingTranscript(false);
+      toast.success("Transkript gespeichert!");
+      
+      // Frage ob Analyse neu durchgeführt werden soll
+      toast.info("Analyse wird mit neuem Transkript aktualisiert...");
+      
+      // Analyse neu starten
+      const { error: analyzeError } = await supabase.functions.invoke('analyze-transcript', {
+        body: { recording_id: id }
+      });
+
+      if (analyzeError) {
+        console.error('Analyze error:', analyzeError);
+        toast.error("Analyse konnte nicht gestartet werden");
+      } else {
+        // Nach kurzer Verzögerung neu laden
+        setTimeout(async () => {
+          const updated = await fetchRecording();
+          if (updated) {
+            setRecording(updated);
+            toast.success("Analyse erfolgreich aktualisiert!");
+          }
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('Error saving transcript:', error);
+      toast.error("Speichern fehlgeschlagen");
+    } finally {
+      setIsSavingTranscript(false);
+    }
+  };
+
+  const replaceAllInTranscript = () => {
+    if (!searchTerm) return;
+    
+    const newTranscript = editedTranscript.split(searchTerm).join(replaceTerm);
+    const replacements = (editedTranscript.match(new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+    
+    setEditedTranscript(newTranscript);
+    setShowReplaceDialog(false);
+    setSearchTerm('');
+    setReplaceTerm('');
+    
+    toast.success(`${replacements} Ersetzung${replacements !== 1 ? 'en' : ''} durchgeführt`);
   };
 
   if (isLoading) {
@@ -538,19 +627,127 @@ export default function MeetingDetail() {
             {recording.transcript_text && (
               <Card className="glass-card border-0 rounded-3xl shadow-card animate-fade-in" style={{ animationDelay: '400ms' }}>
                 <CardHeader className="pb-3 pt-6 px-6">
-                  <CardTitle className="flex items-center gap-3 text-lg">
-                    <div className="p-2 rounded-xl bg-muted">
-                      <FileText className="h-5 w-5 text-muted-foreground" />
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-3 text-lg">
+                      <div className="p-2 rounded-xl bg-muted">
+                        <FileText className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      Transkript
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      {isEditingTranscript ? (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowReplaceDialog(!showReplaceDialog)}
+                            className="rounded-xl"
+                          >
+                            <Replace className="h-4 w-4 mr-1" />
+                            Ersetzen
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={cancelEditingTranscript}
+                            className="rounded-xl"
+                          >
+                            <X className="h-4 w-4 mr-1" />
+                            Abbrechen
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={saveTranscript}
+                            disabled={isSavingTranscript}
+                            className="rounded-xl bg-success hover:bg-success/90"
+                          >
+                            <Save className="h-4 w-4 mr-1" />
+                            {isSavingTranscript ? 'Speichern...' : 'Speichern & Analysieren'}
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={startEditingTranscript}
+                          className="rounded-xl"
+                        >
+                          <Edit3 className="h-4 w-4 mr-1" />
+                          Namen bearbeiten
+                        </Button>
+                      )}
                     </div>
-                    Transkript
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-6 pb-6">
-                  <div className="max-h-80 overflow-y-auto rounded-2xl bg-secondary/30 p-4">
-                    <p className="text-foreground whitespace-pre-wrap text-sm leading-relaxed">
-                      {recording.transcript_text}
-                    </p>
                   </div>
+                </CardHeader>
+                <CardContent className="px-6 pb-6 space-y-4">
+                  {/* Suchen & Ersetzen Dialog */}
+                  {showReplaceDialog && (
+                    <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 space-y-3">
+                      <p className="text-sm font-medium text-foreground">Namen suchen und ersetzen</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-muted-foreground mb-1 block">Suchen nach</label>
+                          <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="z.B. Unbekannt"
+                            className="w-full px-3 py-2 rounded-xl bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground mb-1 block">Ersetzen durch</label>
+                          <input
+                            type="text"
+                            value={replaceTerm}
+                            onChange={(e) => setReplaceTerm(e.target.value)}
+                            placeholder="z.B. Max Mustermann"
+                            className="w-full px-3 py-2 rounded-xl bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowReplaceDialog(false)}
+                          className="rounded-xl"
+                        >
+                          Abbrechen
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={replaceAllInTranscript}
+                          disabled={!searchTerm}
+                          className="rounded-xl"
+                        >
+                          Alle ersetzen
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Transkript Anzeige/Bearbeitung */}
+                  {isEditingTranscript ? (
+                    <textarea
+                      value={editedTranscript}
+                      onChange={(e) => setEditedTranscript(e.target.value)}
+                      className="w-full h-80 rounded-2xl bg-secondary/30 p-4 text-foreground text-sm leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 border-0"
+                      placeholder="Transkript bearbeiten..."
+                    />
+                  ) : (
+                    <div className="max-h-80 overflow-y-auto rounded-2xl bg-secondary/30 p-4">
+                      <p className="text-foreground whitespace-pre-wrap text-sm leading-relaxed">
+                        {recording.transcript_text}
+                      </p>
+                    </div>
+                  )}
+                  
+                  {isEditingTranscript && (
+                    <p className="text-xs text-muted-foreground">
+                      Tipp: Nutze "Ersetzen" um alle Vorkommen eines Namens (z.B. "Sprecher 1") durch den echten Namen zu ersetzen. Nach dem Speichern wird die Analyse automatisch aktualisiert.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}
