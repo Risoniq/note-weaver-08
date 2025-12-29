@@ -54,6 +54,7 @@ serve(async (req) => {
     // 1. Authenticate user first
     const { user: authUser, error: authError } = await authenticateUser(req);
     if (!authUser) {
+      console.log('[Auth] Authentication failed:', authError);
       return new Response(
         JSON.stringify({ success: false, error: authError || 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -67,13 +68,24 @@ serve(async (req) => {
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!RECALL_API_KEY) {
+      console.error('[Config] RECALL_API_KEY is not configured');
       return new Response(
         JSON.stringify({ success: false, error: 'Service not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const body = await req.json();
+    let body;
+    try {
+      body = await req.json();
+    } catch (parseError) {
+      console.error('[Request] Failed to parse JSON body:', parseError);
+      return new Response(
+        JSON.stringify({ success: false, error: 'Invalid request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
     const { action, supabase_user_id, user_email, provider, redirect_uri } = body;
     
     // 2. Validate that supabase_user_id matches authenticated user
