@@ -20,6 +20,31 @@ function getCorsHeaders(req: Request) {
   };
 }
 
+// Authenticate user from JWT token
+async function authenticateUser(req: Request): Promise<{ user: { id: string } | null; error?: string }> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) {
+    return { user: null, error: 'Authorization header required' };
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+  const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+  
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return { user: null, error: 'Server configuration error' };
+  }
+  
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  
+  if (error || !user) {
+    return { user: null, error: 'Invalid or expired token' };
+  }
+  
+  return { user: { id: user.id } };
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   
@@ -29,6 +54,16 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate user first
+    const { user, error: authError } = await authenticateUser(req);
+    if (!user) {
+      console.log('Authentication failed:', authError);
+      return new Response(
+        JSON.stringify({ success: false, error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const RECALL_API_KEY = Deno.env.get('RECALL_API_KEY');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -38,9 +73,19 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    // Support both old (user_id) and new (supabase_user_id) parameters
-    const { action, supabase_user_id, user_id: legacyUserId, meeting_id, auto_record } = body;
-    const supabaseUserId = supabase_user_id || null;
+    const { action, supabase_user_id, meeting_id, auto_record } = body;
+    
+    // Validate that the provided user_id matches the authenticated user
+    if (supabase_user_id && supabase_user_id !== user.id) {
+      console.log('User ID mismatch:', { provided: supabase_user_id, authenticated: user.id });
+      return new Response(
+        JSON.stringify({ success: false, error: 'Forbidden' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Always use the authenticated user's ID
+    const supabaseUserId = user.id;
     
     console.log('Calendar meetings request:', { action, supabase_user_id: supabaseUserId, meeting_id, auto_record });
 
@@ -63,9 +108,7 @@ serve(async (req) => {
     }
 
     if (action === 'list') {
-      if (!supabaseUserId) {
-        throw new Error('supabase_user_id is required');
-      }
+      // supabaseUserId is always set from authenticated user
 
       const recallUserId = await getRecallUserId(supabaseUserId);
       if (!recallUserId) {
@@ -136,8 +179,8 @@ serve(async (req) => {
     }
 
     if (action === 'update_recording') {
-      if (!supabaseUserId || !meeting_id) {
-        throw new Error('supabase_user_id and meeting_id are required');
+      if (!meeting_id) {
+        throw new Error('meeting_id is required');
       }
 
       const recallUserId = await getRecallUserId(supabaseUserId);
@@ -191,9 +234,7 @@ serve(async (req) => {
     }
 
     if (action === 'update_preferences') {
-      if (!supabaseUserId) {
-        throw new Error('supabase_user_id is required');
-      }
+      // supabaseUserId is always set from authenticated user
 
       const { data: userData, error: userError } = await supabase
         .from('recall_calendar_users')
