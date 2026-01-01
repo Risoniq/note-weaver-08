@@ -124,7 +124,7 @@ serve(async (req) => {
       }
 
       // Get a fresh calendar auth token for this user
-      const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
+      const authResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/authenticate/', {
         method: 'POST',
         headers: {
           'Authorization': `Token ${RECALL_API_KEY}`,
@@ -142,7 +142,7 @@ serve(async (req) => {
 
       // Get upcoming meetings from Recall.ai
       const meetingsResponse = await fetch(
-        `https://us-west-2.recall.ai/api/v1/calendar/meetings/?user_id=${recallUserId}&start_time__gte=${new Date().toISOString()}`,
+        `https://eu-central-1.recall.ai/api/v1/calendar/meetings/?user_id=${recallUserId}&start_time__gte=${new Date().toISOString()}`,
         {
           method: 'GET',
           headers: {
@@ -246,7 +246,7 @@ serve(async (req) => {
         throw new Error('No Recall user found');
       }
 
-      const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
+      const authResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/authenticate/', {
         method: 'POST',
         headers: {
           'Authorization': `Token ${RECALL_API_KEY}`,
@@ -263,7 +263,7 @@ serve(async (req) => {
       const authData = await authResponse.json();
 
       const updateResponse = await fetch(
-        `https://us-west-2.recall.ai/api/v1/calendar/meetings/${meeting_id}/`,
+        `https://eu-central-1.recall.ai/api/v1/calendar/meetings/${meeting_id}/`,
         {
           method: 'PATCH',
           headers: {
@@ -332,7 +332,7 @@ serve(async (req) => {
 
         console.log('Syncing preferences to Recall.ai:', recallPreferences);
 
-        const recallResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
+        const recallResponse = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
           method: 'PATCH',
           headers: {
             'Authorization': `Token ${RECALL_API_KEY}`,

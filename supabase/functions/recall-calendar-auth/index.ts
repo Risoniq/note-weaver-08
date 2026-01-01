@@ -188,7 +188,7 @@ serve(async (req) => {
       console.log('Setting default preferences for new Recall user:', defaultRecallPreferences);
 
       try {
-        const prefsResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
+        const prefsResponse = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
           method: 'PATCH',
           headers: {
             'Authorization': `Token ${RECALL_API_KEY}`,
@@ -211,7 +211,7 @@ serve(async (req) => {
 
     // Helper: Check connection status with Recall.ai for a given user ID
     async function checkRecallConnections(recallUserId: string, authToken: string): Promise<{ google: boolean; microsoft: boolean; userData: unknown }> {
-      const userResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${recallUserId}`, {
+      const userResponse = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/?user_id=${recallUserId}`, {
         method: 'GET',
         headers: {
           'Authorization': `Token ${RECALL_API_KEY}`,
@@ -253,7 +253,7 @@ serve(async (req) => {
 
     // Helper: Get auth token from Recall.ai
     async function getRecallAuthToken(recallUserId: string): Promise<string | null> {
-      const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
+      const authResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/authenticate/', {
         method: 'POST',
         headers: {
           'Authorization': `Token ${RECALL_API_KEY}`,
@@ -343,7 +343,7 @@ serve(async (req) => {
       const { recallUserId } = await getOrCreateRecallUser(supabaseUserId, userEmail);
 
       // Get authentication token from Recall.ai
-      const authResponse = await fetch('https://us-west-2.recall.ai/api/v1/calendar/authenticate/', {
+      const authResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/authenticate/', {
         method: 'POST',
         headers: {
           'Authorization': `Token ${RECALL_API_KEY}`,
@@ -366,7 +366,7 @@ serve(async (req) => {
       console.log('Recall auth response received');
 
       // Build the OAuth URL
-      const recallRegion = 'us-west-2';
+      const recallRegion = 'eu-central-1';
       let oauthUrl: string;
       
       if (provider === 'microsoft') {
@@ -649,7 +649,7 @@ serve(async (req) => {
         const authToken = await getRecallAuthToken(calendarUser.recall_user_id);
 
         if (authToken) {
-          const disconnectResponse = await fetch(`https://us-west-2.recall.ai/api/v1/calendar/user/?user_id=${calendarUser.recall_user_id}`, {
+          const disconnectResponse = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/?user_id=${calendarUser.recall_user_id}`, {
             method: 'DELETE',
             headers: {
               'Authorization': `Token ${RECALL_API_KEY}`,

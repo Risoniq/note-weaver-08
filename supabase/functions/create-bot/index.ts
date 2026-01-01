@@ -202,7 +202,7 @@ Deno.serve(async (req) => {
 
     // 6. Recall API Konfiguration laden
     const recallApiKey = Deno.env.get("RECALL_API_KEY");
-    const recallApiUrl = Deno.env.get("RECALL_API_URL") || "https://us-west-2.recall.ai/api/v1/bot";
+    const recallApiUrl = Deno.env.get("RECALL_API_URL") || "https://eu-central-1.recall.ai/api/v1/bot";
 
     if (!recallApiKey) {
       console.error('[Config] RECALL_API_KEY is not set');

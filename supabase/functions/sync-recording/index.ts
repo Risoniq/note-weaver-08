@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     const recallApiKey = Deno.env.get('RECALL_API_KEY')
-    const recallApiUrl = Deno.env.get('RECALL_API_URL') || 'https://us-west-2.recall.ai/api/v1/bot'
+    const recallApiUrl = Deno.env.get('RECALL_API_URL') || 'https://eu-central-1.recall.ai/api/v1/bot'
 
     // 3. ID und force_resync aus dem Request holen (vom Frontend gesendet)
     const { id, force_resync = false } = await req.json()
