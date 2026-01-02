@@ -143,31 +143,8 @@ serve(async (req) => {
           // The repair action will handle this
         }
         console.log('Found existing Recall user:', existingUser.recall_user_id);
-        
-        // CRITICAL: Ensure user exists in Recall.ai even for existing local users
-        // This handles migration cases where user was created locally before Recall.ai API call was added
-        console.log('Ensuring user exists in Recall.ai for existing local user...');
-        try {
-          const ensureResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/user/', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Token ${RECALL_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ user_id: existingUser.recall_user_id }),
-          });
-          
-          if (ensureResponse.ok) {
-            console.log('User created in Recall.ai for existing local user');
-          } else if (ensureResponse.status === 409) {
-            console.log('User already exists in Recall.ai (409), OK');
-          } else {
-            console.error('Failed to ensure user in Recall.ai:', ensureResponse.status);
-          }
-        } catch (ensureError) {
-          console.error('Error ensuring user in Recall.ai:', ensureError);
-        }
-        
+        // Note: Recall.ai users are created implicitly when they complete OAuth
+        // No need to call a separate user creation endpoint
         return { recallUserId: existingUser.recall_user_id, isNew: false };
       }
 
@@ -199,66 +176,8 @@ serve(async (req) => {
       }
 
       console.log('Created new Recall user in local DB:', recallUserId);
-      
-      // CRITICAL: Create the user in Recall.ai's API BEFORE setting preferences
-      console.log('Creating user in Recall.ai EU region...');
-      try {
-        const createUserResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/user/', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Token ${RECALL_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ user_id: recallUserId }),
-        });
-
-        if (!createUserResponse.ok) {
-          // 409 = conflict/user already exists, which is fine
-          if (createUserResponse.status === 409) {
-            console.log('User already exists in Recall.ai (409), continuing...');
-          } else {
-            const errorBody = await createUserResponse.text();
-            console.error('Failed to create user in Recall.ai:', createUserResponse.status, errorBody);
-            // Don't throw - we'll try to continue anyway, the user might exist
-          }
-        } else {
-          console.log('User created successfully in Recall.ai');
-        }
-      } catch (createError) {
-        console.error('Error creating user in Recall.ai:', createError);
-        // Continue anyway - user might already exist
-      }
-      
-      // Now sync default recording preferences to Recall.ai for new users
-      const defaultRecallPreferences = {
-        record_non_host: true,
-        record_recurring: true,
-        record_external: true,
-        record_internal: true,
-        record_confirmed: true,
-        record_only_host: false,
-      };
-
-      console.log('Setting default preferences for new Recall user:', defaultRecallPreferences);
-
-      try {
-        const prefsResponse = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Token ${RECALL_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(defaultRecallPreferences),
-        });
-
-        if (!prefsResponse.ok) {
-          console.error('Failed to set default preferences:', prefsResponse.status);
-        } else {
-          console.log('Default preferences set successfully for new user');
-        }
-      } catch (prefError) {
-        console.error('Error setting default preferences:', prefError);
-      }
+      // Note: Recall.ai users are created implicitly when they complete OAuth
+      // Preferences will be set after successful OAuth connection
 
       return { recallUserId, isNew: true };
     }
