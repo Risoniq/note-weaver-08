@@ -143,6 +143,31 @@ serve(async (req) => {
           // The repair action will handle this
         }
         console.log('Found existing Recall user:', existingUser.recall_user_id);
+        
+        // CRITICAL: Ensure user exists in Recall.ai even for existing local users
+        // This handles migration cases where user was created locally before Recall.ai API call was added
+        console.log('Ensuring user exists in Recall.ai for existing local user...');
+        try {
+          const ensureResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/user/', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Token ${RECALL_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ user_id: existingUser.recall_user_id }),
+          });
+          
+          if (ensureResponse.ok) {
+            console.log('User created in Recall.ai for existing local user');
+          } else if (ensureResponse.status === 409) {
+            console.log('User already exists in Recall.ai (409), OK');
+          } else {
+            console.error('Failed to ensure user in Recall.ai:', ensureResponse.status);
+          }
+        } catch (ensureError) {
+          console.error('Error ensuring user in Recall.ai:', ensureError);
+        }
+        
         return { recallUserId: existingUser.recall_user_id, isNew: false };
       }
 
