@@ -306,7 +306,7 @@ serve(async (req) => {
       }
 
       const currentPrefs = userData?.recording_preferences || {};
-      const newPrefs = { ...currentPrefs, ...auto_record };
+      const newPrefs = { ...currentPrefs, ...body.preferences };
 
       const { error: updateError } = await supabase
         .from('recall_calendar_users')

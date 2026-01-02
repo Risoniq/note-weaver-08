@@ -292,6 +292,40 @@ serve(async (req) => {
       );
     }
 
+    // Helper: Sync default preferences to Recall.ai
+    async function syncDefaultPreferences(recallUserId: string): Promise<void> {
+      const defaultPreferences = {
+        record_non_host: true,      // Record meetings where you're NOT host
+        record_recurring: true,      // Record recurring meetings
+        record_external: true,       // Record external meetings
+        record_internal: true,       // Record internal meetings
+        record_confirmed: true,      // Record confirmed meetings
+        record_only_host: false,     // NOT only host meetings
+      };
+
+      console.log('[GoogleAuth] Syncing default preferences to Recall.ai for user:', recallUserId);
+
+      try {
+        const response = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(defaultPreferences),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[GoogleAuth] Failed to sync default preferences:', response.status, errorText);
+        } else {
+          console.log('[GoogleAuth] Default preferences synced successfully');
+        }
+      } catch (error) {
+        console.error('[GoogleAuth] Error syncing default preferences:', error);
+      }
+    }
+
     // ACTION: status - Check Google connection status
     if (action === 'status') {
       const { data: calendarUser, error: fetchError } = await supabase
@@ -336,6 +370,12 @@ serve(async (req) => {
         recall_user_id: recallUserId,
         google_connected: googleConnected,
       });
+
+      // If just connected, sync default preferences
+      if (googleConnected && !calendarUser.google_connected) {
+        console.log('[GoogleAuth] New connection detected, syncing default preferences');
+        await syncDefaultPreferences(recallUserId);
+      }
 
       // Update database
       const { error: updateError } = await supabase
