@@ -109,7 +109,7 @@ const CalendarCallback = () => {
 
         // Check stored provider from session (set before redirect)
         const storedProvider = sessionStorage.getItem('recall_oauth_provider');
-        const effectiveProvider = provider || storedProvider;
+        const effectiveProvider = provider || storedProvider || 'unknown';
 
         // Helper function to handle success - navigate back to app
         const handleSuccess = () => {
@@ -195,7 +195,7 @@ const CalendarCallback = () => {
 
         // No error but also no success - this might be a direct callback from Recall.ai
         // In this case, we assume success if there's no error
-        if (storedProvider || effectiveProvider) {
+        if (storedProvider || effectiveProvider !== 'unknown') {
           sessionStorage.removeItem('recall_oauth_provider');
           setStatus('success');
           setMessage('Kalender wird synchronisiert...');
@@ -231,13 +231,17 @@ const CalendarCallback = () => {
   };
 
   const handleManualClose = () => {
+    // Get stored provider for more accurate message
+    const storedProvider = sessionStorage.getItem('recall_oauth_provider') || 'google';
+    sessionStorage.removeItem('recall_oauth_provider');
+    
     // Notify opener that user is done
     if (window.opener && !window.opener.closed) {
       try {
         window.opener.postMessage({
           type: 'recall-oauth-callback',
           success: true,
-          provider: 'unknown',
+          provider: storedProvider,
           manual: true,
         }, '*');
       } catch {

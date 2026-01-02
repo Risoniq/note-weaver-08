@@ -85,20 +85,54 @@ export function useGoogleRecallCalendar() {
         return;
       }
       
-      if (event.data?.type === 'recall-oauth-callback' && event.data?.success && event.data?.provider === 'google') {
-        console.log('[useGoogleRecallCalendar] Received OAuth success message from popup');
+      // Accept both 'google' provider and 'unknown' (for manual close scenario)
+      if (event.data?.type === 'recall-oauth-callback' && event.data?.success && 
+          (event.data?.provider === 'google' || event.data?.provider === 'unknown')) {
+        console.log('[useGoogleRecallCalendar] Received OAuth callback message:', event.data);
         setStatus('syncing');
-        toast.success('Google Kalender wird synchronisiert...');
+        setPendingOauthUrl(null);
         
+        if (event.data?.manual) {
+          toast.info('Prüfe Verbindungsstatus...');
+        } else {
+          toast.success('Google Kalender wird synchronisiert...');
+        }
+        
+        // Retry checking status multiple times after manual close
         if (authUser?.id) {
+          for (let i = 0; i < 5; i++) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const { data } = await supabase.functions.invoke('google-recall-auth', {
+              body: {
+                action: 'status',
+                supabase_user_id: authUser.id,
+                user_email: authUser.email,
+              },
+            });
+            
+            if (data?.success && data.connected) {
+              setConnected(true);
+              setRecallUserId(data.recall_user_id || null);
+              setStatus('connected');
+              toast.success('Google Kalender erfolgreich verbunden!');
+              return;
+            }
+          }
+          
+          // Final check
           await checkStatus(true);
+          
+          // If still not connected after all retries
+          if (!connected) {
+            toast.error('Google Kalender-Verbindung konnte nicht bestätigt werden. Bitte klicke auf "Status prüfen".');
+          }
         }
       }
     };
     
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [authUser?.id, checkStatus]);
+  }, [authUser?.id, authUser?.email, checkStatus, connected]);
 
   // Check for OAuth callback on mount
   useEffect(() => {
