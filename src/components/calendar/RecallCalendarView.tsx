@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useGoogleRecallCalendar } from '@/hooks/useGoogleRecallCalendar';
 import { useMicrosoftRecallCalendar } from '@/hooks/useMicrosoftRecallCalendar';
 import { useRecallCalendarMeetings, RecallMeeting } from '@/hooks/useRecallCalendarMeetings';
@@ -6,6 +6,11 @@ import { RecallCalendarConnection } from './RecallCalendarConnection';
 import { RecallUpcomingMeetings } from './RecallUpcomingMeetings';
 import { RecallRecordingPreferences } from './RecallRecordingPreferences';
 import { QuickMeetingJoin } from './QuickMeetingJoin';
+import { CalendarMonthView } from './CalendarMonthView';
+import { isSameDay } from 'date-fns';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { RefreshCw } from 'lucide-react';
 
 interface RecallCalendarViewProps {
   onStartRecording?: (meeting: RecallMeeting) => void;
@@ -15,6 +20,7 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
   const google = useGoogleRecallCalendar();
   const microsoft = useMicrosoftRecallCalendar();
   const meetings = useRecallCalendarMeetings();
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
 
   // Fetch meetings when either calendar is connected
   useEffect(() => {
@@ -25,9 +31,26 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
 
   const isConnected = google.connected || microsoft.connected;
 
+  // Filter meetings for selected date or show all if no date selected
+  const filteredMeetings = useMemo(() => {
+    if (!selectedDate) return meetings.meetings;
+    return meetings.meetings.filter(m => 
+      isSameDay(new Date(m.start_time), selectedDate)
+    );
+  }, [selectedDate, meetings.meetings]);
+
   const handleJoinMeeting = (meeting: RecallMeeting) => {
     if (meeting.meeting_url) {
       window.open(meeting.meeting_url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const handleDateSelect = (date: Date | undefined) => {
+    // Toggle selection if same date clicked
+    if (date && selectedDate && isSameDay(date, selectedDate)) {
+      setSelectedDate(undefined);
+    } else {
+      setSelectedDate(date);
     }
   };
 
@@ -65,19 +88,49 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
             onUpdatePreferences={meetings.updatePreferences}
           />
 
-          <div>
-            <h2 className="text-lg font-semibold text-foreground mb-4">
-              Anstehende Meetings (Automatische Aufnahme)
-            </h2>
-            <RecallUpcomingMeetings
-              meetings={meetings.meetings}
-              isLoading={meetings.isLoading}
-              meetingsError={meetings.meetingsError}
-              onToggleRecording={meetings.updateMeetingRecording}
-              onJoinMeeting={handleJoinMeeting}
-              onRetry={meetings.fetchMeetings}
-              onBotStarted={meetings.fetchMeetings}
+          {/* Auto-refresh toggle */}
+          <div className="flex items-center justify-between bg-card rounded-lg border border-border p-4">
+            <div className="flex items-center gap-2">
+              <RefreshCw className={`h-4 w-4 ${meetings.autoRefreshEnabled ? 'text-primary animate-spin' : 'text-muted-foreground'}`} style={{ animationDuration: '3s' }} />
+              <Label htmlFor="auto-refresh" className="text-sm font-medium">
+                Auto-Refresh (alle 15 Sek.)
+              </Label>
+            </div>
+            <Switch
+              id="auto-refresh"
+              checked={meetings.autoRefreshEnabled}
+              onCheckedChange={meetings.setAutoRefreshEnabled}
             />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Calendar view */}
+            <div className="lg:col-span-1">
+              <CalendarMonthView
+                meetings={meetings.meetings}
+                selectedDate={selectedDate}
+                onDateSelect={handleDateSelect}
+              />
+            </div>
+
+            {/* Meetings list */}
+            <div className="lg:col-span-2">
+              <h2 className="text-lg font-semibold text-foreground mb-4">
+                {selectedDate 
+                  ? `Meetings am ${selectedDate.toLocaleDateString('de-DE', { day: 'numeric', month: 'long' })}`
+                  : 'Alle anstehenden Meetings'
+                }
+              </h2>
+              <RecallUpcomingMeetings
+                meetings={filteredMeetings}
+                isLoading={meetings.isLoading}
+                meetingsError={meetings.meetingsError}
+                onToggleRecording={meetings.updateMeetingRecording}
+                onJoinMeeting={handleJoinMeeting}
+                onRetry={meetings.fetchMeetings}
+                onBotStarted={meetings.fetchMeetings}
+              />
+            </div>
           </div>
         </>
       )}

@@ -165,7 +165,11 @@ export function useMicrosoftRecallCalendar() {
       setError(null);
       setPendingOauthUrl(null);
 
+      console.log('[useMicrosoftRecallCalendar] Starting OAuth flow for user:', authUser.id);
+      toast.info('Microsoft Login wird vorbereitet...');
+
       const redirectUri = `${window.location.origin}/calendar-callback`;
+      console.log('[useMicrosoftRecallCalendar] Using redirect URI:', redirectUri);
 
       const { data, error: funcError } = await supabase.functions.invoke('microsoft-recall-auth', {
         body: {
@@ -176,9 +180,20 @@ export function useMicrosoftRecallCalendar() {
         },
       });
 
-      if (funcError) throw funcError;
+      console.log('[useMicrosoftRecallCalendar] Auth response:', { data, funcError });
+
+      if (funcError) {
+        console.error('[useMicrosoftRecallCalendar] Function error:', funcError);
+        throw funcError;
+      }
+
+      if (!data?.success) {
+        console.error('[useMicrosoftRecallCalendar] Auth failed:', data);
+        throw new Error(data?.error || 'Authentifizierung fehlgeschlagen');
+      }
 
       if (data.success && data.oauth_url) {
+        console.log('[useMicrosoftRecallCalendar] Got OAuth URL, opening popup...');
         sessionStorage.setItem('recall_oauth_provider', 'microsoft');
         setPendingOauthUrl(data.oauth_url);
 
@@ -193,13 +208,14 @@ export function useMicrosoftRecallCalendar() {
           `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`
         );
         
-        if (!popup) {
-          toast.error('Popup wurde blockiert. Bitte öffne die Anmeldung manuell über den Button.');
-          setIsLoading(false);
-          return;
+        if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+          console.log('[useMicrosoftRecallCalendar] Popup blocked, opening in new tab');
+          window.open(data.oauth_url, '_blank');
+          toast.info('Login wurde in neuem Tab geöffnet. Bitte kehre nach der Anmeldung hierher zurück.', { duration: 15000 });
+        } else {
+          toast.info('Microsoft Login geöffnet. Bitte schließe das Popup nach der Anmeldung.', { duration: 10000 });
         }
-
-        toast.info('Microsoft Login geöffnet. Bitte schließe das Popup nach der Anmeldung.', { duration: 10000 });
+        
         setIsLoading(false);
 
         // Poll for connection status
@@ -225,7 +241,7 @@ export function useMicrosoftRecallCalendar() {
               setRecallUserId(statusData.recall_user_id || null);
               setStatus('connected');
               toast.success('Microsoft Kalender erfolgreich verbunden!');
-              try { popup.close(); } catch {}
+              try { popup?.close(); } catch {}
             }
           } catch (err) {
             console.error('[useMicrosoftRecallCalendar] Polling error:', err);
@@ -245,6 +261,7 @@ export function useMicrosoftRecallCalendar() {
       console.error('[useMicrosoftRecallCalendar] Error connecting:', err);
       setError(err.message || 'Fehler beim Verbinden');
       setStatus('error');
+      toast.error(`Verbindungsfehler: ${err.message || 'Unbekannter Fehler'}`);
       setIsLoading(false);
     }
   }, [authUser?.id, authUser?.email]);

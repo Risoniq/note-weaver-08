@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { User } from '@supabase/supabase-js';
@@ -26,17 +26,22 @@ export interface RecordingPreferences {
   auto_record: boolean;
 }
 
+const AUTO_REFRESH_INTERVAL = 15000; // 15 seconds
+
 export function useRecallCalendarMeetings() {
   const [isLoading, setIsLoading] = useState(false);
   const [meetingsError, setMeetingsError] = useState<string | null>(null);
   const [meetings, setMeetings] = useState<RecallMeeting[]>([]);
   const [authUser, setAuthUser] = useState<User | null>(null);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [preferences, setPreferences] = useState<RecordingPreferences>({
     record_all: true,
     record_only_owned: false,
     record_external: true,
     auto_record: true,
   });
+  
+  const lastFetchRef = useRef<number>(0);
 
   // Get authenticated user
   useEffect(() => {
@@ -182,11 +187,37 @@ export function useRecallCalendarMeetings() {
     }
   }, [authUser?.id]);
 
+  // Auto-refresh meetings every 15 seconds
+  useEffect(() => {
+    if (!authUser?.id || !autoRefreshEnabled) return;
+
+    console.log('[useRecallCalendarMeetings] Setting up auto-refresh interval (15s)');
+    
+    const intervalId = setInterval(() => {
+      const now = Date.now();
+      // Prevent fetching more often than every 10 seconds (debounce)
+      if (now - lastFetchRef.current < 10000) {
+        return;
+      }
+      
+      console.log('[useRecallCalendarMeetings] Auto-refresh triggered');
+      lastFetchRef.current = now;
+      fetchMeetings();
+    }, AUTO_REFRESH_INTERVAL);
+
+    return () => {
+      console.log('[useRecallCalendarMeetings] Cleaning up auto-refresh interval');
+      clearInterval(intervalId);
+    };
+  }, [authUser?.id, autoRefreshEnabled, fetchMeetings]);
+
   return {
     isLoading,
     meetingsError,
     meetings,
     preferences,
+    autoRefreshEnabled,
+    setAutoRefreshEnabled,
     fetchMeetings,
     updateMeetingRecording,
     updatePreferences,
