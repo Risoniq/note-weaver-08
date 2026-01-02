@@ -21,6 +21,7 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
     recallUserId,
     pendingOauthUrl,
     pendingOauthProvider,
+    debugInfo,
     connect,
     disconnectGoogle,
     disconnectMicrosoft,
@@ -29,6 +30,7 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
     updateMeetingRecording,
     updatePreferences,
     repairConnection,
+    debugConnections,
   } = useRecallCalendar();
 
   const handleJoinMeeting = (meeting: RecallMeeting) => {
@@ -53,9 +55,11 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
         onRefresh={fetchMeetings}
         onCheckStatus={checkStatus}
         onRepair={repairConnection}
+        onDebugConnections={debugConnections}
         isLoading={isLoading}
         needsRepair={needsRepair}
         recallUserId={recallUserId}
+        debugInfo={debugInfo}
       />
 
       {status === 'connected' && (

@@ -507,6 +507,103 @@ serve(async (req) => {
       );
     }
 
+    // New action: debug_connections - fetch raw connection data from Recall.ai for diagnostics
+    if (action === 'debug_connections') {
+      console.log('[debug_connections] Starting debug for user:', supabaseUserId);
+      
+      // Get our stored Recall user
+      const { data: calendarUser } = await supabase
+        .from('recall_calendar_users')
+        .select('recall_user_id, google_connected, microsoft_connected')
+        .eq('supabase_user_id', supabaseUserId)
+        .maybeSingle();
+
+      if (!calendarUser?.recall_user_id) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            debug: {
+              has_local_user: false,
+              recall_user_id: null,
+              local_google_connected: false,
+              local_microsoft_connected: false,
+              recall_api_response: null,
+              recall_connections: [],
+              timestamp: new Date().toISOString(),
+            }
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const recallUserId = calendarUser.recall_user_id;
+      
+      // Get a fresh auth token
+      const authToken = await getRecallAuthToken(recallUserId);
+      
+      let recallApiResponse = null;
+      let recallConnections: Array<{platform: string; connected: boolean; email: string | null}> = [];
+      let recallError = null;
+      
+      if (authToken) {
+        try {
+          const userResponse = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/?user_id=${recallUserId}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Token ${RECALL_API_KEY}`,
+              'x-recallcalendarauthtoken': authToken,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (userResponse.ok) {
+            recallApiResponse = await userResponse.json();
+            
+            if (recallApiResponse.connections && Array.isArray(recallApiResponse.connections)) {
+              recallConnections = recallApiResponse.connections.map((c: any) => ({
+                platform: c.platform,
+                connected: c.connected,
+                email: c.email || null,
+              }));
+            }
+          } else {
+            recallError = `HTTP ${userResponse.status}: ${userResponse.statusText}`;
+          }
+        } catch (e: any) {
+          recallError = e.message;
+        }
+      } else {
+        recallError = 'Could not obtain auth token from Recall.ai';
+      }
+
+      console.log('[debug_connections] Result:', {
+        recall_user_id: recallUserId,
+        local_google: calendarUser.google_connected,
+        local_microsoft: calendarUser.microsoft_connected,
+        recall_connections: recallConnections,
+        recall_error: recallError,
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          debug: {
+            has_local_user: true,
+            recall_user_id: recallUserId,
+            local_google_connected: calendarUser.google_connected,
+            local_microsoft_connected: calendarUser.microsoft_connected,
+            recall_connections: recallConnections,
+            recall_google_connected: recallConnections.some(c => c.platform === 'google' && c.connected),
+            recall_microsoft_connected: recallConnections.some(c => c.platform === 'microsoft' && c.connected),
+            recall_error: recallError,
+            timestamp: new Date().toISOString(),
+            user_email: userEmail,
+          }
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // New action: repair - try to find and link to an existing Recall user with connections
     if (action === 'repair') {
       const targetRecallUserId = body.target_recall_user_id;

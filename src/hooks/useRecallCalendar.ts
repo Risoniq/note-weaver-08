@@ -40,6 +40,7 @@ export function useRecallCalendar() {
   const [recallUserId, setRecallUserId] = useState<string | null>(null);
   const [pendingOauthUrl, setPendingOauthUrl] = useState<string | null>(null);
   const [pendingOauthProvider, setPendingOauthProvider] = useState<'google' | 'microsoft' | null>(null);
+  const [debugInfo, setDebugInfo] = useState<Record<string, unknown> | null>(null);
   const [preferences, setPreferences] = useState<RecordingPreferences>({
     record_all: true,
     record_only_owned: false,
@@ -298,7 +299,7 @@ export function useRecallCalendar() {
         const popup = window.open(
           data.oauth_url,
           'recall-calendar-auth',
-          `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes`
+          `width=${width},height=${height},left=${left},top=${top},scrollbars=yes,resizable=yes,noopener=yes,noreferrer=yes`
         );
         
         if (!popup) {
@@ -517,6 +518,33 @@ export function useRecallCalendar() {
     }
   }, [authUser?.id]);
 
+  // Debug connections - fetch raw data from Recall.ai
+  const debugConnections = useCallback(async () => {
+    if (!authUser?.id) return null;
+
+    try {
+      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-auth', {
+        body: {
+          action: 'debug_connections',
+          supabase_user_id: authUser.id,
+          user_email: authUser.email,
+        },
+      });
+
+      if (funcError) throw funcError;
+
+      if (data?.success && data.debug) {
+        setDebugInfo(data.debug);
+        console.log('[useRecallCalendar] Debug info:', data.debug);
+        return data.debug;
+      }
+      return null;
+    } catch (err: any) {
+      console.error('Error fetching debug info:', err);
+      return null;
+    }
+  }, [authUser?.id, authUser?.email]);
+
   return {
     status,
     isLoading,
@@ -530,6 +558,7 @@ export function useRecallCalendar() {
     recallUserId,
     pendingOauthUrl,
     pendingOauthProvider,
+    debugInfo,
     connect,
     disconnectGoogle,
     disconnectMicrosoft,
@@ -538,28 +567,6 @@ export function useRecallCalendar() {
     updateMeetingRecording,
     updatePreferences,
     repairConnection,
-  };
-
-  return {
-    status,
-    isLoading,
-    error,
-    meetingsError,
-    meetings,
-    userId: authUser?.id || null,
-    userEmail: authUser?.email || null,
-    googleConnected,
-    microsoftConnected,
-    preferences,
-    needsRepair,
-    recallUserId,
-    connect,
-    disconnectGoogle,
-    disconnectMicrosoft,
-    checkStatus,
-    fetchMeetings,
-    updateMeetingRecording,
-    updatePreferences,
-    repairConnection,
+    debugConnections,
   };
 }

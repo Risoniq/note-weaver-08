@@ -1,6 +1,8 @@
-import { Calendar, Link2Off, RefreshCw, AlertCircle, Chrome, Wrench } from 'lucide-react';
+import { useState } from 'react';
+import { Calendar, Link2Off, RefreshCw, AlertCircle, Chrome, Wrench, Bug, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CalendarStatus } from '@/hooks/useRecallCalendar';
+import { toast } from 'sonner';
 
 interface RecallCalendarConnectionProps {
   status: CalendarStatus;
@@ -14,11 +16,13 @@ interface RecallCalendarConnectionProps {
   onRefresh: () => void;
   onCheckStatus: () => void;
   onRepair?: (targetId: string) => Promise<boolean>;
+  onDebugConnections?: () => Promise<Record<string, unknown> | null>;
   isLoading: boolean;
   needsRepair?: boolean;
   recallUserId?: string | null;
   pendingOauthUrl?: string | null;
   pendingOauthProvider?: 'google' | 'microsoft' | null;
+  debugInfo?: Record<string, unknown> | null;
 }
 
 // Microsoft icon component
@@ -141,14 +145,46 @@ export const RecallCalendarConnection = ({
   onRefresh,
   onCheckStatus,
   onRepair,
+  onDebugConnections,
   isLoading,
   needsRepair,
   recallUserId,
   pendingOauthUrl,
   pendingOauthProvider,
+  debugInfo,
 }: RecallCalendarConnectionProps) => {
+  const [showDebug, setShowDebug] = useState(false);
+  const [isLoadingDebug, setIsLoadingDebug] = useState(false);
+  const [copied, setCopied] = useState(false);
+  
   const isConnecting = status === 'connecting';
   const isSyncing = status === 'syncing';
+
+  const handleDebug = async () => {
+    if (!onDebugConnections) return;
+    setIsLoadingDebug(true);
+    try {
+      await onDebugConnections();
+      setShowDebug(true);
+    } finally {
+      setIsLoadingDebug(false);
+    }
+  };
+
+  const copyDebugInfo = () => {
+    if (!debugInfo) return;
+    const debugBundle = {
+      ...debugInfo,
+      ui_status: status,
+      ui_google_connected: googleConnected,
+      ui_microsoft_connected: microsoftConnected,
+      copied_at: new Date().toISOString(),
+    };
+    navigator.clipboard.writeText(JSON.stringify(debugBundle, null, 2));
+    setCopied(true);
+    toast.success('Debug-Info in Zwischenablage kopiert');
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="space-y-3">
@@ -266,6 +302,74 @@ export const RecallCalendarConnection = ({
         <div className="p-3 bg-destructive/10 rounded-lg flex items-start gap-2">
           <AlertCircle size={16} className="text-destructive mt-0.5 flex-shrink-0" />
           <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
+
+      {/* Debug Panel */}
+      {onDebugConnections && (
+        <div className="border-t border-border pt-3 mt-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDebug}
+              disabled={isLoadingDebug}
+            >
+              <Bug size={14} className={`mr-1.5 ${isLoadingDebug ? 'animate-spin' : ''}`} />
+              Debug abrufen
+            </Button>
+            {debugInfo && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={copyDebugInfo}
+              >
+                {copied ? <Check size={14} className="mr-1.5 text-green-500" /> : <Copy size={14} className="mr-1.5" />}
+                {copied ? 'Kopiert!' : 'Debug kopieren'}
+              </Button>
+            )}
+            {showDebug && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDebug(false)}
+              >
+                Schließen
+              </Button>
+            )}
+          </div>
+          
+          {showDebug && debugInfo && (
+            <div className="p-3 bg-muted/50 rounded-lg text-xs font-mono overflow-auto max-h-48">
+              <div className="space-y-1">
+                <p><span className="text-muted-foreground">recall_user_id:</span> {String(debugInfo.recall_user_id || 'N/A')}</p>
+                <p><span className="text-muted-foreground">local_google:</span> {String(debugInfo.local_google_connected)}</p>
+                <p><span className="text-muted-foreground">local_microsoft:</span> {String(debugInfo.local_microsoft_connected)}</p>
+                <p className={debugInfo.recall_microsoft_connected ? 'text-green-500' : 'text-destructive'}>
+                  <span className="text-muted-foreground">recall_microsoft:</span> {String(debugInfo.recall_microsoft_connected)}
+                </p>
+                <p className={debugInfo.recall_google_connected ? 'text-green-500' : 'text-destructive'}>
+                  <span className="text-muted-foreground">recall_google:</span> {String(debugInfo.recall_google_connected)}
+                </p>
+                {debugInfo.recall_error && (
+                  <p className="text-destructive"><span className="text-muted-foreground">recall_error:</span> {String(debugInfo.recall_error)}</p>
+                )}
+                <p><span className="text-muted-foreground">timestamp:</span> {String(debugInfo.timestamp)}</p>
+              </div>
+            </div>
+          )}
+          
+          {showDebug && debugInfo && !debugInfo.recall_microsoft_connected && !debugInfo.recall_google_connected && (
+            <div className="mt-2 p-2 bg-yellow-500/10 rounded text-xs text-yellow-700 dark:text-yellow-400">
+              <p className="font-medium">Recall.ai zeigt keine Verbindung.</p>
+              <p className="mt-1">Mögliche Ursachen:</p>
+              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                <li>Recall EU Dashboard: MS Client Secret abgelaufen/falsch</li>
+                <li>Azure: Admin Consent nicht erteilt</li>
+                <li>Azure: Conditional Access blockiert</li>
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>
