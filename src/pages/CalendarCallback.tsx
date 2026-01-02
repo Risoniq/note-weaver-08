@@ -111,9 +111,9 @@ const CalendarCallback = () => {
         const storedProvider = sessionStorage.getItem('recall_oauth_provider');
         const effectiveProvider = provider || storedProvider;
 
-        // Helper function to close popup and notify opener
-        const closePopupWithSuccess = () => {
-          // Try to send message to opener window
+        // Helper function to handle success - navigate back to app
+        const handleSuccess = () => {
+          // If opened as popup, try to notify opener and close
           if (window.opener && !window.opener.closed) {
             try {
               window.opener.postMessage({
@@ -125,22 +125,19 @@ const CalendarCallback = () => {
             } catch (e) {
               console.error('[CalendarCallback] Failed to post message:', e);
             }
-          }
-          
-          // Try to close the popup
-          try {
-            window.close();
-          } catch {
-            // If we can't close, show success and auto-redirect
-          }
-          
-          // Fallback: If popup didn't close, show success message and redirect
-          setTimeout(() => {
-            // If we're still here, the popup didn't close - redirect instead
-            if (document.hasFocus()) {
-              navigate(`/?oauth_complete=true&provider=${effectiveProvider}`);
+            
+            // Try to close the popup
+            try {
+              window.close();
+            } catch {
+              // If can't close, navigate
             }
-          }, 2000);
+          }
+          
+          // Navigate back to main page (for new tab flow)
+          setTimeout(() => {
+            navigate(`/?oauth_complete=true&provider=${effectiveProvider}`);
+          }, 1500);
         };
 
         // Handle Microsoft-specific errors
@@ -189,10 +186,10 @@ const CalendarCallback = () => {
           setStatus('success');
           setMessage('Kalender erfolgreich verbunden!');
           
-          console.log('[CalendarCallback] OAuth successful, closing popup or redirecting');
+          console.log('[CalendarCallback] OAuth successful, navigating back');
           
-          // Close popup and notify opener, or redirect
-          closePopupWithSuccess();
+          // Navigate back to app
+          handleSuccess();
           return;
         }
 
@@ -203,8 +200,8 @@ const CalendarCallback = () => {
           setStatus('success');
           setMessage('Kalender wird synchronisiert...');
           
-          console.log('[CalendarCallback] Assuming success, closing popup');
-          closePopupWithSuccess();
+          console.log('[CalendarCallback] Assuming success, navigating back');
+          handleSuccess();
           return;
         }
 
