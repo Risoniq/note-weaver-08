@@ -1,28 +1,30 @@
 import { useState } from 'react';
-import { Calendar, Link2Off, RefreshCw, AlertCircle, Chrome, Wrench, Bug, Copy, Check } from 'lucide-react';
+import { Link2Off, RefreshCw, AlertCircle, Chrome } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { CalendarStatus } from '@/hooks/useRecallCalendar';
-import { toast } from 'sonner';
+import type { GoogleCalendarStatus } from '@/hooks/useGoogleRecallCalendar';
+import type { MicrosoftCalendarStatus } from '@/hooks/useMicrosoftRecallCalendar';
 
 interface RecallCalendarConnectionProps {
-  status: CalendarStatus;
-  error: string | null;
+  // Google
+  googleStatus: GoogleCalendarStatus;
+  googleError: string | null;
   googleConnected: boolean;
-  microsoftConnected: boolean;
+  googlePendingOauthUrl: string | null;
+  googleIsLoading: boolean;
   onConnectGoogle: () => void;
-  onConnectMicrosoft: () => void;
   onDisconnectGoogle: () => void;
+  onCheckGoogleStatus: () => void;
+  // Microsoft
+  microsoftStatus: MicrosoftCalendarStatus;
+  microsoftError: string | null;
+  microsoftConnected: boolean;
+  microsoftPendingOauthUrl: string | null;
+  microsoftIsLoading: boolean;
+  onConnectMicrosoft: () => void;
   onDisconnectMicrosoft: () => void;
-  onRefresh: () => void;
-  onCheckStatus: () => void;
-  onRepair?: (targetId: string) => Promise<boolean>;
-  onDebugConnections?: () => Promise<Record<string, unknown> | null>;
-  isLoading: boolean;
-  needsRepair?: boolean;
-  recallUserId?: string | null;
-  pendingOauthUrl?: string | null;
-  pendingOauthProvider?: 'google' | 'microsoft' | null;
-  debugInfo?: Record<string, unknown> | null;
+  onCheckMicrosoftStatus: () => void;
+  // Shared
+  onRefreshMeetings: () => void;
 }
 
 // Microsoft icon component
@@ -39,11 +41,13 @@ interface CalendarCardProps {
   title: string;
   icon: React.ReactNode;
   connected: boolean;
-  isConnecting: boolean;
-  isSyncing: boolean;
+  status: GoogleCalendarStatus | MicrosoftCalendarStatus;
   isLoading: boolean;
+  error: string | null;
+  pendingOauthUrl: string | null;
   onConnect: () => void;
   onDisconnect: () => void;
+  onCheckStatus: () => void;
   onRefresh: () => void;
 }
 
@@ -51,15 +55,20 @@ const CalendarCard = ({
   title,
   icon,
   connected,
-  isConnecting,
-  isSyncing,
+  status,
   isLoading,
+  error,
+  pendingOauthUrl,
   onConnect,
   onDisconnect,
+  onCheckStatus,
   onRefresh,
 }: CalendarCardProps) => {
+  const isConnecting = status === 'connecting';
+  const isSyncing = status === 'syncing';
+
   return (
-    <div className="bg-card border border-border rounded-xl p-4">
+    <div className="bg-card border border-border rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-lg ${
@@ -129,63 +138,74 @@ const CalendarCard = ({
           )}
         </div>
       </div>
+
+      {/* Connecting state with fallback options */}
+      {isConnecting && (
+        <div className="p-3 bg-blue-500/10 rounded-lg space-y-2">
+          <div className="flex items-start gap-2">
+            <RefreshCw size={16} className="text-blue-500 animate-spin mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm text-blue-600 dark:text-blue-400">
+                Warte auf Anmeldung...
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={onCheckStatus} disabled={isLoading}>
+              <RefreshCw size={14} className={`mr-1.5 ${isLoading ? 'animate-spin' : ''}`} />
+              Status prüfen
+            </Button>
+            
+            {pendingOauthUrl && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const width = 600;
+                  const height = 700;
+                  const left = Math.max(0, (window.screen.width - width) / 2);
+                  const top = Math.max(0, (window.screen.height - height) / 2);
+                  window.open(pendingOauthUrl, '_blank', `width=${width},height=${height},left=${left},top=${top}`);
+                }}
+              >
+                Popup erneut öffnen
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Error display */}
+      {status === 'error' && error && (
+        <div className="p-3 bg-destructive/10 rounded-lg flex items-start gap-2">
+          <AlertCircle size={16} className="text-destructive mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
     </div>
   );
 };
 
 export const RecallCalendarConnection = ({
-  status,
-  error,
+  googleStatus,
+  googleError,
   googleConnected,
-  microsoftConnected,
+  googlePendingOauthUrl,
+  googleIsLoading,
   onConnectGoogle,
-  onConnectMicrosoft,
   onDisconnectGoogle,
+  onCheckGoogleStatus,
+  microsoftStatus,
+  microsoftError,
+  microsoftConnected,
+  microsoftPendingOauthUrl,
+  microsoftIsLoading,
+  onConnectMicrosoft,
   onDisconnectMicrosoft,
-  onRefresh,
-  onCheckStatus,
-  onRepair,
-  onDebugConnections,
-  isLoading,
-  needsRepair,
-  recallUserId,
-  pendingOauthUrl,
-  pendingOauthProvider,
-  debugInfo,
+  onCheckMicrosoftStatus,
+  onRefreshMeetings,
 }: RecallCalendarConnectionProps) => {
-  const [showDebug, setShowDebug] = useState(false);
-  const [isLoadingDebug, setIsLoadingDebug] = useState(false);
-  const [copied, setCopied] = useState(false);
-  
-  const isConnecting = status === 'connecting';
-  const isSyncing = status === 'syncing';
-
-  const handleDebug = async () => {
-    if (!onDebugConnections) return;
-    setIsLoadingDebug(true);
-    try {
-      await onDebugConnections();
-      setShowDebug(true);
-    } finally {
-      setIsLoadingDebug(false);
-    }
-  };
-
-  const copyDebugInfo = () => {
-    if (!debugInfo) return;
-    const debugBundle = {
-      ...debugInfo,
-      ui_status: status,
-      ui_google_connected: googleConnected,
-      ui_microsoft_connected: microsoftConnected,
-      copied_at: new Date().toISOString(),
-    };
-    navigator.clipboard.writeText(JSON.stringify(debugBundle, null, 2));
-    setCopied(true);
-    toast.success('Debug-Info in Zwischenablage kopiert');
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-medium text-muted-foreground mb-2">Kalender-Integration</h3>
@@ -195,12 +215,14 @@ export const RecallCalendarConnection = ({
         title="Google Kalender"
         icon={<Chrome size={20} />}
         connected={googleConnected}
-        isConnecting={isConnecting && !googleConnected}
-        isSyncing={isSyncing && !googleConnected}
-        isLoading={isLoading}
+        status={googleStatus}
+        isLoading={googleIsLoading}
+        error={googleError}
+        pendingOauthUrl={googlePendingOauthUrl}
         onConnect={onConnectGoogle}
         onDisconnect={onDisconnectGoogle}
-        onRefresh={onRefresh}
+        onCheckStatus={onCheckGoogleStatus}
+        onRefresh={onRefreshMeetings}
       />
 
       {/* Microsoft Calendar Card */}
@@ -208,170 +230,15 @@ export const RecallCalendarConnection = ({
         title="Microsoft Kalender"
         icon={<MicrosoftIcon size={20} />}
         connected={microsoftConnected}
-        isConnecting={isConnecting && !microsoftConnected}
-        isSyncing={isSyncing && !microsoftConnected}
-        isLoading={isLoading}
+        status={microsoftStatus}
+        isLoading={microsoftIsLoading}
+        error={microsoftError}
+        pendingOauthUrl={microsoftPendingOauthUrl}
         onConnect={onConnectMicrosoft}
         onDisconnect={onDisconnectMicrosoft}
-        onRefresh={onRefresh}
+        onCheckStatus={onCheckMicrosoftStatus}
+        onRefresh={onRefreshMeetings}
       />
-
-      {/* Show manual instructions when connecting (polling in progress) */}
-      {isConnecting && (
-        <div className="p-4 bg-blue-500/10 rounded-lg space-y-3">
-          <div className="flex items-start gap-3">
-            <RefreshCw size={18} className="text-blue-500 animate-spin mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
-                Warte auf Anmeldung...
-              </p>
-              <p className="text-sm text-blue-600/80 dark:text-blue-400/80 mt-1">
-                Ein Login-Popup wurde geöffnet. Bitte schließe es nach der Anmeldung.
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onCheckStatus}
-              disabled={isLoading}
-            >
-              <RefreshCw size={14} className={`mr-1.5 ${isLoading ? 'animate-spin' : ''}`} />
-              Status prüfen
-            </Button>
-            
-            {pendingOauthUrl && (
-              <>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    const width = 600;
-                    const height = 700;
-                    const left = Math.max(0, (window.screen.width - width) / 2);
-                    const top = Math.max(0, (window.screen.height - height) / 2);
-                    window.open(pendingOauthUrl, 'recall-calendar-auth', `width=${width},height=${height},left=${left},top=${top}`);
-                  }}
-                >
-                  Popup erneut öffnen
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => window.open(pendingOauthUrl, '_blank')}
-                >
-                  In neuem Tab öffnen
-                </Button>
-              </>
-            )}
-          </div>
-
-          {pendingOauthUrl && (
-            <p className="text-xs text-blue-600/70 dark:text-blue-400/70">
-              Popup blockiert? Nutze die Buttons oben.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Repair hint - only show if repair is possible */}
-      {needsRepair && onRepair && recallUserId && (
-        <div className="p-3 bg-yellow-500/10 rounded-lg flex items-start gap-2">
-          <Wrench size={16} className="text-yellow-500 mt-0.5 flex-shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm text-yellow-600 dark:text-yellow-400">
-              Mögliche Verbindungs-Inkonsistenz erkannt.
-            </p>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="mt-2"
-              onClick={() => onRepair(recallUserId)}
-              disabled={isLoading}
-            >
-              <Wrench size={14} className="mr-1" />
-              Verbindung reparieren
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {status === 'error' && error && (
-        <div className="p-3 bg-destructive/10 rounded-lg flex items-start gap-2">
-          <AlertCircle size={16} className="text-destructive mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-destructive">{error}</p>
-        </div>
-      )}
-
-      {/* Debug Panel */}
-      {onDebugConnections && (
-        <div className="border-t border-border pt-3 mt-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleDebug}
-              disabled={isLoadingDebug}
-            >
-              <Bug size={14} className={`mr-1.5 ${isLoadingDebug ? 'animate-spin' : ''}`} />
-              Debug abrufen
-            </Button>
-            {debugInfo && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={copyDebugInfo}
-              >
-                {copied ? <Check size={14} className="mr-1.5 text-green-500" /> : <Copy size={14} className="mr-1.5" />}
-                {copied ? 'Kopiert!' : 'Debug kopieren'}
-              </Button>
-            )}
-            {showDebug && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowDebug(false)}
-              >
-                Schließen
-              </Button>
-            )}
-          </div>
-          
-          {showDebug && debugInfo && (
-            <div className="p-3 bg-muted/50 rounded-lg text-xs font-mono overflow-auto max-h-48">
-              <div className="space-y-1">
-                <p><span className="text-muted-foreground">recall_user_id:</span> {String(debugInfo.recall_user_id || 'N/A')}</p>
-                <p><span className="text-muted-foreground">local_google:</span> {String(debugInfo.local_google_connected)}</p>
-                <p><span className="text-muted-foreground">local_microsoft:</span> {String(debugInfo.local_microsoft_connected)}</p>
-                <p className={debugInfo.recall_microsoft_connected ? 'text-green-500' : 'text-destructive'}>
-                  <span className="text-muted-foreground">recall_microsoft:</span> {String(debugInfo.recall_microsoft_connected)}
-                </p>
-                <p className={debugInfo.recall_google_connected ? 'text-green-500' : 'text-destructive'}>
-                  <span className="text-muted-foreground">recall_google:</span> {String(debugInfo.recall_google_connected)}
-                </p>
-                {debugInfo.recall_error && (
-                  <p className="text-destructive"><span className="text-muted-foreground">recall_error:</span> {String(debugInfo.recall_error)}</p>
-                )}
-                <p><span className="text-muted-foreground">timestamp:</span> {String(debugInfo.timestamp)}</p>
-              </div>
-            </div>
-          )}
-          
-          {showDebug && debugInfo && !debugInfo.recall_microsoft_connected && !debugInfo.recall_google_connected && (
-            <div className="mt-2 p-2 bg-yellow-500/10 rounded text-xs text-yellow-700 dark:text-yellow-400">
-              <p className="font-medium">Recall.ai zeigt keine Verbindung.</p>
-              <p className="mt-1">Mögliche Ursachen:</p>
-              <ul className="list-disc list-inside mt-1 space-y-0.5">
-                <li>Recall EU Dashboard: MS Client Secret abgelaufen/falsch</li>
-                <li>Azure: Admin Consent nicht erteilt</li>
-                <li>Azure: Conditional Access blockiert</li>
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };
