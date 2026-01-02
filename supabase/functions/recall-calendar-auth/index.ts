@@ -281,29 +281,26 @@ serve(async (req) => {
     }
 
     if (action === 'authenticate') {
-      // Check for mismatch and auto-reset if needed
-      const stableId = getStableRecallUserId(userEmail, supabaseUserId);
-      
+      // Get the existing recall user ID from the database - DO NOT reset it
+      // The recall_user_id stored in the DB is the one that Recall.ai knows about
       const { data: existingUser } = await supabase
         .from('recall_calendar_users')
         .select('recall_user_id')
         .eq('supabase_user_id', supabaseUserId)
         .maybeSingle();
 
-      // If there's a mismatch, delete and recreate with correct ID
-      if (existingUser?.recall_user_id && existingUser.recall_user_id !== stableId) {
-        console.log('Auto-resetting due to mismatch:', {
-          old: existingUser.recall_user_id,
-          new: stableId
-        });
-        
-        await supabase
-          .from('recall_calendar_users')
-          .delete()
-          .eq('supabase_user_id', supabaseUserId);
+      let recallUserId: string;
+      
+      if (existingUser?.recall_user_id) {
+        // Use the stored recall_user_id - this is the ID Recall.ai knows
+        recallUserId = existingUser.recall_user_id;
+        console.log('Using existing Recall user ID:', recallUserId);
+      } else {
+        // Only create new if no existing record
+        const result = await getOrCreateRecallUser(supabaseUserId, userEmail);
+        recallUserId = result.recallUserId;
+        console.log('Created new Recall user ID:', recallUserId);
       }
-
-      const { recallUserId } = await getOrCreateRecallUser(supabaseUserId, userEmail);
 
       // Get authentication token from Recall.ai
       const authResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/authenticate/', {
