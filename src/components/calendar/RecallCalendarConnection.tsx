@@ -190,8 +190,8 @@ export const RecallCalendarConnection = ({
                 Warte auf Anmeldung...
               </p>
               <p className="text-sm text-blue-600/80 dark:text-blue-400/80 mt-1">
-                Nach erfolgreicher Anmeldung <strong>schließe das Popup-Fenster manuell</strong>. 
-                Die Verbindung wird automatisch erkannt.
+                Die Anmeldung wurde in einem <strong>neuen Tab</strong> geöffnet. 
+                Nach erfolgreicher Anmeldung wirst du automatisch zurückgeleitet.
               </p>
             </div>
           </div>
@@ -211,7 +211,7 @@ export const RecallCalendarConnection = ({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => window.open(pendingOauthUrl, '_blank', 'noopener,noreferrer')}
+                onClick={() => window.open(pendingOauthUrl, '_blank')}
               >
                 {pendingOauthProvider === 'microsoft' ? 'Microsoft Login öffnen' : 'Google Login öffnen'}
               </Button>
@@ -220,7 +220,7 @@ export const RecallCalendarConnection = ({
 
           {pendingOauthUrl && (
             <p className="text-xs text-blue-600/70 dark:text-blue-400/70">
-              Popup blockiert? Nutze den Button oben, um die Anmeldung manuell zu öffnen.
+              Tab nicht geöffnet? Nutze den Button oben.
             </p>
           )}
         </div>

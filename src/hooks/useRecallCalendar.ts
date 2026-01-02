@@ -260,30 +260,6 @@ export function useRecallCalendar() {
       return;
     }
 
-    // Always try to open a popup - modern browsers allow this on user interaction
-    // even when inside an iframe. The popup blocking check happens afterward.
-    const width = 600;
-    const height = 700;
-    const left = window.screenX + (window.outerWidth - width) / 2;
-    const top = window.screenY + (window.outerHeight - height) / 2;
-    const popupName = `recall-calendar-oauth-${provider}`;
-
-    // Open popup synchronously on user click to avoid popup blockers
-    const popup = window.open(
-      'about:blank',
-      popupName,
-      `width=${width},height=${height},left=${left},top=${top},popup=1`
-    );
-
-    if (popup) {
-      try {
-        popup.document.title = 'Kalender verbinden…';
-        popup.document.body.innerHTML = '<p style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 16px;">Lade Anmeldung…</p>';
-      } catch {
-        // ignore - cross-origin restrictions may apply
-      }
-    }
-
     try {
       setIsLoading(true);
       setStatus('connecting');
@@ -307,42 +283,29 @@ export function useRecallCalendar() {
       if (funcError) throw funcError;
 
       if (data.success && data.oauth_url) {
-        // If popup was blocked, show a manual "Open" button in the UI.
-        if (!popup) {
-          setPendingOauthUrl(data.oauth_url);
-          setPendingOauthProvider(provider);
-          toast.error('Popup wurde blockiert. Bitte öffne die Anmeldung manuell.');
-          setIsLoading(false);
-          return;
-        }
-
         sessionStorage.setItem('recall_oauth_provider', provider);
+        
+        // Store URL for fallback
+        setPendingOauthUrl(data.oauth_url);
+        setPendingOauthProvider(provider);
 
-        try {
-          popup.location.href = data.oauth_url;
-        } catch (navErr) {
-          console.error('Could not navigate popup:', navErr);
-          setPendingOauthUrl(data.oauth_url);
-          setPendingOauthProvider(provider);
-          toast.error('Konnte Popup nicht navigieren. Bitte öffne die Anmeldung manuell.');
+        // Open in NEW TAB instead of popup to avoid ERR_BLOCKED_BY_RESPONSE
+        const authTab = window.open(data.oauth_url, '_blank');
+        
+        if (!authTab) {
+          toast.error('Tab wurde blockiert. Bitte öffne die Anmeldung manuell über den Button.');
           setIsLoading(false);
           return;
         }
 
         toast.info(
-          `${provider === 'microsoft' ? 'Microsoft' : 'Google'} Login geöffnet. Nach der Anmeldung schließe das Popup-Fenster manuell – die Verbindung wird automatisch erkannt.`,
-          { duration: 20000 }
+          `${provider === 'microsoft' ? 'Microsoft' : 'Google'} Login in neuem Tab geöffnet. Nach der Anmeldung wirst du automatisch zurückgeleitet.`,
+          { duration: 15000 }
         );
 
         setIsLoading(false);
-        setStatus('connecting');
-        
-        // Store the OAuth URL for fallback display
-        setPendingOauthUrl(data.oauth_url);
-        setPendingOauthProvider(provider);
 
-        // Poll for connection status until connected or timeout
-        // Start more aggressively (every 1.5s) for faster detection
+        // Poll for connection + listen for window focus (when user returns)
         let pollCount = 0;
         const maxPolls = 200; // 5 minutes at 1.5s
 
@@ -385,7 +348,7 @@ export function useRecallCalendar() {
             setStatus('disconnected');
             toast.error('Zeitüberschreitung bei der Kalender-Verbindung. Bitte versuche es erneut.');
           }
-        }, 1500); // Poll every 1.5s for faster detection
+        }, 1500);
 
         return;
       }
@@ -394,11 +357,6 @@ export function useRecallCalendar() {
       setError(err.message || 'Fehler beim Verbinden');
       setStatus('error');
       setIsLoading(false);
-      try {
-        popup?.close();
-      } catch {
-        // ignore
-      }
     }
   }, [authUser?.id, authUser?.email, fetchMeetings]);
 
