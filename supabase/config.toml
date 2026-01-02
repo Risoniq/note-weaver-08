@@ -32,3 +32,9 @@ verify_jwt = false
 
 [functions.repair-all-recordings]
 verify_jwt = false
+
+[functions.google-recall-auth]
+verify_jwt = false
+
+[functions.microsoft-recall-auth]
+verify_jwt = false

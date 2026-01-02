@@ -1,4 +1,7 @@
-import { useRecallCalendar, RecallMeeting } from '@/hooks/useRecallCalendar';
+import { useEffect } from 'react';
+import { useGoogleRecallCalendar } from '@/hooks/useGoogleRecallCalendar';
+import { useMicrosoftRecallCalendar } from '@/hooks/useMicrosoftRecallCalendar';
+import { useRecallCalendarMeetings, RecallMeeting } from '@/hooks/useRecallCalendarMeetings';
 import { RecallCalendarConnection } from './RecallCalendarConnection';
 import { RecallUpcomingMeetings } from './RecallUpcomingMeetings';
 import { RecallRecordingPreferences } from './RecallRecordingPreferences';
@@ -8,30 +11,18 @@ interface RecallCalendarViewProps {
 }
 
 export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps) => {
-  const {
-    status,
-    isLoading,
-    error,
-    meetingsError,
-    meetings,
-    googleConnected,
-    microsoftConnected,
-    preferences,
-    needsRepair,
-    recallUserId,
-    pendingOauthUrl,
-    pendingOauthProvider,
-    debugInfo,
-    connect,
-    disconnectGoogle,
-    disconnectMicrosoft,
-    checkStatus,
-    fetchMeetings,
-    updateMeetingRecording,
-    updatePreferences,
-    repairConnection,
-    debugConnections,
-  } = useRecallCalendar();
+  const google = useGoogleRecallCalendar();
+  const microsoft = useMicrosoftRecallCalendar();
+  const meetings = useRecallCalendarMeetings();
+
+  // Fetch meetings when either calendar is connected
+  useEffect(() => {
+    if (google.connected || microsoft.connected) {
+      meetings.fetchMeetings();
+    }
+  }, [google.connected, microsoft.connected]);
+
+  const isConnected = google.connected || microsoft.connected;
 
   const handleJoinMeeting = (meeting: RecallMeeting) => {
     if (meeting.meeting_url) {
@@ -42,31 +33,33 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
   return (
     <div className="space-y-6">
       <RecallCalendarConnection
-        status={status}
-        error={error}
-        googleConnected={googleConnected}
-        microsoftConnected={microsoftConnected}
-        pendingOauthUrl={pendingOauthUrl}
-        pendingOauthProvider={pendingOauthProvider}
-        onConnectGoogle={() => connect('google')}
-        onConnectMicrosoft={() => connect('microsoft')}
-        onDisconnectGoogle={disconnectGoogle}
-        onDisconnectMicrosoft={disconnectMicrosoft}
-        onRefresh={fetchMeetings}
-        onCheckStatus={checkStatus}
-        onRepair={repairConnection}
-        onDebugConnections={debugConnections}
-        isLoading={isLoading}
-        needsRepair={needsRepair}
-        recallUserId={recallUserId}
-        debugInfo={debugInfo}
+        // Google props
+        googleStatus={google.status}
+        googleError={google.error}
+        googleConnected={google.connected}
+        googlePendingOauthUrl={google.pendingOauthUrl}
+        googleIsLoading={google.isLoading}
+        onConnectGoogle={google.connect}
+        onDisconnectGoogle={google.disconnect}
+        onCheckGoogleStatus={google.checkStatus}
+        // Microsoft props
+        microsoftStatus={microsoft.status}
+        microsoftError={microsoft.error}
+        microsoftConnected={microsoft.connected}
+        microsoftPendingOauthUrl={microsoft.pendingOauthUrl}
+        microsoftIsLoading={microsoft.isLoading}
+        onConnectMicrosoft={microsoft.connect}
+        onDisconnectMicrosoft={microsoft.disconnect}
+        onCheckMicrosoftStatus={microsoft.checkStatus}
+        // Shared
+        onRefreshMeetings={meetings.fetchMeetings}
       />
 
-      {status === 'connected' && (
+      {isConnected && (
         <>
           <RecallRecordingPreferences
-            preferences={preferences}
-            onUpdatePreferences={updatePreferences}
+            preferences={meetings.preferences}
+            onUpdatePreferences={meetings.updatePreferences}
           />
 
           <div>
@@ -74,18 +67,18 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
               Anstehende Meetings (Automatische Aufnahme)
             </h2>
             <RecallUpcomingMeetings
-              meetings={meetings}
-              isLoading={isLoading}
-              meetingsError={meetingsError}
-              onToggleRecording={updateMeetingRecording}
+              meetings={meetings.meetings}
+              isLoading={meetings.isLoading}
+              meetingsError={meetings.meetingsError}
+              onToggleRecording={meetings.updateMeetingRecording}
               onJoinMeeting={handleJoinMeeting}
-              onRetry={fetchMeetings}
+              onRetry={meetings.fetchMeetings}
             />
           </div>
         </>
       )}
 
-      {status === 'disconnected' && (
+      {!isConnected && google.status === 'disconnected' && microsoft.status === 'disconnected' && (
         <div className="bg-muted/50 rounded-xl p-8 text-center">
           <p className="text-muted-foreground mb-4">
             Verbinde deinen Kalender, um automatisch an allen Meetings mit einem Bot teilzunehmen.
