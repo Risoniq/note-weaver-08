@@ -291,7 +291,8 @@ serve(async (req) => {
         `scope=${encodeURIComponent(msScopes)}` +
         `&response_mode=query` +
         `&response_type=code` +
-        `&prompt=select_account` +
+        // Ensure offline_access actually yields a refresh_token (Microsoft may require explicit consent)
+        `&prompt=${encodeURIComponent('consent select_account')}` +
         `&state=${encodeURIComponent(JSON.stringify(stateObj))}` +
         `&redirect_uri=${encodeURIComponent(msRedirectUri)}` +
         `&client_id=${encodeURIComponent(MS_OAUTH_CLIENT_ID)}`;

@@ -19,6 +19,16 @@ const CalendarCallback = () => {
 
   // Helper to translate Microsoft OAuth errors to user-friendly messages
   const translateMsError = (error: string, description: string | null): ErrorDetails => {
+    // Recall/Microsoft sometimes returns a human-readable string in `error` (not an OAuth error code)
+    if (error.toLowerCase().includes('refresh_token missing')) {
+      return {
+        code: 'refresh_token_missing',
+        message: 'Microsoft-Kalender konnte nicht verbunden werden',
+        suggestion:
+          'Microsoft hat kein Refresh-Token ausgestellt. Bitte versuche die Anmeldung erneut und bestätige die Berechtigungen (Consent). Falls du in einer Organisation bist, kann Admin-Zustimmung nötig sein.',
+      };
+    }
+
     switch (error) {
       case 'access_denied':
         return {
