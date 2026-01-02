@@ -291,17 +291,44 @@ serve(async (req) => {
       );
     }
 
-    // Helper to get Recall.ai internal UUID from external_id
+    // Helper to get Recall.ai internal UUID from external_id (email)
     async function getRecallInternalId(externalId: string): Promise<string | null> {
       try {
-        const response = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${externalId}/`, {
-          headers: { 'Authorization': `Token ${RECALL_API_KEY}` },
+        // First get an auth token
+        const authResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/authenticate/', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ user_id: externalId }),
         });
+
+        if (!authResponse.ok) {
+          console.error('[Internal] Failed to get auth token:', authResponse.status);
+          return null;
+        }
+
+        const authData = await authResponse.json();
+        const authToken = authData.token;
+
+        // Now fetch user data with auth token
+        const response = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/?user_id=${externalId}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
+            'x-recallcalendarauthtoken': authToken,
+            'Content-Type': 'application/json',
+          },
+        });
+
         if (!response.ok) {
           console.error('[Internal] Failed to get Recall user:', response.status);
           return null;
         }
+
         const userData = await response.json();
+        console.log('[Internal] Got Recall user data, UUID:', userData.id);
         return userData.id || null; // UUID
       } catch (error) {
         console.error('[Internal] Error getting Recall user:', error);
