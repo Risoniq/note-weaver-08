@@ -380,12 +380,14 @@ serve(async (req) => {
       }
     }
 
-    // Helper to sync preferences to Recall.ai using internal UUID
+    // Helper to sync preferences to Recall.ai
     // IMPORTANT: According to Recall.ai docs:
+    // - The endpoint is /api/v1/calendar/user/ (NOT /user/{uuid}/preferences/)
+    // - The user is identified by the x-recallcalendarauthtoken header
     // - true = this rule is evaluated and must be satisfied
     // - false = this rule is ignored
     // For "record all meetings": set external/internal to true, others to false (ignored)
-    async function syncPreferencesToRecall(recallInternalId: string, prefs: any): Promise<boolean> {
+    async function syncPreferencesToRecall(externalUserId: string, prefs: any): Promise<boolean> {
       // "Record all meetings" = external + internal true, filtering rules false (ignored)
       const recallPreferences = {
         record_non_host: false,       // false = ignore this rule (don't require non-host)
@@ -396,13 +398,32 @@ serve(async (req) => {
         record_only_host: prefs.record_only_owned ?? false, // Only if user wants host-only
       };
 
-      console.log('[Internal] Syncing preferences to Recall.ai UUID:', recallInternalId, 'Preferences:', JSON.stringify(recallPreferences));
+      console.log('[Internal] Syncing preferences to Recall.ai for user:', externalUserId, 'Preferences:', JSON.stringify(recallPreferences));
 
       try {
-        const response = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${recallInternalId}/preferences/`, {
+        // Step 1: Get auth token for this user
+        const authResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/authenticate/', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ user_id: externalUserId }),
+        });
+
+        if (!authResponse.ok) {
+          console.error('[Internal] Failed to get auth token for preferences sync:', authResponse.status);
+          return false;
+        }
+
+        const authData = await authResponse.json();
+        
+        // Step 2: PATCH to /api/v1/calendar/user/ with auth token header (NO UUID in path!)
+        const response = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/user/', {
           method: 'PATCH',
           headers: {
             'Authorization': `Token ${RECALL_API_KEY}`,
+            'x-recallcalendarauthtoken': authData.token,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(recallPreferences),
@@ -423,21 +444,12 @@ serve(async (req) => {
     }
 
     if (action === 'init_preferences') {
-      // Initialize/repair preferences with correct Recall.ai UUID
+      // Initialize/repair preferences using external user ID (email)
       const recallUserId = await getRecallUserId(supabaseUserId);
       if (!recallUserId) {
         return new Response(
           JSON.stringify({ success: false, error: 'No calendar connected' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // Get Recall internal UUID
-      const recallInternalId = await getRecallInternalId(recallUserId);
-      if (!recallInternalId) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'Could not fetch Recall user' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -449,8 +461,8 @@ serve(async (req) => {
         auto_record: true,
       };
 
-      // Sync to Recall.ai with correct UUID
-      const synced = await syncPreferencesToRecall(recallInternalId, defaultPrefs);
+      // Sync to Recall.ai using external user ID (email) - the function handles auth token
+      const synced = await syncPreferencesToRecall(recallUserId, defaultPrefs);
 
       // Also update local database
       await supabase
@@ -462,7 +474,7 @@ serve(async (req) => {
         JSON.stringify({ 
           success: synced, 
           preferences: defaultPrefs,
-          recall_internal_id: recallInternalId,
+          recall_user_id: recallUserId,
           message: synced ? 'Preferences initialized successfully' : 'Failed to sync to Recall.ai'
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

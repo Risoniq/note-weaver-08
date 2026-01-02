@@ -318,10 +318,12 @@ serve(async (req) => {
     }
 
     // Helper: Sync default preferences to Recall.ai
-    // IMPORTANT: According to Recall.ai docs, for "record all meetings":
+    // IMPORTANT: According to Recall.ai docs:
+    // - The endpoint is /api/v1/calendar/user/ (NOT /user/{uuid}/preferences/)
+    // - The user is identified by the x-recallcalendarauthtoken header
     // - record_external: true, record_internal: true = record all meetings
     // - record_non_host: false, record_recurring: false, record_confirmed: false = ignore these filters
-    async function syncDefaultPreferences(recallUserId: string): Promise<void> {
+    async function syncDefaultPreferences(externalUserId: string): Promise<void> {
       const defaultPreferences = {
         record_non_host: false,      // false = ignore this rule (don't filter by host status)
         record_recurring: false,     // false = ignore this rule (record all, not just recurring)
@@ -331,13 +333,32 @@ serve(async (req) => {
         record_only_host: false,     // false = not only host meetings
       };
 
-      console.log('[MicrosoftAuth] Syncing default preferences to Recall.ai for user:', recallUserId, 'Preferences:', JSON.stringify(defaultPreferences));
+      console.log('[MicrosoftAuth] Syncing default preferences to Recall.ai for user:', externalUserId, 'Preferences:', JSON.stringify(defaultPreferences));
 
       try {
-        const response = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
+        // Step 1: Get auth token for this user
+        const authResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/authenticate/', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ user_id: externalUserId }),
+        });
+
+        if (!authResponse.ok) {
+          console.error('[MicrosoftAuth] Failed to get auth token for preferences sync:', authResponse.status);
+          return;
+        }
+
+        const authData = await authResponse.json();
+
+        // Step 2: PATCH to /api/v1/calendar/user/ with auth token header (NO UUID in path!)
+        const response = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/user/', {
           method: 'PATCH',
           headers: {
             'Authorization': `Token ${RECALL_API_KEY}`,
+            'x-recallcalendarauthtoken': authData.token,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(defaultPreferences),
@@ -400,10 +421,10 @@ serve(async (req) => {
         microsoft_connected: microsoftConnected,
       });
 
-      // If just connected, sync default preferences using Recall internal UUID
-      if (microsoftConnected && !calendarUser.microsoft_connected && userData?.id) {
-        console.log('[MicrosoftAuth] New connection detected, syncing default preferences with UUID:', userData.id);
-        await syncDefaultPreferences(userData.id); // Use UUID, not external_id (email)
+      // If just connected, sync default preferences using external user ID (email)
+      if (microsoftConnected && !calendarUser.microsoft_connected) {
+        console.log('[MicrosoftAuth] New connection detected, syncing default preferences for user:', recallUserId);
+        await syncDefaultPreferences(recallUserId); // Use external user ID, function handles auth token
       }
 
       // Update database
