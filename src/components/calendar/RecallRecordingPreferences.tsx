@@ -1,52 +1,22 @@
-import { useState } from 'react';
 import { RecordingPreferences } from '@/hooks/useRecallCalendar';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { Settings2, RefreshCw } from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 
 interface RecallRecordingPreferencesProps {
   preferences: RecordingPreferences;
   onUpdatePreferences: (prefs: Partial<RecordingPreferences>) => void;
-  onInitPreferences?: () => Promise<boolean>;
 }
 
 export const RecallRecordingPreferences = ({
   preferences,
   onUpdatePreferences,
-  onInitPreferences,
 }: RecallRecordingPreferencesProps) => {
-  const [isInitializing, setIsInitializing] = useState(false);
-
-  const handleInitPreferences = async () => {
-    if (!onInitPreferences) return;
-    setIsInitializing(true);
-    try {
-      await onInitPreferences();
-    } finally {
-      setIsInitializing(false);
-    }
-  };
-
   return (
     <div className="bg-card border border-border rounded-xl p-4">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <Settings2 size={18} className="text-muted-foreground" />
-          <h3 className="font-medium text-foreground">Aufnahme-Einstellungen</h3>
-        </div>
-        {onInitPreferences && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleInitPreferences}
-            disabled={isInitializing}
-            className="text-xs"
-          >
-            <RefreshCw size={14} className={isInitializing ? 'animate-spin mr-1' : 'mr-1'} />
-            {isInitializing ? 'Aktiviere...' : 'Aktivieren'}
-          </Button>
-        )}
+      <div className="flex items-center gap-2 mb-4">
+        <Settings2 size={18} className="text-muted-foreground" />
+        <h3 className="font-medium text-foreground">Aufnahme-Einstellungen</h3>
       </div>
 
       <div className="space-y-4">

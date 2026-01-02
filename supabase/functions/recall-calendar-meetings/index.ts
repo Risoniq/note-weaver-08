@@ -508,15 +508,11 @@ serve(async (req) => {
         throw new Error('Failed to update preferences');
       }
 
-      // Sync preferences to Recall.ai - get internal UUID first
+      // Sync preferences to Recall.ai using external user ID (email)
       const recallUserId = await getRecallUserId(supabaseUserId);
       if (recallUserId) {
-        const recallInternalId = await getRecallInternalId(recallUserId);
-        if (recallInternalId) {
-          await syncPreferencesToRecall(recallInternalId, newPrefs);
-        } else {
-          console.error('[Internal] Could not get Recall internal ID for sync');
-        }
+        const synced = await syncPreferencesToRecall(recallUserId, newPrefs);
+        console.log('[update_preferences] Sync result:', synced);
       }
 
       return new Response(

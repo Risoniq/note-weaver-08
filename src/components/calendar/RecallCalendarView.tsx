@@ -5,6 +5,7 @@ import { useRecallCalendarMeetings, RecallMeeting } from '@/hooks/useRecallCalen
 import { RecallCalendarConnection } from './RecallCalendarConnection';
 import { RecallUpcomingMeetings } from './RecallUpcomingMeetings';
 import { RecallRecordingPreferences } from './RecallRecordingPreferences';
+import { QuickMeetingJoin } from './QuickMeetingJoin';
 
 interface RecallCalendarViewProps {
   onStartRecording?: (meeting: RecallMeeting) => void;
@@ -55,12 +56,13 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
         onRefreshMeetings={meetings.fetchMeetings}
       />
 
+      <QuickMeetingJoin onBotStarted={meetings.fetchMeetings} />
+
       {isConnected && (
         <>
           <RecallRecordingPreferences
             preferences={meetings.preferences}
             onUpdatePreferences={meetings.updatePreferences}
-            onInitPreferences={meetings.initPreferences}
           />
 
           <div>
