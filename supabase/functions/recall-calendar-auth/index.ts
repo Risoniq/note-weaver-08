@@ -173,9 +173,38 @@ serve(async (req) => {
         throw new Error('Failed to create calendar user');
       }
 
-      console.log('Created new Recall user:', recallUserId);
+      console.log('Created new Recall user in local DB:', recallUserId);
       
-      // Sync default recording preferences to Recall.ai for new users
+      // CRITICAL: Create the user in Recall.ai's API BEFORE setting preferences
+      console.log('Creating user in Recall.ai EU region...');
+      try {
+        const createUserResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/user/', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ user_id: recallUserId }),
+        });
+
+        if (!createUserResponse.ok) {
+          // 409 = conflict/user already exists, which is fine
+          if (createUserResponse.status === 409) {
+            console.log('User already exists in Recall.ai (409), continuing...');
+          } else {
+            const errorBody = await createUserResponse.text();
+            console.error('Failed to create user in Recall.ai:', createUserResponse.status, errorBody);
+            // Don't throw - we'll try to continue anyway, the user might exist
+          }
+        } else {
+          console.log('User created successfully in Recall.ai');
+        }
+      } catch (createError) {
+        console.error('Error creating user in Recall.ai:', createError);
+        // Continue anyway - user might already exist
+      }
+      
+      // Now sync default recording preferences to Recall.ai for new users
       const defaultRecallPreferences = {
         record_non_host: true,
         record_recurring: true,
