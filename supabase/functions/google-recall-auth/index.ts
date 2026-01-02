@@ -181,7 +181,7 @@ serve(async (req) => {
     }
 
     // Helper: Check Google connection status
-    async function checkGoogleConnection(recallUserId: string, authToken: string): Promise<{ connected: boolean; userData: unknown }> {
+    async function checkGoogleConnection(recallUserId: string, authToken: string): Promise<{ connected: boolean; userData: { id?: string; [key: string]: unknown } | null }> {
       const userResponse = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/?user_id=${recallUserId}`, {
         method: 'GET',
         headers: {
@@ -371,10 +371,10 @@ serve(async (req) => {
         google_connected: googleConnected,
       });
 
-      // If just connected, sync default preferences
-      if (googleConnected && !calendarUser.google_connected) {
-        console.log('[GoogleAuth] New connection detected, syncing default preferences');
-        await syncDefaultPreferences(recallUserId);
+      // If just connected, sync default preferences using Recall internal UUID
+      if (googleConnected && !calendarUser.google_connected && userData?.id) {
+        console.log('[GoogleAuth] New connection detected, syncing default preferences with UUID:', userData.id);
+        await syncDefaultPreferences(userData.id); // Use UUID, not external_id (email)
       }
 
       // Update database

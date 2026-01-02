@@ -60,6 +60,7 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
           <RecallRecordingPreferences
             preferences={meetings.preferences}
             onUpdatePreferences={meetings.updatePreferences}
+            onInitPreferences={meetings.initPreferences}
           />
 
           <div>

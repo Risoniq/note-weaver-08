@@ -199,7 +199,7 @@ serve(async (req) => {
     }
 
     // Helper: Check Microsoft connection status
-    async function checkMicrosoftConnection(recallUserId: string, authToken: string): Promise<{ connected: boolean; userData: unknown }> {
+    async function checkMicrosoftConnection(recallUserId: string, authToken: string): Promise<{ connected: boolean; userData: { id?: string; [key: string]: unknown } | null }> {
       const userResponse = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/?user_id=${recallUserId}`, {
         method: 'GET',
         headers: {
@@ -396,10 +396,10 @@ serve(async (req) => {
         microsoft_connected: microsoftConnected,
       });
 
-      // If just connected, sync default preferences
-      if (microsoftConnected && !calendarUser.microsoft_connected) {
-        console.log('[MicrosoftAuth] New connection detected, syncing default preferences');
-        await syncDefaultPreferences(recallUserId);
+      // If just connected, sync default preferences using Recall internal UUID
+      if (microsoftConnected && !calendarUser.microsoft_connected && userData?.id) {
+        console.log('[MicrosoftAuth] New connection detected, syncing default preferences with UUID:', userData.id);
+        await syncDefaultPreferences(userData.id); // Use UUID, not external_id (email)
       }
 
       // Update database

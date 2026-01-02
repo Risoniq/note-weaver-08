@@ -291,6 +291,107 @@ serve(async (req) => {
       );
     }
 
+    // Helper to get Recall.ai internal UUID from external_id
+    async function getRecallInternalId(externalId: string): Promise<string | null> {
+      try {
+        const response = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${externalId}/`, {
+          headers: { 'Authorization': `Token ${RECALL_API_KEY}` },
+        });
+        if (!response.ok) {
+          console.error('[Internal] Failed to get Recall user:', response.status);
+          return null;
+        }
+        const userData = await response.json();
+        return userData.id || null; // UUID
+      } catch (error) {
+        console.error('[Internal] Error getting Recall user:', error);
+        return null;
+      }
+    }
+
+    // Helper to sync preferences to Recall.ai using internal UUID
+    async function syncPreferencesToRecall(recallInternalId: string, prefs: any): Promise<boolean> {
+      const recallPreferences = {
+        record_non_host: prefs.record_all ?? true,
+        record_recurring: true,
+        record_external: prefs.record_external ?? true,
+        record_internal: true,
+        record_confirmed: true,
+        record_only_host: prefs.record_only_owned ?? false,
+      };
+
+      console.log('[Internal] Syncing preferences to Recall.ai UUID:', recallInternalId, recallPreferences);
+
+      try {
+        const response = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${recallInternalId}/preferences/`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(recallPreferences),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[Internal] Failed to sync preferences:', response.status, errorText);
+          return false;
+        }
+        console.log('[Internal] Preferences synced successfully');
+        return true;
+      } catch (error) {
+        console.error('[Internal] Error syncing preferences:', error);
+        return false;
+      }
+    }
+
+    if (action === 'init_preferences') {
+      // Initialize/repair preferences with correct Recall.ai UUID
+      const recallUserId = await getRecallUserId(supabaseUserId);
+      if (!recallUserId) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'No calendar connected' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Get Recall internal UUID
+      const recallInternalId = await getRecallInternalId(recallUserId);
+      if (!recallInternalId) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Could not fetch Recall user' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Set default preferences
+      const defaultPrefs = {
+        record_all: true,
+        record_only_owned: false,
+        record_external: true,
+        auto_record: true,
+      };
+
+      // Sync to Recall.ai with correct UUID
+      const synced = await syncPreferencesToRecall(recallInternalId, defaultPrefs);
+
+      // Also update local database
+      await supabase
+        .from('recall_calendar_users')
+        .update({ recording_preferences: defaultPrefs })
+        .eq('supabase_user_id', supabaseUserId);
+
+      return new Response(
+        JSON.stringify({ 
+          success: synced, 
+          preferences: defaultPrefs,
+          recall_internal_id: recallInternalId,
+          message: synced ? 'Preferences initialized successfully' : 'Failed to sync to Recall.ai'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (action === 'update_preferences') {
       // supabaseUserId is always set from authenticated user
 
@@ -318,35 +419,14 @@ serve(async (req) => {
         throw new Error('Failed to update preferences');
       }
 
-      // Sync preferences to Recall.ai
+      // Sync preferences to Recall.ai - get internal UUID first
       const recallUserId = await getRecallUserId(supabaseUserId);
       if (recallUserId) {
-        const recallPreferences = {
-          record_non_host: newPrefs.record_all ?? true,
-          record_recurring: true,
-          record_external: newPrefs.record_external ?? true,
-          record_internal: true,
-          record_confirmed: true,
-          record_only_host: newPrefs.record_only_owned ?? false,
-        };
-
-        console.log('Syncing preferences to Recall.ai:', recallPreferences);
-
-        const recallResponse = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Token ${RECALL_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(recallPreferences),
-        });
-
-        if (!recallResponse.ok) {
-          const errorText = await recallResponse.text();
-          console.error('Failed to sync preferences to Recall.ai:', recallResponse.status, errorText);
-          // Don't throw - we still saved locally
+        const recallInternalId = await getRecallInternalId(recallUserId);
+        if (recallInternalId) {
+          await syncPreferencesToRecall(recallInternalId, newPrefs);
         } else {
-          console.log('Preferences synced to Recall.ai successfully');
+          console.error('[Internal] Could not get Recall internal ID for sync');
         }
       }
 

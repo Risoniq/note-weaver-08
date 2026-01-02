@@ -153,6 +153,34 @@ export function useRecallCalendarMeetings() {
     }
   }, [authUser?.id, preferences]);
 
+  const initPreferences = useCallback(async () => {
+    if (!authUser?.id) return false;
+
+    try {
+      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-meetings', {
+        body: { 
+          action: 'init_preferences', 
+          supabase_user_id: authUser.id,
+        },
+      });
+
+      if (funcError) throw funcError;
+
+      if (data.success) {
+        setPreferences(data.preferences);
+        toast.success('Aufnahme-Einstellungen aktiviert');
+        return true;
+      } else {
+        toast.error(data.message || 'Fehler beim Aktivieren');
+        return false;
+      }
+    } catch (err: any) {
+      console.error('[useRecallCalendarMeetings] Error initializing preferences:', err);
+      toast.error('Fehler beim Aktivieren der Aufnahme-Einstellungen');
+      return false;
+    }
+  }, [authUser?.id]);
+
   return {
     isLoading,
     meetingsError,
@@ -161,5 +189,6 @@ export function useRecallCalendarMeetings() {
     fetchMeetings,
     updateMeetingRecording,
     updatePreferences,
+    initPreferences,
   };
 }
