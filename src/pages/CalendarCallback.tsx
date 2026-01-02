@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { AlertCircle, CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
@@ -13,7 +13,7 @@ interface ErrorDetails {
 const CalendarCallback = () => {
   const navigate = useNavigate();
   const [message, setMessage] = useState('Verbindung wird hergestellt...');
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'blocked'>('loading');
   const [errorDetails, setErrorDetails] = useState<ErrorDetails | null>(null);
   const [debugInfo, setDebugInfo] = useState<Record<string, string | null>>({});
 
@@ -208,15 +208,11 @@ const CalendarCallback = () => {
           return;
         }
 
-        // Fallback: No clear state, show debug info
-        console.log('[CalendarCallback] No clear OAuth state, showing debug info');
-        setStatus('error');
-        setMessage('Unbekannter Status');
-        setErrorDetails({
-          code: 'unknown_state',
-          message: 'Unbekannter OAuth-Status',
-          suggestion: 'Keine erkennbaren OAuth-Parameter in der URL gefunden. Bitte versuche es erneut.',
-        });
+        // Fallback: No clear state - this could be ERR_BLOCKED_BY_RESPONSE redirect
+        // Show special "blocked" state with instructions
+        console.log('[CalendarCallback] No clear OAuth state - might be blocked redirect');
+        setStatus('blocked');
+        setMessage('Anmeldung möglicherweise erfolgreich');
       } catch (err) {
         console.error('[CalendarCallback] Error handling callback', err);
         setStatus('error');
@@ -235,6 +231,30 @@ const CalendarCallback = () => {
 
   const handleRetry = () => {
     navigate('/');
+  };
+
+  const handleManualClose = () => {
+    // Notify opener that user is done
+    if (window.opener && !window.opener.closed) {
+      try {
+        window.opener.postMessage({
+          type: 'recall-oauth-callback',
+          success: true,
+          provider: 'unknown',
+          manual: true,
+        }, '*');
+      } catch {
+        // ignore
+      }
+    }
+    
+    // Try to close
+    try {
+      window.close();
+    } catch {
+      // If can't close, redirect
+      navigate('/');
+    }
   };
 
   return (
@@ -256,6 +276,33 @@ const CalendarCallback = () => {
               Du wirst in Kürze weitergeleitet...
             </AlertDescription>
           </Alert>
+        )}
+
+        {status === 'blocked' && (
+          <div className="space-y-4">
+            <Alert className="border-yellow-500/50 bg-yellow-500/10">
+              <CheckCircle2 className="h-4 w-4 text-yellow-500" />
+              <AlertTitle className="text-yellow-600 dark:text-yellow-400">{message}</AlertTitle>
+              <AlertDescription className="mt-2 space-y-3">
+                <p className="text-sm">
+                  Die Anmeldung wurde möglicherweise erfolgreich abgeschlossen. 
+                  Aufgrund von Browser-Sicherheitsrichtlinien konnte die Weiterleitung nicht automatisch erfolgen.
+                </p>
+                <p className="text-sm font-medium">
+                  Bitte schließe dieses Fenster manuell. Die Verbindung wird im Hintergrund erkannt.
+                </p>
+              </AlertDescription>
+            </Alert>
+            
+            <Button onClick={handleManualClose} className="w-full">
+              <XCircle className="h-4 w-4 mr-2" />
+              Fenster schließen
+            </Button>
+            
+            <p className="text-xs text-center text-muted-foreground">
+              Die App prüft automatisch im Hintergrund, ob die Verbindung erfolgreich war.
+            </p>
+          </div>
         )}
         
         {status === 'error' && (

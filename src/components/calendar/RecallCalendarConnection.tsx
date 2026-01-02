@@ -180,31 +180,34 @@ export const RecallCalendarConnection = ({
         onRefresh={onRefresh}
       />
 
-      {/* Show manual check button when connecting (polling in progress) */}
+      {/* Show manual instructions when connecting (polling in progress) */}
       {isConnecting && (
-        <div className="p-3 bg-blue-500/10 rounded-lg flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <RefreshCw size={16} className="text-blue-500 animate-spin" />
-              <p className="text-sm text-blue-600 dark:text-blue-400">
-                Warte auf Anmeldung... Schließe das Fenster nach dem Login.
+        <div className="p-4 bg-blue-500/10 rounded-lg space-y-3">
+          <div className="flex items-start gap-3">
+            <RefreshCw size={18} className="text-blue-500 animate-spin mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
+                Warte auf Anmeldung...
+              </p>
+              <p className="text-sm text-blue-600/80 dark:text-blue-400/80 mt-1">
+                Nach erfolgreicher Anmeldung <strong>schließe das Popup-Fenster manuell</strong>. 
+                Die Verbindung wird automatisch erkannt.
               </p>
             </div>
+          </div>
+          
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={onCheckStatus}
               disabled={isLoading}
             >
+              <RefreshCw size={14} className={`mr-1.5 ${isLoading ? 'animate-spin' : ''}`} />
               Status prüfen
             </Button>
-          </div>
-
-          {pendingOauthUrl && (
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-blue-600/90 dark:text-blue-400/90">
-                Popup blockiert? Öffne die Anmeldung manuell.
-              </p>
+            
+            {pendingOauthUrl && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -212,7 +215,13 @@ export const RecallCalendarConnection = ({
               >
                 {pendingOauthProvider === 'microsoft' ? 'Microsoft Login öffnen' : 'Google Login öffnen'}
               </Button>
-            </div>
+            )}
+          </div>
+
+          {pendingOauthUrl && (
+            <p className="text-xs text-blue-600/70 dark:text-blue-400/70">
+              Popup blockiert? Nutze den Button oben, um die Anmeldung manuell zu öffnen.
+            </p>
           )}
         </div>
       )}

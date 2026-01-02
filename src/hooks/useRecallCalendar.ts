@@ -330,16 +330,21 @@ export function useRecallCalendar() {
         }
 
         toast.info(
-          `${provider === 'microsoft' ? 'Microsoft' : 'Google'} Login geöffnet. Schließe das Fenster nach der Anmeldung – die Verbindung wird automatisch erkannt.`,
-          { duration: 15000 }
+          `${provider === 'microsoft' ? 'Microsoft' : 'Google'} Login geöffnet. Nach der Anmeldung schließe das Popup-Fenster manuell – die Verbindung wird automatisch erkannt.`,
+          { duration: 20000 }
         );
 
         setIsLoading(false);
         setStatus('connecting');
+        
+        // Store the OAuth URL for fallback display
+        setPendingOauthUrl(data.oauth_url);
+        setPendingOauthProvider(provider);
 
         // Poll for connection status until connected or timeout
+        // Start more aggressively (every 1.5s) for faster detection
         let pollCount = 0;
-        const maxPolls = 150; // 5 minutes at 2s
+        const maxPolls = 200; // 5 minutes at 1.5s
 
         const pollForConnection = setInterval(async () => {
           pollCount++;
@@ -375,9 +380,12 @@ export function useRecallCalendar() {
 
           if (pollCount >= maxPolls) {
             clearInterval(pollForConnection);
+            setPendingOauthUrl(null);
+            setPendingOauthProvider(null);
             setStatus('disconnected');
+            toast.error('Zeitüberschreitung bei der Kalender-Verbindung. Bitte versuche es erneut.');
           }
-        }, 2000);
+        }, 1500); // Poll every 1.5s for faster detection
 
         return;
       }
