@@ -337,17 +337,22 @@ serve(async (req) => {
     }
 
     // Helper to sync preferences to Recall.ai using internal UUID
+    // IMPORTANT: According to Recall.ai docs:
+    // - true = this rule is evaluated and must be satisfied
+    // - false = this rule is ignored
+    // For "record all meetings": set external/internal to true, others to false (ignored)
     async function syncPreferencesToRecall(recallInternalId: string, prefs: any): Promise<boolean> {
+      // "Record all meetings" = external + internal true, filtering rules false (ignored)
       const recallPreferences = {
-        record_non_host: prefs.record_all ?? true,
-        record_recurring: true,
-        record_external: prefs.record_external ?? true,
-        record_internal: true,
-        record_confirmed: true,
-        record_only_host: prefs.record_only_owned ?? false,
+        record_non_host: false,       // false = ignore this rule (don't require non-host)
+        record_recurring: false,      // false = ignore this rule (record all, not just recurring)
+        record_external: true,        // true = record external meetings
+        record_internal: true,        // true = record internal meetings
+        record_confirmed: false,      // false = ignore this rule (record unconfirmed too)
+        record_only_host: prefs.record_only_owned ?? false, // Only if user wants host-only
       };
 
-      console.log('[Internal] Syncing preferences to Recall.ai UUID:', recallInternalId, recallPreferences);
+      console.log('[Internal] Syncing preferences to Recall.ai UUID:', recallInternalId, 'Preferences:', JSON.stringify(recallPreferences));
 
       try {
         const response = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${recallInternalId}/preferences/`, {
@@ -364,7 +369,8 @@ serve(async (req) => {
           console.error('[Internal] Failed to sync preferences:', response.status, errorText);
           return false;
         }
-        console.log('[Internal] Preferences synced successfully');
+        const result = await response.json();
+        console.log('[Internal] Preferences synced successfully:', JSON.stringify(result));
         return true;
       } catch (error) {
         console.error('[Internal] Error syncing preferences:', error);

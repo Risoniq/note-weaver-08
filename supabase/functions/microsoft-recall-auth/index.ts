@@ -318,17 +318,20 @@ serve(async (req) => {
     }
 
     // Helper: Sync default preferences to Recall.ai
+    // IMPORTANT: According to Recall.ai docs, for "record all meetings":
+    // - record_external: true, record_internal: true = record all meetings
+    // - record_non_host: false, record_recurring: false, record_confirmed: false = ignore these filters
     async function syncDefaultPreferences(recallUserId: string): Promise<void> {
       const defaultPreferences = {
-        record_non_host: true,      // Record meetings where you're NOT host
-        record_recurring: true,      // Record recurring meetings
-        record_external: true,       // Record external meetings
-        record_internal: true,       // Record internal meetings
-        record_confirmed: true,      // Record confirmed meetings
-        record_only_host: false,     // NOT only host meetings
+        record_non_host: false,      // false = ignore this rule (don't filter by host status)
+        record_recurring: false,     // false = ignore this rule (record all, not just recurring)
+        record_external: true,       // true = record external meetings
+        record_internal: true,       // true = record internal meetings
+        record_confirmed: false,     // false = ignore this rule (record unconfirmed too)
+        record_only_host: false,     // false = not only host meetings
       };
 
-      console.log('[MicrosoftAuth] Syncing default preferences to Recall.ai for user:', recallUserId);
+      console.log('[MicrosoftAuth] Syncing default preferences to Recall.ai for user:', recallUserId, 'Preferences:', JSON.stringify(defaultPreferences));
 
       try {
         const response = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/user/${recallUserId}/preferences/`, {
@@ -344,7 +347,8 @@ serve(async (req) => {
           const errorText = await response.text();
           console.error('[MicrosoftAuth] Failed to sync default preferences:', response.status, errorText);
         } else {
-          console.log('[MicrosoftAuth] Default preferences synced successfully');
+          const result = await response.json();
+          console.log('[MicrosoftAuth] Default preferences synced successfully:', JSON.stringify(result));
         }
       } catch (error) {
         console.error('[MicrosoftAuth] Error syncing default preferences:', error);
