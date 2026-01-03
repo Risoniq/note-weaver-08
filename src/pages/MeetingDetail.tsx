@@ -52,6 +52,9 @@ export default function MeetingDetail() {
   const [showReplaceDialog, setShowReplaceDialog] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [replaceTerm, setReplaceTerm] = useState('');
+  const [detectedSpeakers, setDetectedSpeakers] = useState<string[]>([]);
+  const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
+  const [newSpeakerName, setNewSpeakerName] = useState('');
 
   const fetchRecording = useCallback(async () => {
     if (!id) return null;
@@ -210,11 +213,30 @@ export default function MeetingDetail() {
     setTimeout(() => setCopiedEmail(false), 2000);
   };
 
+  // Sprecher aus Transkript extrahieren
+  const extractSpeakersFromTranscript = (transcript: string): string[] => {
+    // Suche nach Mustern wie "Name:" am Zeilenanfang oder nach Zeilenumbruch
+    const speakerPattern = /^([A-Za-zÀ-ÿ\s\-\.]+?):\s/gm;
+    const matches = transcript.matchAll(speakerPattern);
+    const speakers = new Set<string>();
+    
+    for (const match of matches) {
+      const name = match[1].trim();
+      // Filtere zu kurze oder offensichtlich falsche Namen
+      if (name.length >= 2 && name.length <= 50 && !name.match(/^\d+$/)) {
+        speakers.add(name);
+      }
+    }
+    
+    return Array.from(speakers).sort();
+  };
+
   // Transkript bearbeiten Funktionen
   const startEditingTranscript = () => {
     if (recording?.transcript_text) {
       setEditedTranscript(recording.transcript_text);
       setIsEditingTranscript(true);
+      setDetectedSpeakers(extractSpeakersFromTranscript(recording.transcript_text));
     }
   };
 
@@ -224,6 +246,37 @@ export default function MeetingDetail() {
     setShowReplaceDialog(false);
     setSearchTerm('');
     setReplaceTerm('');
+    setDetectedSpeakers([]);
+    setEditingSpeaker(null);
+    setNewSpeakerName('');
+  };
+
+  // Sprecher im gesamten Transkript umbenennen
+  const renameSpeaker = (oldName: string, newName: string) => {
+    if (!newName.trim() || oldName === newName) {
+      setEditingSpeaker(null);
+      setNewSpeakerName('');
+      return;
+    }
+    
+    // Ersetze alle Vorkommen des Sprechernamens (als Sprecher-Label)
+    const pattern = new RegExp(`^(${oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}):\\s`, 'gm');
+    const newTranscript = editedTranscript.replace(pattern, `${newName}: `);
+    
+    // Zähle Ersetzungen
+    const replacements = (editedTranscript.match(pattern) || []).length;
+    
+    setEditedTranscript(newTranscript);
+    
+    // Aktualisiere die Sprecher-Liste
+    setDetectedSpeakers(prev => 
+      prev.map(s => s === oldName ? newName : s).sort()
+    );
+    
+    setEditingSpeaker(null);
+    setNewSpeakerName('');
+    
+    toast.success(`"${oldName}" wurde ${replacements}x durch "${newName}" ersetzt`);
   };
 
   const saveTranscript = async () => {
@@ -680,6 +733,69 @@ export default function MeetingDetail() {
                   </div>
                 </CardHeader>
                 <CardContent className="px-6 pb-6 space-y-4">
+                  {/* Erkannte Sprecher - Schnellbearbeitung */}
+                  {isEditingTranscript && detectedSpeakers.length > 0 && (
+                    <div className="p-4 rounded-2xl bg-secondary/50 border border-border space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                        <p className="text-sm font-medium text-foreground">Erkannte Sprecher</p>
+                        <span className="text-xs text-muted-foreground">
+                          (Klicke zum Umbenennen)
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {detectedSpeakers.map((speaker) => (
+                          <div key={speaker} className="relative">
+                            {editingSpeaker === speaker ? (
+                              <div className="flex items-center gap-1 bg-background border border-primary rounded-xl p-1">
+                                <input
+                                  type="text"
+                                  value={newSpeakerName}
+                                  onChange={(e) => setNewSpeakerName(e.target.value)}
+                                  placeholder={speaker}
+                                  autoFocus
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') renameSpeaker(speaker, newSpeakerName);
+                                    if (e.key === 'Escape') { setEditingSpeaker(null); setNewSpeakerName(''); }
+                                  }}
+                                  className="px-2 py-1 text-sm bg-transparent border-0 focus:outline-none w-32"
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => renameSpeaker(speaker, newSpeakerName)}
+                                >
+                                  <Check className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => { setEditingSpeaker(null); setNewSpeakerName(''); }}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <Badge
+                                variant="secondary"
+                                className="cursor-pointer hover:bg-primary/20 transition-colors"
+                                onClick={() => { setEditingSpeaker(speaker); setNewSpeakerName(speaker); }}
+                              >
+                                {speaker}
+                                <Edit3 className="h-3 w-3 ml-1 opacity-50" />
+                              </Badge>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Änderungen werden automatisch im gesamten Transkript übernommen.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Suchen & Ersetzen Dialog */}
                   {showReplaceDialog && (
                     <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 space-y-3">
