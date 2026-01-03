@@ -29,10 +29,10 @@ export const RecallUpcomingMeetings = ({
 }: RecallUpcomingMeetingsProps) => {
   const [startingBotFor, setStartingBotFor] = useState<string | null>(null);
 
-  // Sort meetings by start_time and take only the first 3
+  // Sort meetings by start_time and take only the first 5
   const sortedMeetings = [...meetings]
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
-    .slice(0, 3);
+    .slice(0, 5);
 
   // Start bot immediately when joining
   const handleJoinWithBot = async (meeting: RecallMeeting) => {
