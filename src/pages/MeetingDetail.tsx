@@ -52,10 +52,11 @@ export default function MeetingDetail() {
   const [showReplaceDialog, setShowReplaceDialog] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [replaceTerm, setReplaceTerm] = useState('');
-  const [detectedSpeakers, setDetectedSpeakers] = useState<string[]>([]);
+  const [detectedSpeakers, setDetectedSpeakers] = useState<{ name: string; count: number; firstOccurrence: number }[]>([]);
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
   const [newSpeakerName, setNewSpeakerName] = useState('');
   const [calendarAttendees, setCalendarAttendees] = useState<{ name: string; email: string }[]>([]);
+  const [dbParticipantSuggestions, setDbParticipantSuggestions] = useState<{ id: string; name: string }[]>([]);
 
   const fetchRecording = useCallback(async () => {
     if (!id) return null;
@@ -214,22 +215,29 @@ export default function MeetingDetail() {
     setTimeout(() => setCopiedEmail(false), 2000);
   };
 
-  // Sprecher aus Transkript extrahieren
-  const extractSpeakersFromTranscript = (transcript: string): string[] => {
-    // Suche nach Mustern wie "Name:" am Zeilenanfang oder nach Zeilenumbruch
-    const speakerPattern = /^([A-Za-zÀ-ÿ\s\-\.]+?):\s/gm;
-    const matches = transcript.matchAll(speakerPattern);
-    const speakers = new Set<string>();
+  // Sprecher aus Transkript extrahieren - mit Unterscheidung von "Unbekannt" Sprechern
+  const extractSpeakersFromTranscript = (transcript: string): { name: string; count: number; firstOccurrence: number }[] => {
+    const speakerPattern = /^([A-Za-zÀ-ÿ\s\-\.0-9]+?):\s/gm;
+    const speakerStats: Map<string, { count: number; firstOccurrence: number }> = new Map();
+    let matchIndex = 0;
     
-    for (const match of matches) {
+    let match;
+    while ((match = speakerPattern.exec(transcript)) !== null) {
       const name = match[1].trim();
-      // Filtere zu kurze oder offensichtlich falsche Namen
-      if (name.length >= 2 && name.length <= 50 && !name.match(/^\d+$/)) {
-        speakers.add(name);
+      if (name.length >= 2 && name.length <= 50) {
+        if (!speakerStats.has(name)) {
+          speakerStats.set(name, { count: 1, firstOccurrence: matchIndex });
+        } else {
+          speakerStats.get(name)!.count++;
+        }
+        matchIndex++;
       }
     }
     
-    return Array.from(speakers).sort();
+    // Sortiere nach erster Vorkommensreihenfolge
+    return Array.from(speakerStats.entries())
+      .map(([name, stats]) => ({ name, ...stats }))
+      .sort((a, b) => a.firstOccurrence - b.firstOccurrence);
   };
 
   // Transkript bearbeiten Funktionen
@@ -240,9 +248,18 @@ export default function MeetingDetail() {
       setDetectedSpeakers(extractSpeakersFromTranscript(recording.transcript_text));
       
       // Lade Kalender-Teilnehmer aus dem Recording
-      const rawRecording = recording as unknown as { calendar_attendees?: { name: string; email: string }[] };
+      const rawRecording = recording as unknown as { 
+        calendar_attendees?: { name: string; email: string }[];
+        participants?: { id: string; name: string }[];
+      };
       if (rawRecording.calendar_attendees && Array.isArray(rawRecording.calendar_attendees)) {
         setCalendarAttendees(rawRecording.calendar_attendees);
+      }
+      // Lade DB-Teilnehmer als Vorschläge (Speaker-IDs von Recall.ai)
+      if (rawRecording.participants && Array.isArray(rawRecording.participants)) {
+        setDbParticipantSuggestions(rawRecording.participants.filter(p => 
+          p.name && p.name.trim() !== '' && !p.name.startsWith('Sprecher ') && p.name !== 'Unbekannt'
+        ));
       }
     }
   };
@@ -257,6 +274,7 @@ export default function MeetingDetail() {
     setEditingSpeaker(null);
     setNewSpeakerName('');
     setCalendarAttendees([]);
+    setDbParticipantSuggestions([]);
   };
 
   // Sprecher im gesamten Transkript umbenennen
@@ -278,7 +296,7 @@ export default function MeetingDetail() {
     
     // Aktualisiere die Sprecher-Liste
     setDetectedSpeakers(prev => 
-      prev.map(s => s === oldName ? newName : s).sort()
+      prev.map(s => s.name === oldName ? { ...s, name: newName } : s)
     );
     
     setEditingSpeaker(null);
@@ -752,22 +770,47 @@ export default function MeetingDetail() {
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {detectedSpeakers.map((speaker) => (
-                          <div key={speaker} className="relative">
-                            {editingSpeaker === speaker ? (
-                              <div className="flex flex-col gap-2 bg-background border border-primary rounded-xl p-2 min-w-[200px]">
+                        {detectedSpeakers.map((speakerData) => (
+                          <div key={speakerData.name} className="relative">
+                            {editingSpeaker === speakerData.name ? (
+                              <div className="flex flex-col gap-2 bg-background border border-primary rounded-xl p-2 min-w-[220px]">
                                 <input
                                   type="text"
                                   value={newSpeakerName}
                                   onChange={(e) => setNewSpeakerName(e.target.value)}
-                                  placeholder={speaker}
+                                  placeholder={speakerData.name}
                                   autoFocus
                                   onKeyDown={(e) => {
-                                    if (e.key === 'Enter') renameSpeaker(speaker, newSpeakerName);
+                                    if (e.key === 'Enter') renameSpeaker(speakerData.name, newSpeakerName);
                                     if (e.key === 'Escape') { setEditingSpeaker(null); setNewSpeakerName(''); }
                                   }}
                                   className="px-3 py-2 text-sm bg-secondary/50 rounded-lg border-0 focus:outline-none focus:ring-2 focus:ring-primary/50 w-full"
                                 />
+                                
+                                {/* DB-Teilnehmer Vorschläge (echte Namen aus Recall.ai) */}
+                                {dbParticipantSuggestions.length > 0 && (
+                                  <div className="space-y-1">
+                                    <p className="text-xs text-muted-foreground px-1">Erkannte Teilnehmer:</p>
+                                    <div className="max-h-32 overflow-y-auto space-y-1">
+                                      {dbParticipantSuggestions
+                                        .filter(p => p.name.toLowerCase() !== speakerData.name.toLowerCase())
+                                        .map((participant, idx) => (
+                                          <button
+                                            key={idx}
+                                            onClick={() => {
+                                              setNewSpeakerName(participant.name);
+                                              renameSpeaker(speakerData.name, participant.name);
+                                            }}
+                                            className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-primary/10 transition-colors flex items-center gap-2"
+                                          >
+                                            <Users className="h-3 w-3 text-primary shrink-0" />
+                                            <span className="truncate">{participant.name}</span>
+                                          </button>
+                                        ))
+                                      }
+                                    </div>
+                                  </div>
+                                )}
                                 
                                 {/* Kalender-Vorschläge */}
                                 {calendarAttendees.length > 0 && (
@@ -775,17 +818,17 @@ export default function MeetingDetail() {
                                     <p className="text-xs text-muted-foreground px-1">Aus Kalender:</p>
                                     <div className="max-h-32 overflow-y-auto space-y-1">
                                       {calendarAttendees
-                                        .filter(a => a.name.toLowerCase() !== speaker.toLowerCase())
+                                        .filter(a => a.name.toLowerCase() !== speakerData.name.toLowerCase())
                                         .map((attendee, idx) => (
                                           <button
-                                            key={idx}
+                                            key={`cal-${idx}`}
                                             onClick={() => {
                                               setNewSpeakerName(attendee.name);
-                                              renameSpeaker(speaker, attendee.name);
+                                              renameSpeaker(speakerData.name, attendee.name);
                                             }}
-                                            className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-primary/10 transition-colors flex items-center gap-2"
+                                            className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-accent/10 transition-colors flex items-center gap-2"
                                           >
-                                            <Users className="h-3 w-3 text-primary shrink-0" />
+                                            <Calendar className="h-3 w-3 text-accent shrink-0" />
                                             <span className="truncate">{attendee.name}</span>
                                           </button>
                                         ))
@@ -806,7 +849,7 @@ export default function MeetingDetail() {
                                   <Button
                                     size="sm"
                                     className="h-7 px-2 text-xs"
-                                    onClick={() => renameSpeaker(speaker, newSpeakerName)}
+                                    onClick={() => renameSpeaker(speakerData.name, newSpeakerName)}
                                   >
                                     <Check className="h-3 w-3 mr-1" />
                                     Anwenden
@@ -816,10 +859,11 @@ export default function MeetingDetail() {
                             ) : (
                               <Badge
                                 variant="secondary"
-                                className="cursor-pointer hover:bg-primary/20 transition-colors"
-                                onClick={() => { setEditingSpeaker(speaker); setNewSpeakerName(speaker); }}
+                                className="cursor-pointer hover:bg-primary/20 transition-colors flex items-center gap-1"
+                                onClick={() => { setEditingSpeaker(speakerData.name); setNewSpeakerName(speakerData.name); }}
                               >
-                                {speaker}
+                                {speakerData.name}
+                                <span className="text-[10px] opacity-60">({speakerData.count}×)</span>
                                 <Edit3 className="h-3 w-3 ml-1 opacity-50" />
                               </Badge>
                             )}
