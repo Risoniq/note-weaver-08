@@ -291,12 +291,12 @@ serve(async (req) => {
         error_url: redirect_uri ? `${redirect_uri}?oauth_error=true&provider=microsoft` : undefined,
       };
       
+      // Note: Removed prompt=consent as it can cause issues in some Microsoft organizations
+      // Azure handles consent automatically when new permissions are requested
       const oauthUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?` +
         `scope=${encodeURIComponent(msScopes)}` +
         `&response_mode=query` +
         `&response_type=code` +
-        // Force consent screen to ensure refresh_token is issued
-        `&prompt=consent` +
         `&state=${encodeURIComponent(JSON.stringify(stateObj))}` +
         `&redirect_uri=${encodeURIComponent(msRedirectUri)}` +
         `&client_id=${encodeURIComponent(MS_OAUTH_CLIENT_ID)}`;
