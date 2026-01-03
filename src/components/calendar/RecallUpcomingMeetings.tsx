@@ -50,11 +50,16 @@ export const RecallUpcomingMeetings = ({
         return;
       }
 
+      // Load bot settings from localStorage (same as Settings page)
+      const botName = localStorage.getItem('bot:name') || 'Notetaker Bot';
+      const botAvatarUrl = localStorage.getItem('bot:avatarUrl') || undefined;
+
       // Start bot via create-bot function
       const { data, error } = await supabase.functions.invoke('create-bot', {
         body: {
           meetingUrl: meeting.meeting_url,
-          botName: 'Meeting Recorder',
+          botName,
+          botAvatarUrl,
         },
       });
 
