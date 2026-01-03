@@ -162,7 +162,13 @@ serve(async (req) => {
       }
 
       const meetingsData = await meetingsResponse.json();
-      console.log('Recall meetings:', meetingsData);
+
+      // Recall.ai may return either a paginated object { results: [...] } or a raw array [...]
+      const meetingItems: any[] = Array.isArray(meetingsData)
+        ? meetingsData
+        : (meetingsData?.results || []);
+
+      console.log('Recall meetings count:', meetingItems.length);
 
       // Helper function to extract meeting URL from various sources
       const extractMeetingUrl = (meeting: any): string | null => {
@@ -239,7 +245,7 @@ serve(async (req) => {
         return null;
       };
 
-      const meetings = (meetingsData.results || []).map((meeting: any) => {
+      const meetings = (meetingItems || []).map((meeting: any) => {
         const meetingUrl = extractMeetingUrl(meeting);
         const willRecord = meeting.will_record ?? (meeting.bot_id !== null);
         
