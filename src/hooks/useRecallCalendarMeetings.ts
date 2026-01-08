@@ -28,6 +28,45 @@ export interface RecordingPreferences {
 
 const AUTO_REFRESH_INTERVAL = 15000; // 15 seconds
 
+// Compare two meetings to check if they have meaningful differences
+function meetingHasChanged(oldMeeting: RecallMeeting, newMeeting: RecallMeeting): boolean {
+  return (
+    oldMeeting.title !== newMeeting.title ||
+    oldMeeting.start_time !== newMeeting.start_time ||
+    oldMeeting.end_time !== newMeeting.end_time ||
+    oldMeeting.meeting_url !== newMeeting.meeting_url ||
+    oldMeeting.platform !== newMeeting.platform ||
+    oldMeeting.bot_id !== newMeeting.bot_id ||
+    oldMeeting.will_record !== newMeeting.will_record ||
+    oldMeeting.will_record_reason !== newMeeting.will_record_reason ||
+    oldMeeting.override_should_record !== newMeeting.override_should_record ||
+    oldMeeting.organizer !== newMeeting.organizer ||
+    oldMeeting.is_organizer !== newMeeting.is_organizer ||
+    oldMeeting.attendees.length !== newMeeting.attendees.length
+  );
+}
+
+// Compare meeting lists and return true if there are any differences
+function meetingsHaveChanged(oldMeetings: RecallMeeting[], newMeetings: RecallMeeting[]): boolean {
+  // Different count = definitely changed
+  if (oldMeetings.length !== newMeetings.length) {
+    return true;
+  }
+  
+  // Create a map for quick lookup
+  const oldMap = new Map(oldMeetings.map(m => [m.id, m]));
+  
+  // Check if any meeting has changed or if there's a new one
+  for (const newMeeting of newMeetings) {
+    const oldMeeting = oldMap.get(newMeeting.id);
+    if (!oldMeeting || meetingHasChanged(oldMeeting, newMeeting)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 export function useRecallCalendarMeetings() {
   const [isLoading, setIsLoading] = useState(false);
   const [meetingsError, setMeetingsError] = useState<string | null>(null);
@@ -67,7 +106,7 @@ export function useRecallCalendarMeetings() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchMeetings = useCallback(async () => {
+  const fetchMeetings = useCallback(async (isAutoRefresh = false) => {
     // If authUser not ready, mark pending and return
     if (!authUser?.id) {
       pendingFetchRef.current = true;
@@ -76,9 +115,12 @@ export function useRecallCalendarMeetings() {
     }
 
     try {
-      setIsLoading(true);
+      // Only show loading state on initial load, not on auto-refresh
+      if (!isAutoRefresh) {
+        setIsLoading(true);
+      }
       setMeetingsError(null);
-      console.log('[useRecallCalendarMeetings] Fetching meetings for user:', authUser.id);
+      console.log('[useRecallCalendarMeetings] Fetching meetings for user:', authUser.id, isAutoRefresh ? '(auto-refresh)' : '');
       const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-meetings', {
         body: { action: 'list', supabase_user_id: authUser.id },
       });
@@ -86,8 +128,18 @@ export function useRecallCalendarMeetings() {
       if (funcError) throw funcError;
 
       if (data.success) {
-        console.log('[useRecallCalendarMeetings] Loaded meetings:', data.meetings?.length || 0);
-        setMeetings(data.meetings || []);
+        const newMeetings: RecallMeeting[] = data.meetings || [];
+        console.log('[useRecallCalendarMeetings] Loaded meetings:', newMeetings.length);
+        
+        // Only update state if meetings have actually changed
+        setMeetings(prevMeetings => {
+          if (meetingsHaveChanged(prevMeetings, newMeetings)) {
+            console.log('[useRecallCalendarMeetings] Meetings changed, updating state');
+            return newMeetings;
+          }
+          console.log('[useRecallCalendarMeetings] No changes detected, keeping current state');
+          return prevMeetings;
+        });
         setMeetingsError(null);
       } else {
         const errorMsg = data.error || '';
@@ -123,7 +175,9 @@ export function useRecallCalendarMeetings() {
 
       setMeetingsError(friendlyError);
     } finally {
-      setIsLoading(false);
+      if (!isAutoRefresh) {
+        setIsLoading(false);
+      }
     }
   }, [authUser?.id]);
 
@@ -236,7 +290,7 @@ export function useRecallCalendarMeetings() {
       
       console.log('[useRecallCalendarMeetings] Auto-refresh triggered');
       lastFetchRef.current = now;
-      fetchMeetings();
+      fetchMeetings(true); // Pass true to indicate this is an auto-refresh
     }, AUTO_REFRESH_INTERVAL);
 
     return () => {
