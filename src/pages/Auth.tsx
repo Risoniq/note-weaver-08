@@ -123,6 +123,12 @@ export default function Auth() {
           description: 'E-Mail oder Passwort ist falsch.',
           variant: 'destructive',
         });
+      } else if (error.message.includes('Email not confirmed')) {
+        toast({
+          title: 'E-Mail nicht bestätigt',
+          description: 'Bitte klicke zuerst auf den Bestätigungslink in deiner E-Mail.',
+          variant: 'destructive',
+        });
       } else {
         toast({
           title: 'Fehler',
@@ -157,9 +163,13 @@ export default function Auth() {
       }
     } else {
       toast({
-        title: 'Registrierung erfolgreich',
-        description: 'Du kannst dich jetzt einloggen.',
+        title: 'Bestätigungs-E-Mail gesendet',
+        description: 'Bitte prüfe dein E-Mail-Postfach und klicke auf den Bestätigungslink, um dein Konto zu aktivieren.',
+        duration: 10000,
       });
+      // Clear the form
+      setEmail('');
+      setPassword('');
     }
   };
 

@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
     // Fetch recordings stats per user
     const { data: recordings, error: recordingsError } = await supabaseAdmin
       .from('recordings')
-      .select('user_id, duration, word_count, created_at');
+      .select('user_id, duration, word_count, created_at, status');
 
     if (recordingsError) {
       console.error('Recordings fetch error:', recordingsError);
@@ -94,20 +94,37 @@ Deno.serve(async (req) => {
       console.error('Calendar users fetch error:', calendarError);
     }
 
+    // Fetch user presence data
+    const { data: presenceData, error: presenceError } = await supabaseAdmin
+      .from('user_presence')
+      .select('user_id, last_seen, is_online');
+
+    if (presenceError) {
+      console.error('Presence fetch error:', presenceError);
+    }
+
+    // Active bot statuses
+    const activeBotStatuses = ['joining', 'in_call_not_recording', 'in_call_recording', 'waiting_room'];
+    
     // Build user stats
-    const recordingsMap = new Map<string, { count: number; duration: number; words: number; lastActivity: string | null }>();
+    const recordingsMap = new Map<string, { count: number; duration: number; words: number; lastActivity: string | null; hasActiveBot: boolean }>();
     
     if (recordings) {
       for (const rec of recordings) {
         if (!rec.user_id) continue;
         
-        const existing = recordingsMap.get(rec.user_id) || { count: 0, duration: 0, words: 0, lastActivity: null };
+        const existing = recordingsMap.get(rec.user_id) || { count: 0, duration: 0, words: 0, lastActivity: null, hasActiveBot: false };
         existing.count += 1;
         existing.duration += rec.duration || 0;
         existing.words += rec.word_count || 0;
         
         if (!existing.lastActivity || new Date(rec.created_at) > new Date(existing.lastActivity)) {
           existing.lastActivity = rec.created_at;
+        }
+        
+        // Check if this user has an active bot
+        if (activeBotStatuses.includes(rec.status)) {
+          existing.hasActiveBot = true;
         }
         
         recordingsMap.set(rec.user_id, existing);
@@ -124,10 +141,45 @@ Deno.serve(async (req) => {
       }
     }
 
+    const presenceMap = new Map<string, { lastSeen: string; isOnline: boolean }>();
+    if (presenceData) {
+      for (const p of presenceData) {
+        presenceMap.set(p.user_id, {
+          lastSeen: p.last_seen,
+          isOnline: p.is_online,
+        });
+      }
+    }
+
+    // Determine online status (online if heartbeat within last 60 seconds)
+    const ONLINE_TIMEOUT = 60000; // 60 seconds
+    const now = Date.now();
+
+    const getUserOnlineStatus = (userId: string): 'online' | 'recording' | 'offline' => {
+      const stats = recordingsMap.get(userId);
+      const presence = presenceMap.get(userId);
+
+      // Check for active bot first (orange)
+      if (stats?.hasActiveBot) {
+        return 'recording';
+      }
+
+      // Check if online (green)
+      if (presence?.isOnline && presence.lastSeen) {
+        const lastSeenTime = new Date(presence.lastSeen).getTime();
+        if (now - lastSeenTime < ONLINE_TIMEOUT) {
+          return 'online';
+        }
+      }
+
+      return 'offline';
+    };
+
     // Combine all data
     const users = authUsers.users.map((user) => {
-      const stats = recordingsMap.get(user.id) || { count: 0, duration: 0, words: 0, lastActivity: null };
+      const stats = recordingsMap.get(user.id) || { count: 0, duration: 0, words: 0, lastActivity: null, hasActiveBot: false };
       const calendar = calendarMap.get(user.id) || { google: false, microsoft: false };
+      const onlineStatus = getUserOnlineStatus(user.id);
 
       return {
         id: user.id,
@@ -139,18 +191,23 @@ Deno.serve(async (req) => {
         last_activity: stats.lastActivity,
         google_connected: calendar.google,
         microsoft_connected: calendar.microsoft,
+        online_status: onlineStatus,
       };
     });
 
     // Calculate summary stats
-    const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    
+    const onlineNow = users.filter((u) => u.online_status === 'online').length;
+    const recordingNow = users.filter((u) => u.online_status === 'recording').length;
     
     const summary = {
       total_users: users.length,
       active_users: users.filter((u) => u.last_activity && new Date(u.last_activity) > sevenDaysAgo).length,
       total_recordings: recordings?.length || 0,
       total_minutes: Math.round((recordings?.reduce((sum, r) => sum + (r.duration || 0), 0) || 0) / 60),
+      online_now: onlineNow,
+      recording_now: recordingNow,
     };
 
     return new Response(JSON.stringify({ users, summary }), {

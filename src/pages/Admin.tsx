@@ -26,6 +26,7 @@ interface UserData {
   last_activity: string | null;
   google_connected: boolean;
   microsoft_connected: boolean;
+  online_status: 'online' | 'recording' | 'offline';
 }
 
 interface Summary {
@@ -33,6 +34,8 @@ interface Summary {
   active_users: number;
   total_recordings: number;
   total_minutes: number;
+  online_now: number;
+  recording_now: number;
 }
 
 const Admin = () => {
@@ -214,7 +217,24 @@ const Admin = () => {
                   <TableBody>
                     {users.map((user) => (
                       <TableRow key={user.id}>
-                        <TableCell className="font-medium">{user.email}</TableCell>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            {user.email}
+                            {user.online_status === 'online' && (
+                              <span 
+                                className="inline-block w-2 h-2 rounded-full bg-green-500" 
+                                title="Online"
+                              />
+                            )}
+                            {user.online_status === 'recording' && (
+                              <span 
+                                className="inline-block w-2 h-2 rounded-full bg-orange-500" 
+                                title="Bot aktiv"
+                              />
+                            )}
+                          </div>
+                        </TableCell>
+                        
                         <TableCell>{formatDate(user.created_at)}</TableCell>
                         <TableCell className="text-right">{user.recordings_count}</TableCell>
                         <TableCell className="text-right">{formatDuration(user.total_duration)}</TableCell>
