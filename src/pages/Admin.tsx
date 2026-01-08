@@ -169,7 +169,7 @@ const Admin = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Gesamt Minuten
+                Verbrauchte Stunden
               </CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -177,7 +177,9 @@ const Admin = () => {
               {loading ? (
                 <Skeleton className="h-8 w-16" />
               ) : (
-                <p className="text-2xl font-bold">{formatNumber(summary?.total_minutes || 0)}</p>
+                <p className="text-2xl font-bold">
+                  {((summary?.total_minutes || 0) / 60).toFixed(1)}h
+                </p>
               )}
             </CardContent>
           </Card>
