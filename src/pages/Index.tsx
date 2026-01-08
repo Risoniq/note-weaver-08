@@ -6,14 +6,16 @@ import { RecordingsList } from "@/components/recordings/RecordingsList";
 import { RecentActivityList } from "@/components/recordings/RecentActivityList";
 import { RecallCalendarView } from "@/components/calendar/RecallCalendarView";
 import { Toaster } from "@/components/ui/toaster";
-import { Mic, Settings, Calendar, LogOut } from "lucide-react";
+import { Mic, Settings, Calendar, LogOut, Shield } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { toast } from "@/hooks/use-toast";
 const Index = () => {
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
   const { user, signOut } = useAuth();
+  const { isAdmin } = useAdminCheck();
 
   const handleLogout = async () => {
     const { error } = await signOut();
@@ -40,6 +42,13 @@ const Index = () => {
                 <Settings className="h-8 w-8 text-primary" />
               </div>
             </Link>
+            {isAdmin && (
+              <Link to="/admin">
+                <div className="p-3 rounded-full bg-primary/10 hover:bg-primary/20 transition-colors cursor-pointer" title="Admin Dashboard">
+                  <Shield className="h-8 w-8 text-primary" />
+                </div>
+              </Link>
+            )}
             <Button
               variant="ghost"
               size="icon"
