@@ -45,8 +45,10 @@ export const QuickMeetingJoin = ({ onBotStarted }: QuickMeetingJoinProps) => {
 
     setIsLoading(true);
     try {
-      const botName = localStorage.getItem('bot:name') || 'Meeting Bot';
-      const botAvatarUrl = localStorage.getItem('bot:avatarUrl') || undefined;
+      const botName = localStorage.getItem('bot:name') || 'Notetaker Bot';
+      const botAvatarUrl = localStorage.getItem('bot:avatarUrl') || null;
+
+      console.log('[QuickMeetingJoin] Sende Bot mit Einstellungen:', { botName, botAvatarUrl });
 
       const { data, error } = await supabase.functions.invoke('create-bot', {
         body: {

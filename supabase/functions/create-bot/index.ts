@@ -212,10 +212,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    const finalBotName = botName || "Notetaker Bot";
+    // Ensure bot name is set correctly - trim empty strings
+    const finalBotName = (botName && botName.trim()) ? botName.trim() : "Notetaker Bot";
+    console.log(`[create-bot] Empfangene Parameter - botName: "${botName}", botAvatarUrl: "${botAvatarUrl}"`);
+    console.log(`[create-bot] Finaler Bot Name: "${finalBotName}"`);
     console.log(`[Recall] Sende Bot zu: ${meetingUrl}`);
-    console.log(`[Recall] Bot Name: ${finalBotName}`);
-    console.log(`[Recall] Bot Avatar URL: ${botAvatarUrl || "nicht gesetzt"}`);
 
     // 7. Bot-Konfiguration erstellen
     const botConfig: Record<string, unknown> = {
@@ -245,11 +246,13 @@ Deno.serve(async (req) => {
     };
     
     // Bot-Profilbild als Video-Output setzen (funktioniert für Teams, Zoom, Meet)
-    if (botAvatarUrl) {
+    if (botAvatarUrl && botAvatarUrl.trim()) {
+      console.log(`[create-bot] Lade Avatar von: ${botAvatarUrl}`);
       try {
         const base64Image = await fetchImageAsBase64(botAvatarUrl);
         
         if (base64Image) {
+          console.log(`[create-bot] Avatar geladen, Base64 Länge: ${base64Image.length}`);
           // automatic_video_output zeigt das Bild als Bot-Video/Profilbild
           botConfig.automatic_video_output = {
             in_call_not_recording: {
@@ -261,11 +264,15 @@ Deno.serve(async (req) => {
               b64_data: base64Image
             }
           };
-          console.log(`[Recall] Bot Avatar als Video-Output konfiguriert`);
+          console.log(`[create-bot] Bot Avatar als Video-Output konfiguriert`);
+        } else {
+          console.warn(`[create-bot] Avatar konnte nicht als Base64 konvertiert werden`);
         }
       } catch (imageError) {
-        console.error(`[Recall] Konnte Avatar nicht laden:`, imageError);
+        console.error(`[create-bot] Avatar-Fehler:`, imageError);
       }
+    } else {
+      console.log(`[create-bot] Kein Avatar gesetzt`);
     }
 
     // 8. Bot bei Recall.ai erstellen
