@@ -439,6 +439,12 @@ Deno.serve(async (req) => {
             console.error('Transkript-Backup Upload Fehler:', uploadError)
           } else {
             console.log('Transkript-Backup gespeichert:', uploadData?.path)
+            
+            // Permanente Storage-URL in transcript_url speichern
+            const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+            const storagePath = `${supabaseUrl}/storage/v1/object/public/transcript-backups/${fileName}`
+            updates.transcript_url = storagePath
+            console.log('Transkript-URL gespeichert:', storagePath)
           }
         } catch (backupError) {
           console.error('Transkript-Backup fehlgeschlagen:', backupError)
