@@ -2,14 +2,15 @@ import { useEffect, useState, useMemo } from 'react';
 import { useGoogleRecallCalendar } from '@/hooks/useGoogleRecallCalendar';
 import { useMicrosoftRecallCalendar } from '@/hooks/useMicrosoftRecallCalendar';
 import { useRecallCalendarMeetings, RecallMeeting } from '@/hooks/useRecallCalendarMeetings';
-import { RecallCalendarConnection } from './RecallCalendarConnection';
 import { RecallUpcomingMeetings } from './RecallUpcomingMeetings';
 import { QuickMeetingJoin } from './QuickMeetingJoin';
 import { CalendarMonthView } from './CalendarMonthView';
 import { isSameDay } from 'date-fns';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Settings } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 
 interface RecallCalendarViewProps {
   onStartRecording?: (meeting: RecallMeeting) => void;
@@ -55,28 +56,6 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
 
   return (
     <div className="space-y-6">
-      <RecallCalendarConnection
-        // Google props
-        googleStatus={google.status}
-        googleError={google.error}
-        googleConnected={google.connected}
-        googlePendingOauthUrl={google.pendingOauthUrl}
-        googleIsLoading={google.isLoading}
-        onConnectGoogle={google.connect}
-        onDisconnectGoogle={google.disconnect}
-        onCheckGoogleStatus={google.checkStatus}
-        // Microsoft props
-        microsoftStatus={microsoft.status}
-        microsoftError={microsoft.error}
-        microsoftConnected={microsoft.connected}
-        microsoftPendingOauthUrl={microsoft.pendingOauthUrl}
-        microsoftIsLoading={microsoft.isLoading}
-        onConnectMicrosoft={microsoft.connect}
-        onDisconnectMicrosoft={microsoft.disconnect}
-        onCheckMicrosoftStatus={microsoft.checkStatus}
-        // Shared
-        onRefreshMeetings={meetings.fetchMeetings}
-      />
 
       <QuickMeetingJoin onBotStarted={meetings.fetchMeetings} />
 
@@ -132,9 +111,16 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
 
       {!isConnected && google.status === 'disconnected' && microsoft.status === 'disconnected' && (
         <div className="bg-muted/50 rounded-xl p-8 text-center">
+          <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <p className="text-muted-foreground mb-4">
-            Verbinde deinen Kalender, um automatisch an allen Meetings mit einem Bot teilzunehmen.
+            Verbinde deinen Kalender in den Einstellungen, um automatisch an allen Meetings mit einem Bot teilzunehmen.
           </p>
+          <Link to="/settings">
+            <Button>
+              <Settings className="h-4 w-4 mr-2" />
+              Zu den Einstellungen
+            </Button>
+          </Link>
         </div>
       )}
     </div>
