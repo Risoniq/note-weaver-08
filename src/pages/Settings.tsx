@@ -15,10 +15,15 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRecallCalendarMeetings } from "@/hooks/useRecallCalendarMeetings";
+import { useGoogleRecallCalendar } from "@/hooks/useGoogleRecallCalendar";
+import { useMicrosoftRecallCalendar } from "@/hooks/useMicrosoftRecallCalendar";
+import { RecallCalendarConnection } from "@/components/calendar/RecallCalendarConnection";
 
 const Settings = () => {
   const { status, events, connect, disconnect, error } = useGoogleCalendar();
-  const { preferences, updatePreferences } = useRecallCalendarMeetings();
+  const { preferences, updatePreferences, fetchMeetings } = useRecallCalendarMeetings();
+  const google = useGoogleRecallCalendar();
+  const microsoft = useMicrosoftRecallCalendar();
   const isConnected = status === 'connected';
   const isConnecting = status === 'connecting';
   const { toast } = useToast();
@@ -566,44 +571,30 @@ const Settings = () => {
               <CardDescription>Verbinde deinen Kalender für automatische Aufnahmen</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <Label>Google Kalender</Label>
-                    {isConnected && (
-                      <Badge variant="secondary" className="bg-green-500/10 text-green-600 border-green-500/20">
-                        <Check className="h-3 w-3 mr-1" />
-                        Verbunden
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {isConnected 
-                      ? `${events.length} anstehende Meetings synchronisiert` 
-                      : 'Synchronisiere Meetings aus Google Kalender'}
-                  </p>
-                  {error && <p className="text-sm text-destructive">{error}</p>}
-                </div>
-                {isConnected ? (
-                  <Button variant="outline" size="sm" onClick={disconnect}>
-                    Trennen
-                  </Button>
-                ) : (
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={connect}
-                    disabled={isConnecting}
-                  >
-                    {isConnecting ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Globe className="h-4 w-4 mr-2" />
-                    )}
-                    {isConnecting ? 'Verbinden...' : 'Verbinden'}
-                  </Button>
-                )}
-              </div>
+              {/* Calendar Connection Cards */}
+              <RecallCalendarConnection
+                // Google props
+                googleStatus={google.status}
+                googleError={google.error}
+                googleConnected={google.connected}
+                googlePendingOauthUrl={google.pendingOauthUrl}
+                googleIsLoading={google.isLoading}
+                onConnectGoogle={google.connect}
+                onDisconnectGoogle={google.disconnect}
+                onCheckGoogleStatus={google.checkStatus}
+                // Microsoft props
+                microsoftStatus={microsoft.status}
+                microsoftError={microsoft.error}
+                microsoftConnected={microsoft.connected}
+                microsoftPendingOauthUrl={microsoft.pendingOauthUrl}
+                microsoftIsLoading={microsoft.isLoading}
+                onConnectMicrosoft={microsoft.connect}
+                onDisconnectMicrosoft={microsoft.disconnect}
+                onCheckMicrosoftStatus={microsoft.checkStatus}
+                // Shared
+                onRefreshMeetings={fetchMeetings}
+              />
+              
               <Separator />
               
               {/* Recording Preferences from Recall.ai */}
