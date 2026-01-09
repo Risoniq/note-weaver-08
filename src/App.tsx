@@ -11,6 +11,7 @@ import CalendarCallback from "./pages/CalendarCallback";
 import MeetingDetail from "./pages/MeetingDetail";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
+import Transcripts from "./pages/Transcripts";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/meeting/:id" element={<ProtectedRoute><MeetingDetail /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
+          <Route path="/transcripts" element={<ProtectedRoute><Transcripts /></ProtectedRoute>} />
           {/* OAuth callback must be reachable even if auth session refreshes during redirect */}
           <Route path="/calendar-callback" element={<CalendarCallback />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

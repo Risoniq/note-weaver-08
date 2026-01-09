@@ -6,7 +6,7 @@ import { RecordingsList } from "@/components/recordings/RecordingsList";
 import { RecentActivityList } from "@/components/recordings/RecentActivityList";
 import { RecallCalendarView } from "@/components/calendar/RecallCalendarView";
 import { Toaster } from "@/components/ui/toaster";
-import { Mic, Settings, Calendar, LogOut, Shield } from "lucide-react";
+import { Mic, Settings, Calendar, LogOut, Shield, FileText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -40,6 +40,11 @@ const Index = () => {
             <Link to="/settings">
               <div className="p-3 rounded-full bg-primary/10 hover:bg-primary/20 transition-colors cursor-pointer">
                 <Settings className="h-8 w-8 text-primary" />
+              </div>
+            </Link>
+            <Link to="/transcripts">
+              <div className="p-3 rounded-full bg-primary/10 hover:bg-primary/20 transition-colors cursor-pointer" title="Transkript-Datenbank">
+                <FileText className="h-8 w-8 text-primary" />
               </div>
             </Link>
             {isAdmin && (
