@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { MeetingBot } from "@/components/MeetingBot";
 import { RecordingViewer } from "@/components/RecordingViewer";
 import { RecordingsList } from "@/components/recordings/RecordingsList";
@@ -7,120 +6,96 @@ import { RecentActivityList } from "@/components/recordings/RecentActivityList";
 import { RecallCalendarView } from "@/components/calendar/RecallCalendarView";
 import { QuickMeetingJoin } from "@/components/calendar/QuickMeetingJoin";
 import { Toaster } from "@/components/ui/toaster";
-import { Mic, Settings, Calendar, LogOut, Shield, FileText } from "lucide-react";
+import { Calendar, Mic, RefreshCw } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/hooks/useAuth";
-import { useAdminCheck } from "@/hooks/useAdminCheck";
-import { toast } from "@/hooks/use-toast";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { GlassCard } from "@/components/ui/glass-card";
+
 const Index = () => {
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
-  const { user, signOut } = useAuth();
-  const { isAdmin } = useAdminCheck();
-
-  const handleLogout = async () => {
-    const { error } = await signOut();
-    if (error) {
-      toast({
-        title: 'Fehler beim Abmelden',
-        description: error.message,
-        variant: 'destructive',
-      });
-    }
-  };
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-12">
+    <AppLayout>
+      <div className="space-y-6">
         {/* Header */}
-        <div className="text-center mb-12">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="p-3 rounded-full bg-primary/10">
-              <Mic className="h-8 w-8 text-primary" />
-            </div>
-            <Link to="/settings">
-              <div className="p-3 rounded-full bg-primary/10 hover:bg-primary/20 transition-colors cursor-pointer">
-                <Settings className="h-8 w-8 text-primary" />
-              </div>
-            </Link>
-            <Link to="/transcripts">
-              <div className="p-3 rounded-full bg-primary/10 hover:bg-primary/20 transition-colors cursor-pointer" title="Transkript-Datenbank">
-                <FileText className="h-8 w-8 text-primary" />
-              </div>
-            </Link>
-            {isAdmin && (
-              <Link to="/admin">
-                <div className="p-3 rounded-full bg-primary/10 hover:bg-primary/20 transition-colors cursor-pointer" title="Admin Dashboard">
-                  <Shield className="h-8 w-8 text-primary" />
-                </div>
-              </Link>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleLogout}
-              className="rounded-full bg-primary/10 hover:bg-primary/20 h-14 w-14"
-              title={`Abmelden (${user?.email})`}
-            >
-              <LogOut className="h-6 w-6 text-primary" />
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
+            <p className="text-muted-foreground">
+              Lass einen Bot deine Meetings aufnehmen und transkribieren
+            </p>
+          </div>
+          
+          {/* Toolbar - wie im SwiftUI LovableButton */}
+          <div className="flex items-center gap-3">
+            <Button variant="glass" size="lg">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Aktualisieren
             </Button>
           </div>
-          <h1 className="text-4xl font-bold text-foreground mb-2">
-            AI Meeting Recorder
-          </h1>
-          <p className="text-muted-foreground text-lg">
-            Lass einen Bot deine Meetings aufnehmen und transkribieren
-          </p>
-          {user?.email && (
-            <p className="text-sm text-muted-foreground mt-2">
-              Angemeldet als: {user.email}
-            </p>
-          )}
         </div>
 
-        {/* Main Content */}
-        <div className="flex flex-col items-center gap-8 max-w-5xl mx-auto">
-          <Tabs defaultValue="calendar" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6">
-              <TabsTrigger value="calendar" className="gap-2">
-                <Calendar size={16} />
-                Kalender-Automatik
-              </TabsTrigger>
-              <TabsTrigger value="manual" className="gap-2">
-                <Mic size={16} />
-                Manuell
-              </TabsTrigger>
-            </TabsList>
+        {/* Main Content with Tabs */}
+        <Tabs defaultValue="calendar" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-6 bg-white/50 dark:bg-slate-800/50 backdrop-blur-md rounded-xl p-1">
+            <TabsTrigger 
+              value="calendar" 
+              className="gap-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm"
+            >
+              <Calendar size={16} />
+              Kalender-Automatik
+            </TabsTrigger>
+            <TabsTrigger 
+              value="manual" 
+              className="gap-2 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-sm"
+            >
+              <Mic size={16} />
+              Manuell
+            </TabsTrigger>
+          </TabsList>
 
-            <TabsContent value="calendar">
+          <TabsContent value="calendar">
+            <GlassCard>
               <RecallCalendarView />
-            </TabsContent>
+            </GlassCard>
+          </TabsContent>
 
-            <TabsContent value="manual" className="space-y-6">
-              {/* Quick Meeting Join */}
+          <TabsContent value="manual" className="space-y-6">
+            {/* Quick Meeting Join */}
+            <GlassCard title="Schnell-Beitritt">
               <QuickMeetingJoin />
-              
-              {/* Meeting Bot Input */}
+            </GlassCard>
+            
+            {/* Meeting Bot Input */}
+            <GlassCard title="Manueller Bot">
               <MeetingBot onRecordingCreated={setActiveRecordingId} />
-              
-              {/* Active Recording Status */}
-              {activeRecordingId && (
-                <div className="mt-6">
-                  <RecordingViewer recordingId={activeRecordingId} />
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
+            </GlassCard>
+            
+            {/* Active Recording Status */}
+            {activeRecordingId && (
+              <GlassCard title="Aktive Aufnahme">
+                <RecordingViewer recordingId={activeRecordingId} />
+              </GlassCard>
+            )}
+          </TabsContent>
+        </Tabs>
 
-          {/* Recent Activity List */}
-          <RecentActivityList />
-
-          {/* Recordings Dashboard */}
-          <RecordingsList />
+        {/* Dashboard Grid - wie SwiftUI Grid mit GridRow */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Recent Activity */}
+          <GlassCard title="Letzte Aktivitäten">
+            <RecentActivityList />
+          </GlassCard>
+          
+          {/* Recordings */}
+          <GlassCard title="Aufnahmen">
+            <RecordingsList />
+          </GlassCard>
         </div>
       </div>
       <Toaster />
-    </div>
+    </AppLayout>
   );
 };
 
