@@ -16,6 +16,8 @@ interface RecallUpcomingMeetingsProps {
   onJoinMeeting: (meeting: RecallMeeting) => void;
   onRetry?: () => void;
   onBotStarted?: () => void;
+  onRefreshCalendar?: () => void;
+  isRefreshingCalendar?: boolean;
 }
 
 export const RecallUpcomingMeetings = ({ 
@@ -26,6 +28,8 @@ export const RecallUpcomingMeetings = ({
   onJoinMeeting,
   onRetry,
   onBotStarted,
+  onRefreshCalendar,
+  isRefreshingCalendar,
 }: RecallUpcomingMeetingsProps) => {
   const [startingBotFor, setStartingBotFor] = useState<string | null>(null);
 
@@ -270,9 +274,21 @@ export const RecallUpcomingMeetings = ({
                             </div>
                           )
                         ) : (
-                          <div className="flex items-center gap-1 text-xs text-amber-500">
+                          <div className="flex items-center gap-2 text-xs text-amber-500">
                             <LinkIcon size={14} />
                             <span>Kein Meeting-Link erkannt</span>
+                            {onRefreshCalendar && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                                onClick={onRefreshCalendar}
+                                disabled={isRefreshingCalendar}
+                              >
+                                <RefreshCw size={12} className={isRefreshingCalendar ? 'animate-spin' : ''} />
+                                <span className="ml-1">Sync</span>
+                              </Button>
+                            )}
                           </div>
                         )}
                       </div>

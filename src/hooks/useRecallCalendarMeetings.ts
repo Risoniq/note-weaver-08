@@ -27,6 +27,7 @@ export interface RecordingPreferences {
 }
 
 const AUTO_REFRESH_INTERVAL = 15000; // 15 seconds
+const CALENDAR_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes - minimum interval for calendar refresh
 
 // Compare two meetings to check if they have meaningful differences
 function meetingHasChanged(oldMeeting: RecallMeeting, newMeeting: RecallMeeting): boolean {
@@ -82,6 +83,8 @@ export function useRecallCalendarMeetings() {
   
   const lastFetchRef = useRef<number>(0);
   const pendingFetchRef = useRef<boolean>(false);
+  const lastCalendarRefreshRef = useRef<number>(0);
+  const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
 
   // Get authenticated user
   useEffect(() => {
@@ -275,13 +278,51 @@ export function useRecallCalendarMeetings() {
     }
   }, [authUser?.id]);
 
-  // Auto-refresh meetings every 15 seconds
+  // Refresh calendar from provider (Google/Microsoft) to pick up new meeting links
+  const refreshCalendar = useCallback(async (silent = false) => {
+    if (!authUser?.id) return false;
+
+    try {
+      if (!silent) {
+        setIsRefreshingCalendar(true);
+      }
+      console.log('[useRecallCalendarMeetings] Triggering calendar refresh...');
+      
+      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-meetings', {
+        body: { action: 'refresh', supabase_user_id: authUser.id },
+      });
+
+      if (funcError) throw funcError;
+
+      if (data.success) {
+        if (!silent) {
+          toast.success('Kalender wird synchronisiert...');
+        }
+        // Wait a moment, then reload meetings
+        setTimeout(() => fetchMeetings(true), 2000);
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      console.error('[useRecallCalendarMeetings] Refresh error:', err);
+      if (!silent) {
+        toast.error('Kalender-Synchronisation fehlgeschlagen');
+      }
+      return false;
+    } finally {
+      if (!silent) {
+        setIsRefreshingCalendar(false);
+      }
+    }
+  }, [authUser?.id, fetchMeetings]);
+
+  // Auto-refresh meetings every 15 seconds + automatic calendar refresh if meetings without URL detected
   useEffect(() => {
     if (!authUser?.id || !autoRefreshEnabled) return;
 
     console.log('[useRecallCalendarMeetings] Setting up auto-refresh interval (15s)');
     
-    const intervalId = setInterval(() => {
+    const intervalId = setInterval(async () => {
       const now = Date.now();
       // Prevent fetching more often than every 10 seconds (debounce)
       if (now - lastFetchRef.current < 10000) {
@@ -290,14 +331,22 @@ export function useRecallCalendarMeetings() {
       
       console.log('[useRecallCalendarMeetings] Auto-refresh triggered');
       lastFetchRef.current = now;
-      fetchMeetings(true); // Pass true to indicate this is an auto-refresh
+      await fetchMeetings(true); // Pass true to indicate this is an auto-refresh
+      
+      // Check if any meetings are missing URLs and trigger calendar refresh if needed
+      const meetingsWithoutUrl = meetings.filter(m => !m.meeting_url);
+      if (meetingsWithoutUrl.length > 0 && now - lastCalendarRefreshRef.current > CALENDAR_REFRESH_INTERVAL) {
+        console.log('[useRecallCalendarMeetings] Found', meetingsWithoutUrl.length, 'meetings without URL, triggering calendar refresh');
+        lastCalendarRefreshRef.current = now;
+        await refreshCalendar(true); // Silent refresh
+      }
     }, AUTO_REFRESH_INTERVAL);
 
     return () => {
       console.log('[useRecallCalendarMeetings] Cleaning up auto-refresh interval');
       clearInterval(intervalId);
     };
-  }, [authUser?.id, autoRefreshEnabled, fetchMeetings]);
+  }, [authUser?.id, autoRefreshEnabled, fetchMeetings, meetings, refreshCalendar]);
 
   return {
     isLoading,
@@ -306,9 +355,11 @@ export function useRecallCalendarMeetings() {
     preferences,
     autoRefreshEnabled,
     setAutoRefreshEnabled,
+    isRefreshingCalendar,
     fetchMeetings,
     updateMeetingRecording,
     updatePreferences,
     initPreferences,
+    refreshCalendar,
   };
 }

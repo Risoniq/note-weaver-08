@@ -98,6 +98,8 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
               onJoinMeeting={handleJoinMeeting}
               onRetry={meetings.fetchMeetings}
               onBotStarted={meetings.fetchMeetings}
+              onRefreshCalendar={meetings.refreshCalendar}
+              isRefreshingCalendar={meetings.isRefreshingCalendar}
             />
           </div>
         </>

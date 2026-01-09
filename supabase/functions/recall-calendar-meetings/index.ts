@@ -529,6 +529,60 @@ serve(async (req) => {
       );
     }
 
+    // NEW: Refresh calendar action - forces Recall.ai to re-sync with Google/Microsoft calendar
+    if (action === 'refresh') {
+      const recallUserId = await getRecallUserId(supabaseUserId);
+      if (!recallUserId) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'No calendar connected' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('[refresh] Triggering calendar refresh for user:', recallUserId);
+
+      // Get auth token
+      const authResponse = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/authenticate/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${RECALL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ user_id: recallUserId }),
+      });
+
+      if (!authResponse.ok) {
+        console.error('[refresh] Failed to get auth token:', authResponse.status);
+        throw new Error('Failed to authenticate');
+      }
+
+      const authData = await authResponse.json();
+
+      // Force refresh calendar from provider (Google/Microsoft)
+      const refreshResponse = await fetch(
+        'https://eu-central-1.recall.ai/api/v1/calendar/meetings/refresh/',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Token ${RECALL_API_KEY}`,
+            'x-recallcalendarauthtoken': authData.token,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const refreshed = refreshResponse.ok;
+      console.log('[refresh] Calendar refresh result:', refreshed, 'Status:', refreshResponse.status);
+
+      return new Response(
+        JSON.stringify({ 
+          success: refreshed, 
+          message: refreshed ? 'Calendar refresh triggered' : 'Refresh failed' 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     throw new Error('Unknown action');
   } catch (error: unknown) {
     console.error('[Internal] Calendar meetings error:', error);
