@@ -27,7 +27,6 @@ export interface RecordingPreferences {
 }
 
 const AUTO_REFRESH_INTERVAL = 15000; // 15 seconds
-const CALENDAR_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes - minimum interval for calendar refresh
 
 // Compare two meetings to check if they have meaningful differences
 function meetingHasChanged(oldMeeting: RecallMeeting, newMeeting: RecallMeeting): boolean {
@@ -83,7 +82,6 @@ export function useRecallCalendarMeetings() {
   
   const lastFetchRef = useRef<number>(0);
   const pendingFetchRef = useRef<boolean>(false);
-  const lastCalendarRefreshRef = useRef<number>(0);
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
 
   // Get authenticated user
@@ -316,11 +314,11 @@ export function useRecallCalendarMeetings() {
     }
   }, [authUser?.id, fetchMeetings]);
 
-  // Auto-refresh meetings every 15 seconds + automatic calendar refresh if meetings without URL detected
+  // Auto-refresh meetings AND calendar every 15 seconds when enabled
   useEffect(() => {
     if (!authUser?.id || !autoRefreshEnabled) return;
 
-    console.log('[useRecallCalendarMeetings] Setting up auto-refresh interval (15s)');
+    console.log('[useRecallCalendarMeetings] Setting up auto-refresh interval (15s) with calendar sync');
     
     const intervalId = setInterval(async () => {
       const now = Date.now();
@@ -329,24 +327,18 @@ export function useRecallCalendarMeetings() {
         return;
       }
       
-      console.log('[useRecallCalendarMeetings] Auto-refresh triggered');
+      console.log('[useRecallCalendarMeetings] Auto-refresh triggered (meetings + calendar)');
       lastFetchRef.current = now;
-      await fetchMeetings(true); // Pass true to indicate this is an auto-refresh
       
-      // Check if any meetings are missing URLs and trigger calendar refresh if needed
-      const meetingsWithoutUrl = meetings.filter(m => !m.meeting_url);
-      if (meetingsWithoutUrl.length > 0 && now - lastCalendarRefreshRef.current > CALENDAR_REFRESH_INTERVAL) {
-        console.log('[useRecallCalendarMeetings] Found', meetingsWithoutUrl.length, 'meetings without URL, triggering calendar refresh');
-        lastCalendarRefreshRef.current = now;
-        await refreshCalendar(true); // Silent refresh
-      }
+      // Refresh calendar first (silent), then fetch meetings
+      await refreshCalendar(true);
     }, AUTO_REFRESH_INTERVAL);
 
     return () => {
       console.log('[useRecallCalendarMeetings] Cleaning up auto-refresh interval');
       clearInterval(intervalId);
     };
-  }, [authUser?.id, autoRefreshEnabled, fetchMeetings, meetings, refreshCalendar]);
+  }, [authUser?.id, autoRefreshEnabled, refreshCalendar]);
 
   return {
     isLoading,
