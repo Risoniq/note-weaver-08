@@ -93,7 +93,7 @@ export const CalendarMonthView = ({
           hasLinkMeeting: 'after:absolute after:bottom-0.5 after:left-[calc(50%-4px)] after:w-1.5 after:h-1.5 after:rounded-full after:bg-primary',
           hasNoLinkMeeting: 'before:absolute before:bottom-0.5 before:left-[calc(50%+2px)] before:w-1.5 before:h-1.5 before:rounded-full before:bg-amber-500',
         }}
-        className="rounded-md"
+        className="rounded-md w-full [&_.rdp-months]:w-full [&_.rdp-month]:w-full [&_.rdp-table]:w-full"
       />
       
       {selectedDate && (

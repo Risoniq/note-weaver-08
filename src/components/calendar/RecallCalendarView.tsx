@@ -75,34 +75,30 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
             />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Calendar view */}
-            <div className="lg:col-span-1">
-              <CalendarMonthView
-                meetings={meetings.meetings}
-                selectedDate={selectedDate}
-                onDateSelect={handleDateSelect}
-              />
-            </div>
+          {/* Calendar view - full width */}
+          <CalendarMonthView
+            meetings={meetings.meetings}
+            selectedDate={selectedDate}
+            onDateSelect={handleDateSelect}
+          />
 
-            {/* Meetings list */}
-            <div className="lg:col-span-2">
-              <h2 className="text-lg font-semibold text-foreground mb-4">
-                {selectedDate 
-                  ? `Meetings am ${selectedDate.toLocaleDateString('de-DE', { day: 'numeric', month: 'long' })}`
-                  : 'Alle anstehenden Meetings'
-                }
-              </h2>
-              <RecallUpcomingMeetings
-                meetings={filteredMeetings}
-                isLoading={meetings.isLoading}
-                meetingsError={meetings.meetingsError}
-                onToggleRecording={meetings.updateMeetingRecording}
-                onJoinMeeting={handleJoinMeeting}
-                onRetry={meetings.fetchMeetings}
-                onBotStarted={meetings.fetchMeetings}
-              />
-            </div>
+          {/* Meetings list - below calendar */}
+          <div>
+            <h2 className="text-lg font-semibold text-foreground mb-4">
+              {selectedDate 
+                ? `Meetings am ${selectedDate.toLocaleDateString('de-DE', { day: 'numeric', month: 'long' })}`
+                : 'Alle anstehenden Meetings'
+              }
+            </h2>
+            <RecallUpcomingMeetings
+              meetings={filteredMeetings}
+              isLoading={meetings.isLoading}
+              meetingsError={meetings.meetingsError}
+              onToggleRecording={meetings.updateMeetingRecording}
+              onJoinMeeting={handleJoinMeeting}
+              onRetry={meetings.fetchMeetings}
+              onBotStarted={meetings.fetchMeetings}
+            />
           </div>
         </>
       )}
