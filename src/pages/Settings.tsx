@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from "react";
-import { ArrowLeft, Bell, Bot, Calendar, Check, Globe, Loader2, Mic, RefreshCw, Shield, Upload, Volume2, X, Settings2 } from "lucide-react";
+import { ArrowLeft, Bell, Bot, Calendar, Check, Download, FileText, Globe, Loader2, Mic, RefreshCw, Shield, Upload, Volume2, X, Settings2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useGoogleCalendar } from "@/hooks/useGoogleCalendar";
@@ -27,6 +28,16 @@ const Settings = () => {
   const [botAvatarUrl, setBotAvatarUrl] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isRepairingRecordings, setIsRepairingRecordings] = useState(false);
+  
+  // Transcript backups state
+  interface TranscriptBackup {
+    name: string;
+    created_at: string;
+    size: number;
+  }
+  const [transcriptBackups, setTranscriptBackups] = useState<TranscriptBackup[]>([]);
+  const [isLoadingBackups, setIsLoadingBackups] = useState(false);
+  const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Load saved bot settings from localStorage
@@ -39,7 +50,77 @@ const Settings = () => {
     if (savedBotName) {
       setBotName(savedBotName);
     }
+    // Load transcript backups on mount
+    loadTranscriptBackups();
   }, []);
+  
+  const loadTranscriptBackups = async () => {
+    setIsLoadingBackups(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data, error } = await supabase.storage
+        .from('transcript-backups')
+        .list(user.id, {
+          sortBy: { column: 'created_at', order: 'desc' }
+        });
+      
+      if (error) throw error;
+      
+      setTranscriptBackups((data || []).map(file => ({
+        name: file.name,
+        created_at: file.created_at || '',
+        size: file.metadata?.size || 0
+      })));
+    } catch (err) {
+      console.error('Error loading backups:', err);
+    } finally {
+      setIsLoadingBackups(false);
+    }
+  };
+  
+  const downloadBackup = async (fileName: string) => {
+    setIsDownloading(fileName);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      const { data, error } = await supabase.storage
+        .from('transcript-backups')
+        .download(`${user.id}/${fileName}`);
+      
+      if (error) {
+        toast({ title: "Download fehlgeschlagen", variant: "destructive" });
+        return;
+      }
+      
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      toast({ title: "Transkript heruntergeladen" });
+    } catch (err) {
+      console.error('Download error:', err);
+      toast({ title: "Download fehlgeschlagen", variant: "destructive" });
+    } finally {
+      setIsDownloading(null);
+    }
+  };
+  
+  const formatBackupDate = (dateString: string) => {
+    if (!dateString) return 'Unbekannt';
+    return new Date(dateString).toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
   
   const handleBotNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newName = e.target.value;
@@ -579,6 +660,65 @@ const Settings = () => {
                   />
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Transcript Backups */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                <CardTitle>Transkript-Backups</CardTitle>
+              </div>
+              <CardDescription>Alle Transkripte werden automatisch gesichert</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoadingBackups ? (
+                <div className="flex items-center gap-2 py-4">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Lade Backups...</span>
+                </div>
+              ) : transcriptBackups.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4">Keine Backups vorhanden</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">
+                      {transcriptBackups.length} Backup(s) gefunden
+                    </span>
+                    <Button variant="outline" size="sm" onClick={loadTranscriptBackups}>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Aktualisieren
+                    </Button>
+                  </div>
+                  <ScrollArea className="h-64 rounded-md border">
+                    <div className="p-2">
+                      {transcriptBackups.map((backup) => (
+                        <div key={backup.name} className="flex justify-between items-center py-3 px-2 border-b last:border-b-0 hover:bg-muted/50 rounded">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm truncate">{formatBackupDate(backup.created_at)}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {backup.name} • {backup.size > 0 ? `${(backup.size / 1024).toFixed(1)} KB` : 'Größe unbekannt'}
+                            </p>
+                          </div>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => downloadBackup(backup.name)}
+                            disabled={isDownloading === backup.name}
+                          >
+                            {isDownloading === backup.name ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Download className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              )}
             </CardContent>
           </Card>
 
