@@ -5,6 +5,7 @@ import { RecordingViewer } from "@/components/RecordingViewer";
 import { RecordingsList } from "@/components/recordings/RecordingsList";
 import { RecentActivityList } from "@/components/recordings/RecentActivityList";
 import { RecallCalendarView } from "@/components/calendar/RecallCalendarView";
+import { QuickMeetingJoin } from "@/components/calendar/QuickMeetingJoin";
 import { Toaster } from "@/components/ui/toaster";
 import { Mic, Settings, Calendar, LogOut, Shield, FileText } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -95,7 +96,10 @@ const Index = () => {
               <RecallCalendarView />
             </TabsContent>
 
-            <TabsContent value="manual">
+            <TabsContent value="manual" className="space-y-6">
+              {/* Quick Meeting Join */}
+              <QuickMeetingJoin />
+              
               {/* Meeting Bot Input */}
               <MeetingBot onRecordingCreated={setActiveRecordingId} />
               

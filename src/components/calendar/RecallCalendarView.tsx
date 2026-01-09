@@ -3,7 +3,7 @@ import { useGoogleRecallCalendar } from '@/hooks/useGoogleRecallCalendar';
 import { useMicrosoftRecallCalendar } from '@/hooks/useMicrosoftRecallCalendar';
 import { useRecallCalendarMeetings, RecallMeeting } from '@/hooks/useRecallCalendarMeetings';
 import { RecallUpcomingMeetings } from './RecallUpcomingMeetings';
-import { QuickMeetingJoin } from './QuickMeetingJoin';
+
 import { CalendarMonthView } from './CalendarMonthView';
 import { isSameDay } from 'date-fns';
 import { Switch } from '@/components/ui/switch';
@@ -56,8 +56,6 @@ export const RecallCalendarView = ({ onStartRecording }: RecallCalendarViewProps
 
   return (
     <div className="space-y-6">
-
-      <QuickMeetingJoin onBotStarted={meetings.fetchMeetings} />
 
       {isConnected && (
         <>
