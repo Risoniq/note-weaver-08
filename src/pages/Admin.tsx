@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, FileText, Clock, Activity, Calendar, CheckCircle, XCircle, Trash2, Shield } from 'lucide-react';
+import { ArrowLeft, Users, FileText, Clock, Activity, Calendar, CheckCircle, XCircle, Trash2, Shield, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -13,6 +13,9 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +27,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -40,6 +51,8 @@ interface UserData {
   online_status: 'online' | 'recording' | 'offline';
   is_approved: boolean;
   is_admin: boolean;
+  max_minutes: number;
+  used_minutes: number;
 }
 
 interface Summary {
@@ -58,6 +71,11 @@ const Admin = () => {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  
+  // Quota Edit Dialog
+  const [quotaDialogOpen, setQuotaDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserData | null>(null);
+  const [quotaHours, setQuotaHours] = useState<number>(2);
 
   const fetchData = async () => {
     try {
@@ -119,7 +137,6 @@ const Admin = () => {
           : 'Der Benutzer kann den Notetaker nicht mehr nutzen.',
       });
 
-      // Refresh data
       await fetchData();
     } catch (err: any) {
       toast({
@@ -154,12 +171,57 @@ const Admin = () => {
         description: 'Der Benutzer und alle zugehörigen Daten wurden gelöscht.',
       });
 
-      // Refresh data
       await fetchData();
     } catch (err: any) {
       toast({
         title: 'Fehler',
         description: err.message || 'Löschen fehlgeschlagen',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const openQuotaEdit = (user: UserData) => {
+    setEditingUser(user);
+    setQuotaHours(user.max_minutes / 60);
+    setQuotaDialogOpen(true);
+  };
+
+  const handleSaveQuota = async () => {
+    if (!editingUser) return;
+    
+    setActionLoading(editingUser.id);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      const response = await supabase.functions.invoke('admin-set-quota', {
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+        body: { 
+          user_id: editingUser.id, 
+          max_minutes: Math.round(quotaHours * 60) 
+        },
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      toast({
+        title: 'Kontingent gespeichert',
+        description: `Neues Limit: ${quotaHours}h für ${editingUser.email}`,
+      });
+
+      setQuotaDialogOpen(false);
+      await fetchData();
+    } catch (err: any) {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Kontingent konnte nicht gespeichert werden',
         variant: 'destructive',
       });
     } finally {
@@ -189,6 +251,18 @@ const Admin = () => {
   const formatNumber = (num: number) => {
     if (!num) return '0';
     return num.toLocaleString('de-DE');
+  };
+
+  const getQuotaPercentage = (user: UserData) => {
+    if (user.max_minutes === 0) return 0;
+    return Math.min(100, (user.used_minutes / user.max_minutes) * 100);
+  };
+
+  const getQuotaColor = (user: UserData) => {
+    const percentage = getQuotaPercentage(user);
+    if (percentage >= 100) return 'bg-destructive';
+    if (percentage >= 80) return 'bg-amber-500';
+    return 'bg-primary';
   };
 
   const getStatusBadge = (user: UserData) => {
@@ -303,9 +377,9 @@ const Admin = () => {
                     <TableRow>
                       <TableHead>Benutzer</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Kontingent</TableHead>
                       <TableHead>Registriert</TableHead>
                       <TableHead className="text-right">Aufnahmen</TableHead>
-                      <TableHead className="text-right">Dauer</TableHead>
                       <TableHead>Kalender</TableHead>
                       <TableHead>Aktionen</TableHead>
                     </TableRow>
@@ -331,9 +405,28 @@ const Admin = () => {
                           </div>
                         </TableCell>
                         <TableCell>{getStatusBadge(user)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 min-w-[160px]">
+                            <Progress 
+                              value={getQuotaPercentage(user)} 
+                              className="w-16 h-2"
+                              indicatorClassName={getQuotaColor(user)}
+                            />
+                            <span className="text-sm text-muted-foreground whitespace-nowrap">
+                              {Math.round(user.used_minutes / 60 * 10) / 10}h / {Math.round(user.max_minutes / 60)}h
+                            </span>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6"
+                              onClick={() => openQuotaEdit(user)}
+                            >
+                              <Settings className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
                         <TableCell>{formatDate(user.created_at)}</TableCell>
                         <TableCell className="text-right">{user.recordings_count}</TableCell>
-                        <TableCell className="text-right">{formatDuration(user.total_duration)}</TableCell>
                         <TableCell>
                           <div className="flex gap-1">
                             {user.google_connected && (
@@ -426,6 +519,51 @@ const Admin = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Quota Edit Dialog */}
+        <Dialog open={quotaDialogOpen} onOpenChange={setQuotaDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Kontingent bearbeiten</DialogTitle>
+              <DialogDescription>
+                {editingUser?.email}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="py-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="quota-hours">Maximale Meeting-Stunden</Label>
+                <Input 
+                  id="quota-hours"
+                  type="number" 
+                  value={quotaHours} 
+                  onChange={(e) => setQuotaHours(Number(e.target.value))}
+                  min={0}
+                  step={0.5}
+                />
+              </div>
+              
+              {editingUser && (
+                <div className="text-sm text-muted-foreground">
+                  <p>Aktuell verbraucht: {Math.round(editingUser.used_minutes / 60 * 10) / 10}h</p>
+                  <p>Verbleibend nach Änderung: {Math.max(0, quotaHours - editingUser.used_minutes / 60).toFixed(1)}h</p>
+                </div>
+              )}
+            </div>
+            
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setQuotaDialogOpen(false)}>
+                Abbrechen
+              </Button>
+              <Button 
+                onClick={handleSaveQuota}
+                disabled={actionLoading === editingUser?.id}
+              >
+                Speichern
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

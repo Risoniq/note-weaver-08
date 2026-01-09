@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MeetingBot } from "@/components/MeetingBot";
 import { RecordingViewer } from "@/components/RecordingViewer";
 import { RecordingsList } from "@/components/recordings/RecordingsList";
@@ -11,13 +11,32 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GlassCard } from "@/components/ui/glass-card";
+import { QuotaProgressBar } from "@/components/quota/QuotaProgressBar";
+import { QuotaExhaustedModal } from "@/components/quota/QuotaExhaustedModal";
+import { useUserQuota } from "@/hooks/useUserQuota";
 
 const Index = () => {
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
+  const { quota, loading: quotaLoading } = useUserQuota();
+  const [showExhaustedModal, setShowExhaustedModal] = useState(false);
+
+  // Modal anzeigen wenn Kontingent erschöpft
+  useEffect(() => {
+    if (quota?.is_exhausted) {
+      setShowExhaustedModal(true);
+    }
+  }, [quota]);
 
   return (
     <AppLayout>
       <div className="space-y-6">
+        {/* Quota Progress Bar - ganz oben */}
+        {quota && !quotaLoading && (
+          <GlassCard>
+            <QuotaProgressBar quota={quota} />
+          </GlassCard>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -93,6 +112,12 @@ const Index = () => {
             <RecordingsList />
           </GlassCard>
         </div>
+
+        {/* Modal für erschöpftes Kontingent */}
+        <QuotaExhaustedModal 
+          open={showExhaustedModal} 
+          onClose={() => setShowExhaustedModal(false)} 
+        />
       </div>
       <Toaster />
     </AppLayout>

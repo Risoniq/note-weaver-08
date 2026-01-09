@@ -112,6 +112,15 @@ Deno.serve(async (req) => {
       console.error('User roles fetch error:', rolesError2);
     }
 
+    // Fetch user quotas
+    const { data: quotas, error: quotasError } = await supabaseAdmin
+      .from('user_quotas')
+      .select('user_id, max_minutes');
+
+    if (quotasError) {
+      console.error('Quotas fetch error:', quotasError);
+    }
+
     // Active bot statuses
     const activeBotStatuses = ['joining', 'in_call_not_recording', 'in_call_recording', 'waiting_room'];
     
@@ -174,6 +183,14 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Build quotas map
+    const quotaMap = new Map<string, number>();
+    if (quotas) {
+      for (const q of quotas) {
+        quotaMap.set(q.user_id, q.max_minutes);
+      }
+    }
+
     // Determine online status (online if heartbeat within last 60 seconds)
     const ONLINE_TIMEOUT = 60000; // 60 seconds
     const now = Date.now();
@@ -204,6 +221,8 @@ Deno.serve(async (req) => {
       const calendar = calendarMap.get(user.id) || { google: false, microsoft: false };
       const onlineStatus = getUserOnlineStatus(user.id);
       const roles = rolesMap.get(user.id) || { isApproved: false, isAdmin: false };
+      const maxMinutes = quotaMap.get(user.id) ?? 120; // Default 2h
+      const usedMinutes = Math.round(stats.duration / 60);
 
       return {
         id: user.id,
@@ -218,6 +237,8 @@ Deno.serve(async (req) => {
         online_status: onlineStatus,
         is_approved: roles.isApproved,
         is_admin: roles.isAdmin,
+        max_minutes: maxMinutes,
+        used_minutes: usedMinutes,
       };
     });
 
