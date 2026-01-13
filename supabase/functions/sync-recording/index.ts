@@ -475,6 +475,60 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 9. Export an externe Supabase-API senden (nach jedem abgeschlossenen Meeting)
+    if (status === 'done') {
+      const exportUrl = Deno.env.get('TRANSCRIPT_EXPORT_URL')
+      const exportSecret = Deno.env.get('TRANSCRIPT_EXPORT_SECRET')
+      
+      if (exportUrl && exportSecret) {
+        console.log('Sende Meeting-Daten an externe Export-API...')
+        try {
+          // Vollständige Meeting-Daten für Export zusammenstellen
+          const exportData = {
+            recording_id: id,
+            user_id: recording.user_id || user.id,
+            title: recording.title || updates.title || '',
+            summary: recording.summary || updates.summary || '',
+            key_points: recording.key_points || updates.key_points || [],
+            action_items: recording.action_items || updates.action_items || [],
+            transcript_text: updates.transcript_text || recording.transcript_text || '',
+            participants: updates.participants || recording.participants || [],
+            calendar_attendees: updates.calendar_attendees || recording.calendar_attendees || [],
+            duration: recording.duration,
+            word_count: recording.word_count,
+            status: status,
+            meeting_url: recording.meeting_url,
+            video_url: updates.video_url || recording.video_url || '',
+            transcript_url: updates.transcript_url || recording.transcript_url || '',
+            created_at: recording.created_at,
+            updated_at: new Date().toISOString(),
+            recall_bot_id: recording.recall_bot_id,
+          }
+          
+          const exportResponse = await fetch(exportUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-export-secret': exportSecret,
+            },
+            body: JSON.stringify(exportData),
+          })
+          
+          if (exportResponse.ok) {
+            const exportResult = await exportResponse.json()
+            console.log('Export erfolgreich:', JSON.stringify(exportResult))
+          } else {
+            const errorText = await exportResponse.text()
+            console.error('Export fehlgeschlagen:', exportResponse.status, errorText)
+          }
+        } catch (exportError) {
+          console.error('Fehler beim Export an externe API:', exportError)
+        }
+      } else {
+        console.log('Export-Konfiguration nicht vollständig (TRANSCRIPT_EXPORT_URL oder TRANSCRIPT_EXPORT_SECRET fehlt)')
+      }
+    }
+
     // 9. Datenbank aktualisieren
     const { error: updateError } = await supabase
       .from('recordings')
