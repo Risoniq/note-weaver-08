@@ -58,25 +58,25 @@ export const CalendarMonthView = ({
   }, [selectedDateMeetings]);
 
   return (
-    <div className="bg-card rounded-xl border border-border p-4">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-lg font-semibold text-foreground">Kalender</h3>
+    <div className="bg-card rounded-lg border border-border p-2 max-w-[280px]">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-semibold text-foreground">Kalender</h3>
         {selectedDate && selectedDateMeetings.length > 0 && (
-          <Badge variant="secondary">
-            {selectedDateMeetings.length} Termin{selectedDateMeetings.length !== 1 ? 'e' : ''}
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+            {selectedDateMeetings.length}
           </Badge>
         )}
       </div>
       
       {/* Legend */}
-      <div className="flex items-center gap-4 mb-3 text-xs text-muted-foreground">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-primary" />
-          <span>Bot kann beitreten</span>
+      <div className="flex items-center gap-2 mb-1.5 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+          <span>Mit Link</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-amber-500" />
-          <span>Kein Link</span>
+        <div className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+          <span>Ohne</span>
         </div>
       </div>
       
@@ -90,33 +90,33 @@ export const CalendarMonthView = ({
           hasNoLinkMeeting: datesWithoutLink,
         }}
         modifiersClassNames={{
-          hasLinkMeeting: 'after:absolute after:bottom-0.5 after:left-[calc(50%-4px)] after:w-1.5 after:h-1.5 after:rounded-full after:bg-primary',
-          hasNoLinkMeeting: 'before:absolute before:bottom-0.5 before:left-[calc(50%+2px)] before:w-1.5 before:h-1.5 before:rounded-full before:bg-amber-500',
+          hasLinkMeeting: 'after:absolute after:bottom-0 after:left-[calc(50%-3px)] after:w-1 after:h-1 after:rounded-full after:bg-primary',
+          hasNoLinkMeeting: 'before:absolute before:bottom-0 before:left-[calc(50%+1px)] before:w-1 before:h-1 before:rounded-full before:bg-amber-500',
         }}
-        className="rounded-md w-full [&_.rdp-months]:w-full [&_.rdp-month]:w-full [&_.rdp-table]:w-full"
+        className="rounded-md text-xs [&_.rdp-months]:w-full [&_.rdp-month]:w-full [&_.rdp-table]:w-full [&_.rdp-head_th]:text-[10px] [&_.rdp-head_th]:p-1 [&_.rdp-cell]:p-0 [&_.rdp-day]:h-6 [&_.rdp-day]:w-6 [&_.rdp-day]:text-[11px] [&_.rdp-caption]:text-xs [&_.rdp-nav_button]:h-5 [&_.rdp-nav_button]:w-5"
       />
       
       {selectedDate && (
-        <div className="mt-4 pt-4 border-t border-border">
-          <p className="text-sm text-muted-foreground">
-            {format(selectedDate, 'EEEE, d. MMMM yyyy', { locale: de })}
+        <div className="mt-2 pt-2 border-t border-border">
+          <p className="text-[10px] text-muted-foreground">
+            {format(selectedDate, 'd. MMM yyyy', { locale: de })}
           </p>
           {selectedDateMeetings.length === 0 ? (
-            <p className="text-sm text-muted-foreground mt-2">
-              Keine Termine an diesem Tag
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Keine Termine
             </p>
           ) : (
-            <div className="mt-2 space-y-1">
+            <div className="mt-1 space-y-0.5">
               {withLinkCount > 0 && (
-                <p className="text-sm text-foreground flex items-center gap-1.5">
-                  <Video className="h-3.5 w-3.5 text-primary" />
-                  {withLinkCount} mit Meeting-Link
+                <p className="text-[10px] text-foreground flex items-center gap-1">
+                  <Video className="h-2.5 w-2.5 text-primary" />
+                  {withLinkCount} mit Link
                 </p>
               )}
               {withoutLinkCount > 0 && (
-                <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                  <VideoOff className="h-3.5 w-3.5 text-amber-500" />
-                  {withoutLinkCount} ohne Link
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <VideoOff className="h-2.5 w-2.5 text-amber-500" />
+                  {withoutLinkCount} ohne
                 </p>
               )}
             </div>
