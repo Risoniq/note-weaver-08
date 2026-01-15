@@ -45,17 +45,47 @@ const Settings = () => {
   const [isDownloading, setIsDownloading] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Load saved bot settings from localStorage
+  // Load saved bot settings from database (with localStorage fallback)
   useEffect(() => {
-    const savedAvatarUrl = localStorage.getItem('bot:avatarUrl');
-    if (savedAvatarUrl) {
-      setBotAvatarUrl(savedAvatarUrl);
-    }
-    const savedBotName = localStorage.getItem('bot:name');
-    if (savedBotName) {
-      setBotName(savedBotName);
-    }
-    // Load transcript backups on mount
+    const loadBotSettings = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        
+        // Try to load from database first
+        const { data, error } = await supabase
+          .from('recall_calendar_users')
+          .select('bot_name, bot_avatar_url')
+          .eq('supabase_user_id', user.id)
+          .maybeSingle();
+        
+        if (data) {
+          if (data.bot_name) {
+            setBotName(data.bot_name);
+            localStorage.setItem('bot:name', data.bot_name);
+          }
+          if (data.bot_avatar_url) {
+            setBotAvatarUrl(data.bot_avatar_url);
+            localStorage.setItem('bot:avatarUrl', data.bot_avatar_url);
+          }
+        } else {
+          // Fallback to localStorage for backwards compatibility
+          const savedAvatarUrl = localStorage.getItem('bot:avatarUrl');
+          if (savedAvatarUrl) setBotAvatarUrl(savedAvatarUrl);
+          const savedBotName = localStorage.getItem('bot:name');
+          if (savedBotName) setBotName(savedBotName);
+        }
+      } catch (err) {
+        console.error('Error loading bot settings:', err);
+        // Fallback to localStorage
+        const savedAvatarUrl = localStorage.getItem('bot:avatarUrl');
+        if (savedAvatarUrl) setBotAvatarUrl(savedAvatarUrl);
+        const savedBotName = localStorage.getItem('bot:name');
+        if (savedBotName) setBotName(savedBotName);
+      }
+    };
+    
+    loadBotSettings();
     loadTranscriptBackups();
   }, []);
   
@@ -130,7 +160,52 @@ const Settings = () => {
   const handleBotNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newName = e.target.value;
     setBotName(newName);
-    localStorage.setItem('bot:name', newName);
+  };
+  
+  // Save bot name to database and localStorage, then sync to Recall.ai
+  const saveBotName = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      localStorage.setItem('bot:name', botName);
+      
+      // Save to database
+      const { error } = await supabase
+        .from('recall_calendar_users')
+        .update({ bot_name: botName })
+        .eq('supabase_user_id', user.id);
+      
+      if (error) {
+        console.error('Error saving bot name:', error);
+        toast({
+          title: "Fehler beim Speichern",
+          description: "Der Bot-Name konnte nicht gespeichert werden.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Sync bot settings to Recall.ai for automated calendar bots
+      try {
+        await supabase.functions.invoke('recall-calendar-meetings', {
+          body: { action: 'sync_bot_settings' }
+        });
+      } catch (syncErr) {
+        console.warn('Could not sync bot settings to Recall.ai:', syncErr);
+      }
+      
+      toast({
+        title: "Gespeichert",
+        description: "Bot-Name wurde gespeichert.",
+      });
+    } catch (err) {
+      console.error('Error saving bot name:', err);
+      toast({
+        title: "Fehler beim Speichern",
+        variant: "destructive",
+      });
+    }
   };
   
   // Compress image to target size
@@ -233,6 +308,24 @@ const Settings = () => {
       setBotAvatarUrl(publicUrl);
       localStorage.setItem('bot:avatarUrl', publicUrl);
       
+      // Save to database and sync to Recall.ai
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('recall_calendar_users')
+          .update({ bot_avatar_url: publicUrl })
+          .eq('supabase_user_id', user.id);
+        
+        // Sync bot settings to Recall.ai for automated calendar bots
+        try {
+          await supabase.functions.invoke('recall-calendar-meetings', {
+            body: { action: 'sync_bot_settings' }
+          });
+        } catch (syncErr) {
+          console.warn('Could not sync bot settings to Recall.ai:', syncErr);
+        }
+      }
+      
       toast({
         title: "Profilbild hochgeladen",
         description: "Das Bot-Profilbild wurde erfolgreich gespeichert",
@@ -253,9 +346,32 @@ const Settings = () => {
     }
   };
   
-  const removeAvatar = () => {
+  const removeAvatar = async () => {
     setBotAvatarUrl(null);
     localStorage.removeItem('bot:avatarUrl');
+    
+    // Remove from database and sync to Recall.ai
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('recall_calendar_users')
+          .update({ bot_avatar_url: null })
+          .eq('supabase_user_id', user.id);
+        
+        // Sync bot settings to Recall.ai for automated calendar bots
+        try {
+          await supabase.functions.invoke('recall-calendar-meetings', {
+            body: { action: 'sync_bot_settings' }
+          });
+        } catch (syncErr) {
+          console.warn('Could not sync bot settings to Recall.ai:', syncErr);
+        }
+      }
+    } catch (err) {
+      console.error('Error removing avatar from DB:', err);
+    }
+    
     toast({
       title: "Profilbild entfernt",
       description: "Das Bot-Profilbild wurde entfernt",
@@ -385,13 +501,7 @@ const Settings = () => {
                   />
                   <Button 
                     size="sm" 
-                    onClick={() => {
-                      localStorage.setItem('bot:name', botName);
-                      toast({
-                        title: "Gespeichert",
-                        description: "Bot-Name wurde gespeichert.",
-                      });
-                    }}
+                    onClick={saveBotName}
                   >
                     Speichern
                   </Button>

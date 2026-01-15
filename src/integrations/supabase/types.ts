@@ -16,6 +16,8 @@ export type Database = {
     Tables: {
       recall_calendar_users: {
         Row: {
+          bot_avatar_url: string | null
+          bot_name: string | null
           created_at: string
           google_connected: boolean
           id: string
@@ -26,6 +28,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          bot_avatar_url?: string | null
+          bot_name?: string | null
           created_at?: string
           google_connected?: boolean
           id?: string
@@ -36,6 +40,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          bot_avatar_url?: string | null
+          bot_name?: string | null
           created_at?: string
           google_connected?: boolean
           id?: string

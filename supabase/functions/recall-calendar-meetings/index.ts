@@ -507,7 +507,7 @@ serve(async (req) => {
     // - true = this rule is evaluated and must be satisfied
     // - false = this rule is ignored
     // For "record all meetings": set external/internal to true, others to false (ignored)
-    async function syncPreferencesToRecall(externalUserId: string, prefs: any): Promise<boolean> {
+    async function syncPreferencesToRecall(externalUserId: string, prefs: any, botConfig?: { bot_name?: string; bot_avatar_url?: string }): Promise<boolean> {
       // "Record all meetings" = external + internal true, filtering rules false (ignored)
       const recallPreferences = {
         record_non_host: false,       // false = ignore this rule (don't require non-host)
@@ -538,6 +538,15 @@ serve(async (req) => {
 
         const authData = await authResponse.json();
         
+        // Build the update payload
+        const updatePayload: Record<string, unknown> = { preferences: recallPreferences };
+        
+        // Add bot config if provided (for user-specific bot name and avatar)
+        if (botConfig?.bot_name) {
+          updatePayload.bot_name = botConfig.bot_name;
+          console.log('[Sync] Including bot_name in sync:', botConfig.bot_name);
+        }
+        
         // Step 2: PATCH to /api/v1/calendar/user/ with auth token header (NO UUID in path!)
         const response = await fetch('https://eu-central-1.recall.ai/api/v1/calendar/user/', {
           method: 'PATCH',
@@ -546,10 +555,10 @@ serve(async (req) => {
             'x-recallcalendarauthtoken': authData.token,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ preferences: recallPreferences }),
+          body: JSON.stringify(updatePayload),
         });
 
-        console.log('[Sync] Sent preferences body:', JSON.stringify({ preferences: recallPreferences }));
+        console.log('[Sync] Sent preferences body:', JSON.stringify(updatePayload));
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -575,6 +584,13 @@ serve(async (req) => {
         );
       }
 
+      // Get user's bot settings from database
+      const { data: userBotSettings } = await supabase
+        .from('recall_calendar_users')
+        .select('bot_name, bot_avatar_url')
+        .eq('supabase_user_id', supabaseUserId)
+        .maybeSingle();
+
       // Set default preferences
       const defaultPrefs = {
         record_all: true,
@@ -583,8 +599,12 @@ serve(async (req) => {
         auto_record: true,
       };
 
-      // Sync to Recall.ai using external user ID (email) - the function handles auth token
-      const synced = await syncPreferencesToRecall(recallUserId, defaultPrefs);
+      // Sync to Recall.ai using external user ID (email) - include bot config
+      const botConfig = {
+        bot_name: userBotSettings?.bot_name || undefined,
+        bot_avatar_url: userBotSettings?.bot_avatar_url || undefined,
+      };
+      const synced = await syncPreferencesToRecall(recallUserId, defaultPrefs, botConfig);
 
       // Also update local database
       await supabase
@@ -608,7 +628,7 @@ serve(async (req) => {
 
       const { data: userData, error: userError } = await supabase
         .from('recall_calendar_users')
-        .select('*')
+        .select('*, bot_name, bot_avatar_url')
         .eq('supabase_user_id', supabaseUserId)
         .maybeSingle();
 
@@ -630,10 +650,14 @@ serve(async (req) => {
         throw new Error('Failed to update preferences');
       }
 
-      // Sync preferences to Recall.ai using external user ID (email)
+      // Sync preferences to Recall.ai using external user ID (email) - include bot config
       const recallUserId = await getRecallUserId(supabaseUserId);
       if (recallUserId) {
-        const synced = await syncPreferencesToRecall(recallUserId, newPrefs);
+        const botConfig = {
+          bot_name: userData?.bot_name || undefined,
+          bot_avatar_url: userData?.bot_avatar_url || undefined,
+        };
+        const synced = await syncPreferencesToRecall(recallUserId, newPrefs, botConfig);
         console.log('[update_preferences] Sync result:', synced);
       }
 
@@ -692,6 +716,42 @@ serve(async (req) => {
         JSON.stringify({ 
           success: refreshed, 
           message: refreshed ? 'Calendar refresh triggered' : 'Refresh failed' 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // NEW: Sync bot settings action - syncs bot name and avatar to Recall.ai
+    if (action === 'sync_bot_settings') {
+      const recallUserId = await getRecallUserId(supabaseUserId);
+      if (!recallUserId) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'No calendar connected' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Get user's current preferences and bot settings
+      const { data: userData } = await supabase
+        .from('recall_calendar_users')
+        .select('recording_preferences, bot_name, bot_avatar_url')
+        .eq('supabase_user_id', supabaseUserId)
+        .maybeSingle();
+
+      const prefs = userData?.recording_preferences || { record_all: true };
+      const botConfig = {
+        bot_name: userData?.bot_name || undefined,
+        bot_avatar_url: userData?.bot_avatar_url || undefined,
+      };
+
+      console.log('[sync_bot_settings] Syncing bot settings for user:', supabaseUserId, 'Config:', JSON.stringify(botConfig));
+
+      const synced = await syncPreferencesToRecall(recallUserId, prefs, botConfig);
+
+      return new Response(
+        JSON.stringify({ 
+          success: synced, 
+          message: synced ? 'Bot settings synced to Recall.ai' : 'Failed to sync bot settings' 
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
