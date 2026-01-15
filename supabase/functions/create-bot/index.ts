@@ -212,10 +212,37 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Ensure bot name is set correctly - trim empty strings
-    const finalBotName = (botName && botName.trim()) ? botName.trim() : "Notetaker Bot";
+    // Load bot settings from database if not provided from frontend
+    let finalBotName = (botName && botName.trim()) ? botName.trim() : null;
+    let finalAvatarUrl = (botAvatarUrl && botAvatarUrl.trim()) ? botAvatarUrl.trim() : null;
+    
+    // If no settings from frontend, load from database
+    if (!finalBotName || !finalAvatarUrl) {
+      console.log(`[create-bot] Loading bot settings from database for user: ${user.id}`);
+      const { data: userSettings, error: settingsError } = await supabase
+        .from('recall_calendar_users')
+        .select('bot_name, bot_avatar_url')
+        .eq('supabase_user_id', user.id)
+        .maybeSingle();
+      
+      if (settingsError) {
+        console.warn('[create-bot] Error loading user settings:', settingsError);
+      } else if (userSettings) {
+        console.log(`[create-bot] Found user settings - bot_name: "${userSettings.bot_name}", avatar: "${userSettings.bot_avatar_url}"`);
+        if (!finalBotName && userSettings.bot_name) {
+          finalBotName = userSettings.bot_name;
+        }
+        if (!finalAvatarUrl && userSettings.bot_avatar_url) {
+          finalAvatarUrl = userSettings.bot_avatar_url;
+        }
+      }
+    }
+    
+    // Default fallback
+    finalBotName = finalBotName || "Notetaker Bot";
+    
     console.log(`[create-bot] Empfangene Parameter - botName: "${botName}", botAvatarUrl: "${botAvatarUrl}"`);
-    console.log(`[create-bot] Finaler Bot Name: "${finalBotName}"`);
+    console.log(`[create-bot] Finaler Bot Name: "${finalBotName}", Finaler Avatar: "${finalAvatarUrl}"`);
     console.log(`[Recall] Sende Bot zu: ${meetingUrl}`);
 
     // 7. Bot-Konfiguration erstellen
@@ -246,10 +273,10 @@ Deno.serve(async (req) => {
     };
     
     // Bot-Profilbild als Video-Output setzen (funktioniert für Teams, Zoom, Meet)
-    if (botAvatarUrl && botAvatarUrl.trim()) {
-      console.log(`[create-bot] Lade Avatar von: ${botAvatarUrl}`);
+    if (finalAvatarUrl) {
+      console.log(`[create-bot] Lade Avatar von: ${finalAvatarUrl}`);
       try {
-        const base64Image = await fetchImageAsBase64(botAvatarUrl);
+        const base64Image = await fetchImageAsBase64(finalAvatarUrl);
         
         if (base64Image) {
           console.log(`[create-bot] Avatar geladen, Base64 Länge: ${base64Image.length}`);
