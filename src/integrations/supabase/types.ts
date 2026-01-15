@@ -65,6 +65,7 @@ export type Database = {
           meeting_url: string | null
           participants: Json | null
           recall_bot_id: string | null
+          source: string | null
           status: string
           summary: string | null
           title: string | null
@@ -86,6 +87,7 @@ export type Database = {
           meeting_url?: string | null
           participants?: Json | null
           recall_bot_id?: string | null
+          source?: string | null
           status?: string
           summary?: string | null
           title?: string | null
@@ -107,6 +109,7 @@ export type Database = {
           meeting_url?: string | null
           participants?: Json | null
           recall_bot_id?: string | null
+          source?: string | null
           status?: string
           summary?: string | null
           title?: string | null
