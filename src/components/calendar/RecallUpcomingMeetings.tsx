@@ -273,6 +273,24 @@ export const RecallUpcomingMeetings = ({
                               )}
                             </div>
                           )
+                        ) : meeting.bot_id || meeting.will_record ? (
+                          // Has bot assigned but no visible URL - bot will try to join
+                          <div className="flex items-center gap-2 text-xs text-blue-500">
+                            <Bot size={14} />
+                            <span>Bot versucht beizutreten</span>
+                            {onRefreshCalendar && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                                onClick={onRefreshCalendar}
+                                disabled={isRefreshingCalendar}
+                              >
+                                <RefreshCw size={12} className={isRefreshingCalendar ? 'animate-spin' : ''} />
+                                <span className="ml-1">Sync</span>
+                              </Button>
+                            )}
+                          </div>
                         ) : (
                           <div className="flex items-center gap-2 text-xs text-amber-500">
                             <LinkIcon size={14} />

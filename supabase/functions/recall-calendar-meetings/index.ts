@@ -170,8 +170,38 @@ serve(async (req) => {
 
       console.log('Recall meetings count:', meetingItems.length);
 
+      // Helper: Decode HTML entities
+      const decodeHtmlEntities = (text: string): string => {
+        return text
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&#x27;/g, "'")
+          .replace(/&#x2F;/g, '/')
+          .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)))
+          .replace(/\\"/g, '"')
+          .replace(/\\\//g, '/');
+      };
+
+      // Helper: Safely decode URI components
+      const safeDecodeURI = (text: string): string => {
+        try {
+          return decodeURIComponent(text);
+        } catch {
+          return text;
+        }
+      };
+
       // Helper function to extract meeting URL from various sources
       const extractMeetingUrl = (meeting: any): string | null => {
+        // Log full meeting object for debugging
+        console.log('[extractUrl] Meeting:', meeting.title, 'Keys:', Object.keys(meeting));
+        if (meeting.raw) {
+          console.log('[extractUrl] Raw keys:', Object.keys(meeting.raw));
+        }
+
         // Direct meeting_url if available
         if (meeting.meeting_url) {
           console.log('[extractUrl] Found direct meeting_url:', meeting.meeting_url);
@@ -250,6 +280,21 @@ serve(async (req) => {
           return meeting.raw.onlineMeetingUrl;
         }
         
+        // Microsoft Graph: isOnlineMeeting with joinWebUrl
+        if (meeting.raw?.isOnlineMeeting && meeting.raw?.onlineMeeting?.joinWebUrl) {
+          console.log('[extractUrl] Found raw.onlineMeeting.joinWebUrl:', meeting.raw.onlineMeeting.joinWebUrl);
+          return meeting.raw.onlineMeeting.joinWebUrl;
+        }
+
+        // Microsoft Graph: webLink may contain Teams meeting info
+        if (meeting.raw?.webLink) {
+          const webLink = meeting.raw.webLink;
+          if (webLink.includes('teams.microsoft.com') || webLink.includes('teams.live.com')) {
+            console.log('[extractUrl] Found Teams URL in raw.webLink:', webLink);
+            return webLink;
+          }
+        }
+        
         // ============ TEXT FIELD EXTRACTION ============
         
         // Collect all text fields to search for URLs
@@ -262,96 +307,128 @@ serve(async (req) => {
           meeting.raw?.bodyPreview || '',
           meeting.raw?.location?.displayName || '',
           meeting.raw?.locations?.[0]?.displayName || '',
+          meeting.raw?.locations?.[0]?.uniqueId || '',
         ];
         
-        const allText = textSources.join(' ');
+        // Join, decode HTML entities, and try to decode URL-encoded parts
+        let allText = textSources.join(' ');
+        allText = decodeHtmlEntities(allText);
         
-        if (allText.trim()) {
-          console.log('[extractUrl] Searching text fields for meeting:', meeting.title, 'Text length:', allText.length);
+        // Also try URL-decoded version for encoded links
+        const decodedText = safeDecodeURI(allText);
+        const searchText = allText + ' ' + decodedText;
+        
+        if (searchText.trim()) {
+          console.log('[extractUrl] Searching text fields for meeting:', meeting.title, 'Text length:', searchText.length);
           
-          // Teams patterns (multiple formats)
+          // Teams patterns (multiple formats) - expanded
           const teamsPatterns = [
-            /href="(https:\/\/teams\.(microsoft|live)\.com\/[^"]+)"/i,
-            /href="(https:\/\/teams\.microsoft\.com\/l\/meetup-join\/[^"]+)"/i,
-            /(https:\/\/teams\.microsoft\.com\/l\/meetup-join\/[^\s<"']+)/i,
-            /(https:\/\/teams\.live\.com\/meet\/[^\s<"']+)/i,
-            /(https:\/\/teams\.microsoft\.com\/meet\/[^\s<"']+)/i,
+            /href=["'](https:\/\/teams\.(microsoft|live)\.com\/[^"']+)["']/i,
+            /href=["'](https:\/\/teams\.microsoft\.com\/l\/meetup-join\/[^"']+)["']/i,
+            /(https:\/\/teams\.microsoft\.com\/l\/meetup-join\/[^\s<"'\\]+)/i,
+            /(https:\/\/teams\.live\.com\/meet\/[^\s<"'\\]+)/i,
+            /(https:\/\/teams\.microsoft\.com\/meet\/[^\s<"'\\]+)/i,
+            /(https:\/\/teams\.microsoft\.com\/l\/meet\/[^\s<"'\\]+)/i,
+            // URL-encoded Teams patterns
+            /https%3A%2F%2Fteams\.microsoft\.com%2Fl%2Fmeetup-join%2F[^\s<"'\\]+/i,
           ];
           for (const pattern of teamsPatterns) {
-            const match = allText.match(pattern);
+            const match = searchText.match(pattern);
             if (match) {
-              console.log('[extractUrl] Found Teams URL in text:', match[1]);
-              return match[1];
+              let url = match[1] || match[0];
+              // Decode if URL-encoded
+              if (url.includes('%3A')) {
+                url = safeDecodeURI(url);
+              }
+              console.log('[extractUrl] Found Teams URL in text:', url);
+              return url;
             }
           }
           
           // Zoom patterns (multiple formats)
           const zoomPatterns = [
-            /href="(https:\/\/[\w.-]*zoom\.us\/[^"]+)"/i,
-            /(https:\/\/[\w.-]*zoom\.us\/j\/[^\s<"']+)/i,
-            /(https:\/\/[\w.-]*zoom\.us\/s\/[^\s<"']+)/i,
-            /(https:\/\/[\w.-]*zoom\.us\/my\/[^\s<"']+)/i,
+            /href=["'](https:\/\/[\w.-]*zoom\.us\/[^"']+)["']/i,
+            /(https:\/\/[\w.-]*zoom\.us\/j\/[^\s<"'\\]+)/i,
+            /(https:\/\/[\w.-]*zoom\.us\/s\/[^\s<"'\\]+)/i,
+            /(https:\/\/[\w.-]*zoom\.us\/my\/[^\s<"'\\]+)/i,
+            /(https:\/\/[\w.-]*zoom\.us\/w\/[^\s<"'\\]+)/i,
           ];
           for (const pattern of zoomPatterns) {
-            const match = allText.match(pattern);
+            const match = searchText.match(pattern);
             if (match) {
-              console.log('[extractUrl] Found Zoom URL in text:', match[1]);
-              return match[1];
+              console.log('[extractUrl] Found Zoom URL in text:', match[1] || match[0]);
+              return match[1] || match[0];
             }
           }
           
           // Google Meet patterns
           const meetPatterns = [
-            /href="(https:\/\/meet\.google\.com\/[^"]+)"/i,
+            /href=["'](https:\/\/meet\.google\.com\/[^"']+)["']/i,
             /(https:\/\/meet\.google\.com\/[a-z]+-[a-z]+-[a-z]+)/i,
             /(https:\/\/meet\.google\.com\/[a-z0-9-]+)/i,
           ];
           for (const pattern of meetPatterns) {
-            const match = allText.match(pattern);
+            const match = searchText.match(pattern);
             if (match) {
-              console.log('[extractUrl] Found Google Meet URL in text:', match[1]);
-              return match[1];
+              console.log('[extractUrl] Found Google Meet URL in text:', match[1] || match[0]);
+              return match[1] || match[0];
             }
           }
           
           // Webex patterns
           const webexPatterns = [
-            /(https:\/\/[\w.-]*webex\.com\/[^\s<"']+)/i,
-            /(https:\/\/[\w.-]*webex\.com\/meet\/[^\s<"']+)/i,
+            /(https:\/\/[\w.-]*\.webex\.com\/[^\s<"'\\]+)/i,
+            /(https:\/\/[\w.-]*webex\.com\/meet\/[^\s<"'\\]+)/i,
+            /(https:\/\/[\w.-]*webex\.com\/join\/[^\s<"'\\]+)/i,
           ];
           for (const pattern of webexPatterns) {
-            const match = allText.match(pattern);
+            const match = searchText.match(pattern);
             if (match) {
-              console.log('[extractUrl] Found Webex URL in text:', match[1]);
-              return match[1];
+              console.log('[extractUrl] Found Webex URL in text:', match[1] || match[0]);
+              return match[1] || match[0];
             }
           }
           
           // Whereby patterns
-          const wherebyMatch = allText.match(/(https:\/\/whereby\.com\/[^\s<"']+)/i);
+          const wherebyMatch = searchText.match(/(https:\/\/whereby\.com\/[^\s<"'\\]+)/i);
           if (wherebyMatch) {
-            console.log('[extractUrl] Found Whereby URL in text:', wherebyMatch[1]);
-            return wherebyMatch[1];
+            console.log('[extractUrl] Found Whereby URL in text:', wherebyMatch[1] || wherebyMatch[0]);
+            return wherebyMatch[1] || wherebyMatch[0];
           }
           
           // GoTo Meeting patterns
           const gotoPatterns = [
-            /(https:\/\/[\w.-]*gotomeet\.me\/[^\s<"']+)/i,
-            /(https:\/\/[\w.-]*gotomeeting\.com\/[^\s<"']+)/i,
+            /(https:\/\/[\w.-]*gotomeet\.me\/[^\s<"'\\]+)/i,
+            /(https:\/\/[\w.-]*gotomeeting\.com\/[^\s<"'\\]+)/i,
+            /(https:\/\/[\w.-]*goto\.com\/[^\s<"'\\]+)/i,
           ];
           for (const pattern of gotoPatterns) {
-            const match = allText.match(pattern);
+            const match = searchText.match(pattern);
             if (match) {
-              console.log('[extractUrl] Found GoTo URL in text:', match[1]);
-              return match[1];
+              console.log('[extractUrl] Found GoTo URL in text:', match[1] || match[0]);
+              return match[1] || match[0];
             }
           }
           
           // BlueJeans patterns
-          const bluejeanMatch = allText.match(/(https:\/\/[\w.-]*bluejeans\.com\/[^\s<"']+)/i);
+          const bluejeanMatch = searchText.match(/(https:\/\/[\w.-]*bluejeans\.com\/[^\s<"'\\]+)/i);
           if (bluejeanMatch) {
-            console.log('[extractUrl] Found BlueJeans URL in text:', bluejeanMatch[1]);
-            return bluejeanMatch[1];
+            console.log('[extractUrl] Found BlueJeans URL in text:', bluejeanMatch[1] || bluejeanMatch[0]);
+            return bluejeanMatch[1] || bluejeanMatch[0];
+          }
+
+          // Chime (Amazon) patterns
+          const chimeMatch = searchText.match(/(https:\/\/chime\.aws\/[^\s<"'\\]+)/i);
+          if (chimeMatch) {
+            console.log('[extractUrl] Found Chime URL in text:', chimeMatch[1] || chimeMatch[0]);
+            return chimeMatch[1] || chimeMatch[0];
+          }
+
+          // Slack Huddles patterns
+          const slackMatch = searchText.match(/(https:\/\/[\w.-]*slack\.com\/[^\s<"'\\]*huddle[^\s<"'\\]*)/i);
+          if (slackMatch) {
+            console.log('[extractUrl] Found Slack Huddle URL in text:', slackMatch[1] || slackMatch[0]);
+            return slackMatch[1] || slackMatch[0];
           }
         }
         
