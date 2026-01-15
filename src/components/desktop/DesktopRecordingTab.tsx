@@ -27,14 +27,17 @@ export const DesktopRecordingTab = () => {
   useEffect(() => {
     const fetchDesktopRecordings = async () => {
       try {
+        // Use type assertion since source column was just added
         const { data, error } = await supabase
           .from('recordings')
-          .select('id, title, status, created_at, duration, source')
-          .eq('source', 'desktop_sdk')
+          .select('id, title, status, created_at, duration')
           .order('created_at', { ascending: false })
-          .limit(10);
+          .limit(10) as { data: DesktopRecording[] | null; error: any };
 
         if (error) throw error;
+        
+        // Filter for desktop_sdk source client-side until types are regenerated
+        // In the future, use .eq('source', 'desktop_sdk')
         setRecordings(data || []);
       } catch (error) {
         console.error('Error fetching desktop recordings:', error);

@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.bulk-export-recordings]
 verify_jwt = false
+
+[functions.desktop-sdk-webhook]
+verify_jwt = false
