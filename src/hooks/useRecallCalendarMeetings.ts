@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { User } from '@supabase/supabase-js';
+import { withTokenRefresh } from '@/lib/retryWithTokenRefresh';
 
 export interface RecallMeeting {
   id: string;
@@ -122,9 +123,12 @@ export function useRecallCalendarMeetings() {
       }
       setMeetingsError(null);
       console.log('[useRecallCalendarMeetings] Fetching meetings for user:', authUser.id, isAutoRefresh ? '(auto-refresh)' : '');
-      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-meetings', {
-        body: { action: 'list', supabase_user_id: authUser.id },
-      });
+      const { data, error: funcError } = await withTokenRefresh(
+        () => supabase.functions.invoke('recall-calendar-meetings', {
+          body: { action: 'list', supabase_user_id: authUser.id },
+        }),
+        { maxRetries: 1 }
+      );
 
       if (funcError) throw funcError;
 
@@ -161,15 +165,14 @@ export function useRecallCalendarMeetings() {
       // Handle 401 Unauthorized - user session expired/invalid
       // During auto-refresh, keep existing data and silently skip
       // Only clear data if this is a manual fetch (not auto-refresh)
+      // After retry with token refresh failed, check if still 401
       if (errorMsg.includes('401') || errorMsg.includes('Unauthorized')) {
-        if (isAutoRefresh) {
-          // Keep existing meetings during auto-refresh - token might refresh soon
-          console.log('[useRecallCalendarMeetings] 401 during auto-refresh, keeping existing data');
-          return;
+        console.log('[useRecallCalendarMeetings] 401 after retry - session fully expired');
+        if (!isAutoRefresh) {
+          // Only on manual fetch, clear state to force re-login
+          setMeetings([]);
+          toast.error('Sitzung abgelaufen - bitte neu anmelden');
         }
-        // On manual fetch, clear state - user needs to re-authenticate
-        setMeetings([]);
-        setMeetingsError(null);
         return;
       }
       
@@ -202,14 +205,17 @@ export function useRecallCalendarMeetings() {
     if (!authUser?.id) return;
 
     try {
-      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-meetings', {
-        body: { 
-          action: 'update_recording', 
-          supabase_user_id: authUser.id, 
-          meeting_id: meetingId,
-          auto_record: shouldRecord,
-        },
-      });
+      const { data, error: funcError } = await withTokenRefresh(
+        () => supabase.functions.invoke('recall-calendar-meetings', {
+          body: { 
+            action: 'update_recording', 
+            supabase_user_id: authUser.id, 
+            meeting_id: meetingId,
+            auto_record: shouldRecord,
+          },
+        }),
+        { maxRetries: 1 }
+      );
 
       if (funcError) throw funcError;
 
@@ -235,13 +241,16 @@ export function useRecallCalendarMeetings() {
     try {
       const mergedPrefs = { ...preferences, ...newPrefs };
       
-      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-meetings', {
-        body: { 
-          action: 'update_preferences', 
-          supabase_user_id: authUser.id, 
-          preferences: mergedPrefs,
-        },
-      });
+      const { data, error: funcError } = await withTokenRefresh(
+        () => supabase.functions.invoke('recall-calendar-meetings', {
+          body: { 
+            action: 'update_preferences', 
+            supabase_user_id: authUser.id, 
+            preferences: mergedPrefs,
+          },
+        }),
+        { maxRetries: 1 }
+      );
 
       if (funcError) throw funcError;
 
@@ -259,12 +268,15 @@ export function useRecallCalendarMeetings() {
     if (!authUser?.id) return false;
 
     try {
-      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-meetings', {
-        body: { 
-          action: 'init_preferences', 
-          supabase_user_id: authUser.id,
-        },
-      });
+      const { data, error: funcError } = await withTokenRefresh(
+        () => supabase.functions.invoke('recall-calendar-meetings', {
+          body: { 
+            action: 'init_preferences', 
+            supabase_user_id: authUser.id,
+          },
+        }),
+        { maxRetries: 1 }
+      );
 
       if (funcError) throw funcError;
 
@@ -293,9 +305,12 @@ export function useRecallCalendarMeetings() {
       }
       console.log('[useRecallCalendarMeetings] Triggering calendar refresh...');
       
-      const { data, error: funcError } = await supabase.functions.invoke('recall-calendar-meetings', {
-        body: { action: 'refresh', supabase_user_id: authUser.id },
-      });
+      const { data, error: funcError } = await withTokenRefresh(
+        () => supabase.functions.invoke('recall-calendar-meetings', {
+          body: { action: 'refresh', supabase_user_id: authUser.id },
+        }),
+        { maxRetries: 1 }
+      );
 
       if (funcError) throw funcError;
 
