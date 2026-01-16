@@ -476,33 +476,52 @@ Deno.serve(async (req) => {
     }
 
     // 9. Export an externe Supabase-API senden (nach jedem abgeschlossenen Meeting)
-    if (status === 'done') {
+    // Sendet Transkript als Plain-Text mit Metadaten-Header
+    if (status === 'done' && (updates.transcript_text || recording.transcript_text)) {
       const exportUrl = Deno.env.get('TRANSCRIPT_EXPORT_URL')
       const exportSecret = Deno.env.get('TRANSCRIPT_EXPORT_SECRET')
       
       if (exportUrl && exportSecret) {
-        console.log('Sende Meeting-Daten an externe Export-API...')
+        console.log('Sende Transkript-TXT an externe Supabase-API...')
         try {
-          // Vollständige Meeting-Daten für Export zusammenstellen
-          const exportData = {
+          const transcriptContent = updates.transcript_text || recording.transcript_text || ''
+          const meetingTitle = recording.title || updates.title || 'Untitled Meeting'
+          const meetingDate = new Date(recording.created_at || Date.now()).toLocaleString('de-DE', {
+            dateStyle: 'full',
+            timeStyle: 'short',
+          })
+          const durationMinutes = recording.duration ? Math.round(recording.duration / 60) : null
+          
+          // TXT-Datei mit Metadaten-Header formatieren
+          const txtContent = `========================================
+MEETING TRANSKRIPT
+========================================
+Titel: ${meetingTitle}
+Datum: ${meetingDate}
+Dauer: ${durationMinutes ? durationMinutes + ' Minuten' : 'Unbekannt'}
+Recording ID: ${id}
+User ID: ${recording.user_id || user.id}
+========================================
+
+${transcriptContent}`
+          
+          // Export-Payload mit TXT-Content
+          const exportPayload = {
             recording_id: id,
             user_id: recording.user_id || user.id,
-            title: recording.title || updates.title || '',
-            summary: recording.summary || updates.summary || '',
-            key_points: recording.key_points || updates.key_points || [],
-            action_items: recording.action_items || updates.action_items || [],
-            transcript_text: updates.transcript_text || recording.transcript_text || '',
-            participants: updates.participants || recording.participants || [],
-            calendar_attendees: updates.calendar_attendees || recording.calendar_attendees || [],
-            duration: recording.duration,
-            word_count: recording.word_count,
-            status: status,
-            meeting_url: recording.meeting_url,
-            video_url: updates.video_url || recording.video_url || '',
-            transcript_url: updates.transcript_url || recording.transcript_url || '',
+            title: meetingTitle,
+            transcript_txt: txtContent,
             created_at: recording.created_at,
-            updated_at: new Date().toISOString(),
-            recall_bot_id: recording.recall_bot_id,
+            duration: recording.duration,
+            // Optional: Zusätzliche Metadaten für DB-Speicherung
+            metadata: {
+              summary: recording.summary || updates.summary || null,
+              key_points: recording.key_points || updates.key_points || [],
+              action_items: recording.action_items || updates.action_items || [],
+              participants: updates.participants || recording.participants || [],
+              word_count: recording.word_count || null,
+              video_url: updates.video_url || recording.video_url || null,
+            }
           }
           
           const exportResponse = await fetch(exportUrl, {
@@ -511,18 +530,18 @@ Deno.serve(async (req) => {
               'Content-Type': 'application/json',
               'x-export-secret': exportSecret,
             },
-            body: JSON.stringify(exportData),
+            body: JSON.stringify(exportPayload),
           })
           
           if (exportResponse.ok) {
             const exportResult = await exportResponse.json()
-            console.log('Export erfolgreich:', JSON.stringify(exportResult))
+            console.log('TXT-Export erfolgreich:', JSON.stringify(exportResult))
           } else {
             const errorText = await exportResponse.text()
-            console.error('Export fehlgeschlagen:', exportResponse.status, errorText)
+            console.error('TXT-Export fehlgeschlagen:', exportResponse.status, errorText)
           }
         } catch (exportError) {
-          console.error('Fehler beim Export an externe API:', exportError)
+          console.error('Fehler beim TXT-Export an externe API:', exportError)
         }
       } else {
         console.log('Export-Konfiguration nicht vollständig (TRANSCRIPT_EXPORT_URL oder TRANSCRIPT_EXPORT_SECRET fehlt)')
