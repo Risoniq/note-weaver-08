@@ -248,11 +248,15 @@ Deno.serve(async (req) => {
     const onlineNow = users.filter((u) => u.online_status === 'online').length;
     const recordingNow = users.filter((u) => u.online_status === 'recording').length;
     
+    // Only count completed recordings for total minutes (duration is in seconds)
+    const completedRecordings = recordings?.filter((r) => r.status === 'done') || [];
+    const totalDurationSeconds = completedRecordings.reduce((sum, r) => sum + (r.duration || 0), 0);
+    
     const summary = {
       total_users: users.length,
       active_users: users.filter((u) => u.last_activity && new Date(u.last_activity) > sevenDaysAgo).length,
-      total_recordings: recordings?.length || 0,
-      total_minutes: Math.round((recordings?.reduce((sum, r) => sum + (r.duration || 0), 0) || 0) / 60),
+      total_recordings: completedRecordings.length,
+      total_minutes: Math.round(totalDurationSeconds / 60), // Convert seconds to minutes
       online_now: onlineNow,
       recording_now: recordingNow,
     };
