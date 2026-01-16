@@ -125,6 +125,10 @@ serve(async (req) => {
     const transcript = recording.transcript_text;
     console.log(`Transcript length: ${transcript.length} characters`);
 
+    // Check if a title already exists
+    const hasExistingTitle = recording.title && recording.title.trim() !== '';
+    console.log(`Has existing title: ${hasExistingTitle} (${recording.title || 'none'})`);
+
     // Call Lovable AI for analysis
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
@@ -135,18 +139,44 @@ serve(async (req) => {
       );
     }
 
+    // Build dynamic system prompt based on whether title is needed
+    const titleInstruction = hasExistingTitle 
+      ? '' 
+      : '1. Einen kurzen, aussagekräftigen Titel für das Meeting basierend auf dem Inhalt (max 50 Zeichen)\n';
+    
+    const numbering = hasExistingTitle 
+      ? { summary: '1', keyPoints: '2', actionItems: '3' }
+      : { summary: '2', keyPoints: '3', actionItems: '4' };
+
+    const jsonFormat = hasExistingTitle
+      ? `{
+  "summary": "Zusammenfassung des Meetings...",
+  "key_points": ["Punkt 1", "Punkt 2", "Punkt 3"],
+  "action_items": ["Aufgabe (Verantwortlicher: Name)", "Aufgabe (Verantwortlicher: Nicht zugewiesen)"]
+}`
+      : `{
+  "title": "Meeting-Titel basierend auf Inhalt",
+  "summary": "Zusammenfassung des Meetings...",
+  "key_points": ["Punkt 1", "Punkt 2", "Punkt 3"],
+  "action_items": ["Aufgabe (Verantwortlicher: Name)", "Aufgabe (Verantwortlicher: Nicht zugewiesen)"]
+}`;
+
     const systemPrompt = `Du bist ein professioneller Meeting-Analyst. Analysiere das folgende Meeting-Transkript und extrahiere:
-1. Einen kurzen Titel für das Meeting (max 50 Zeichen)
-2. Eine prägnante Zusammenfassung (2-3 Sätze)
-3. Die 3-5 wichtigsten Punkte als Liste
-4. Konkrete Action Items mit Verantwortlichen
+${titleInstruction}${numbering.summary}. Eine prägnante Zusammenfassung (2-3 Sätze)
+${numbering.keyPoints}. Die 3-5 wichtigsten Punkte als Liste
+${numbering.actionItems}. Konkrete Action Items mit Verantwortlichen
 
 WICHTIGE REGELN FÜR ACTION ITEMS:
 - Extrahiere die Namen der verantwortlichen Personen DIREKT aus dem Transkript (z.B. "Speaker 1", "Max", "Anna", etc.)
 - Wenn eine Person eine Aufgabe übernimmt oder zugewiesen bekommt, nutze deren Namen aus dem Transkript
 - Wenn im Transkript keine konkrete Person genannt wird, die die Aufgabe übernimmt, schreibe "Verantwortlicher: Nicht zugewiesen" statt "Unbekannt"
 - Format für Action Items: "Aufgabenbeschreibung (Verantwortlicher: [Name aus Transkript])"
-
+${!hasExistingTitle ? `
+WICHTIGE REGELN FÜR DEN TITEL:
+- Der Titel soll das Hauptthema oder den Zweck des Meetings widerspiegeln
+- Beispiele: "Projekt-Kickoff Q1", "Sales Review März", "Team Standup", "Kundengespräch Firma XY"
+- Wenn das Meeting keinen klaren Fokus hat, nutze das dominante Thema
+` : ''}
 WEITERE REGELN:
 - Schreibe IMMER professionell und freundlich
 - Verwende KEINE Markdown-Formatierung (keine Sterne *, keine Unterstriche _)
@@ -155,12 +185,7 @@ WEITERE REGELN:
 - Halte den Ton sachlich und respektvoll
 
 Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
-{
-  "title": "Meeting-Titel",
-  "summary": "Zusammenfassung des Meetings...",
-  "key_points": ["Punkt 1", "Punkt 2", "Punkt 3"],
-  "action_items": ["Aufgabe (Verantwortlicher: Name)", "Aufgabe (Verantwortlicher: Nicht zugewiesen)"]
-}`;
+${jsonFormat}`;
 
     console.log('Calling Lovable AI for analysis...');
     
@@ -231,16 +256,24 @@ Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
     // Calculate word count
     const wordCount = transcript.split(/\s+/).filter((word: string) => word.length > 0).length;
 
+    // Build update data - only include title if none exists
+    const updateData: Record<string, unknown> = {
+      summary: analysis.summary,
+      key_points: analysis.key_points || [],
+      action_items: analysis.action_items || [],
+      word_count: wordCount,
+    };
+
+    // Only set title if no existing title and AI generated one
+    if (!hasExistingTitle && analysis.title) {
+      updateData.title = analysis.title;
+      console.log(`Setting generated title: ${analysis.title}`);
+    }
+
     // Update the recording with analysis results
     const { error: updateError } = await supabase
       .from('recordings')
-      .update({
-        title: analysis.title || recording.title,
-        summary: analysis.summary,
-        key_points: analysis.key_points || [],
-        action_items: analysis.action_items || [],
-        word_count: wordCount,
-      })
+      .update(updateData)
       .eq('id', recording_id);
 
     if (updateError) {
