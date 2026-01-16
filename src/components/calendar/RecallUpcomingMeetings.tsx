@@ -39,7 +39,18 @@ export const RecallUpcomingMeetings = ({
     .slice(0, 5);
 
   // Start bot immediately when joining
+  // Check if meeting has ended
+  const isPastMeeting = (endStr: string) => {
+    return new Date(endStr) < new Date();
+  };
+
   const handleJoinWithBot = async (meeting: RecallMeeting) => {
+    // Prevent joining past meetings
+    if (isPastMeeting(meeting.end_time)) {
+      toast.error('Meeting ist bereits beendet');
+      return;
+    }
+
     if (!meeting.meeting_url) {
       toast.error('Kein Meeting-Link vorhanden');
       return;
@@ -258,7 +269,12 @@ export const RecallUpcomingMeetings = ({
 
                       {/* Bot status indicator */}
                       <div className="flex items-center gap-2 mt-2">
-                        {meeting.meeting_url ? (
+                        {isPastMeeting(meeting.end_time) ? (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Clock size={14} />
+                            <span>Meeting beendet</span>
+                          </div>
+                        ) : meeting.meeting_url ? (
                           meeting.will_record ? (
                             <div className="flex items-center gap-1 text-xs text-green-500">
                               <Bot size={14} />
@@ -319,11 +335,11 @@ export const RecallUpcomingMeetings = ({
                         <Switch
                           checked={meeting.will_record}
                           onCheckedChange={(checked) => onToggleRecording(meeting.id, checked)}
-                          disabled={!meeting.meeting_url}
+                          disabled={!meeting.meeting_url || isPastMeeting(meeting.end_time)}
                         />
                       </div>
 
-                      {meeting.meeting_url ? (
+                      {meeting.meeting_url && !isPastMeeting(meeting.end_time) ? (
                         <Button
                           variant={happeningSoon || happeningNow ? 'default' : 'outline'}
                           size="sm"
@@ -342,6 +358,16 @@ export const RecallUpcomingMeetings = ({
                               Beitreten
                             </>
                           )}
+                        </Button>
+                      ) : isPastMeeting(meeting.end_time) ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled
+                          className="opacity-50"
+                        >
+                          <Clock size={14} className="mr-1" />
+                          Beendet
                         </Button>
                       ) : (
                         <Button
