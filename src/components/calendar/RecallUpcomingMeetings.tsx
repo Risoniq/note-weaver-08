@@ -33,16 +33,23 @@ export const RecallUpcomingMeetings = ({
 }: RecallUpcomingMeetingsProps) => {
   const [startingBotFor, setStartingBotFor] = useState<string | null>(null);
 
-  // Sort meetings by start_time and take only the first 5
-  const sortedMeetings = [...meetings]
+  const now = new Date();
+
+  // Check if meeting has ended
+  const isPastMeeting = (endStr: string) => {
+    return new Date(endStr) < now;
+  };
+
+  // Separate upcoming and past meetings
+  const upcomingMeetings = [...meetings]
+    .filter(meeting => new Date(meeting.end_time) >= now)
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
     .slice(0, 5);
 
-  // Start bot immediately when joining
-  // Check if meeting has ended
-  const isPastMeeting = (endStr: string) => {
-    return new Date(endStr) < new Date();
-  };
+  const pastMeetings = [...meetings]
+    .filter(meeting => new Date(meeting.end_time) < now)
+    .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
+    .slice(0, 3);
 
   const handleJoinWithBot = async (meeting: RecallMeeting) => {
     // Prevent joining past meetings
@@ -97,6 +104,7 @@ export const RecallUpcomingMeetings = ({
     // Open meeting link regardless
     onJoinMeeting(meeting);
   };
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -141,7 +149,7 @@ export const RecallUpcomingMeetings = ({
     );
   }
 
-  if (sortedMeetings.length === 0) {
+  if (upcomingMeetings.length === 0 && pastMeetings.length === 0) {
     return (
       <div className="bg-card border border-border rounded-xl p-8 text-center">
         <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mx-auto mb-3">
@@ -198,8 +206,8 @@ export const RecallUpcomingMeetings = ({
     }
   };
 
-  // Group sorted meetings by date
-  const groupedMeetings = sortedMeetings.reduce((groups, meeting) => {
+  // Group upcoming meetings by date
+  const groupedUpcomingMeetings = upcomingMeetings.reduce((groups, meeting) => {
     const dateLabel = getDateLabel(meeting.start_time);
     if (!groups[dateLabel]) {
       groups[dateLabel] = [];
@@ -210,7 +218,8 @@ export const RecallUpcomingMeetings = ({
 
   return (
     <div className="space-y-6">
-      {Object.entries(groupedMeetings).map(([dateLabel, dayMeetings]) => (
+      {/* Upcoming meetings */}
+      {Object.entries(groupedUpcomingMeetings).map(([dateLabel, dayMeetings]) => (
         <div key={dateLabel}>
           <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">
             {dateLabel}
@@ -269,12 +278,7 @@ export const RecallUpcomingMeetings = ({
 
                       {/* Bot status indicator */}
                       <div className="flex items-center gap-2 mt-2">
-                        {isPastMeeting(meeting.end_time) ? (
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Clock size={14} />
-                            <span>Meeting beendet</span>
-                          </div>
-                        ) : meeting.meeting_url ? (
+                        {meeting.meeting_url ? (
                           meeting.will_record ? (
                             <div className="flex items-center gap-1 text-xs text-green-500">
                               <Bot size={14} />
@@ -290,7 +294,6 @@ export const RecallUpcomingMeetings = ({
                             </div>
                           )
                         ) : meeting.bot_id || meeting.will_record ? (
-                          // Has bot assigned but no visible URL - bot will try to join
                           <div className="flex items-center gap-2 text-xs text-blue-500">
                             <Bot size={14} />
                             <span>Bot versucht beizutreten</span>
@@ -335,11 +338,11 @@ export const RecallUpcomingMeetings = ({
                         <Switch
                           checked={meeting.will_record}
                           onCheckedChange={(checked) => onToggleRecording(meeting.id, checked)}
-                          disabled={!meeting.meeting_url || isPastMeeting(meeting.end_time)}
+                          disabled={!meeting.meeting_url}
                         />
                       </div>
 
-                      {meeting.meeting_url && !isPastMeeting(meeting.end_time) ? (
+                      {meeting.meeting_url ? (
                         <Button
                           variant={happeningSoon || happeningNow ? 'default' : 'outline'}
                           size="sm"
@@ -358,16 +361,6 @@ export const RecallUpcomingMeetings = ({
                               Beitreten
                             </>
                           )}
-                        </Button>
-                      ) : isPastMeeting(meeting.end_time) ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled
-                          className="opacity-50"
-                        >
-                          <Clock size={14} className="mr-1" />
-                          Beendet
                         </Button>
                       ) : (
                         <Button
@@ -388,6 +381,53 @@ export const RecallUpcomingMeetings = ({
           </div>
         </div>
       ))}
+
+      {/* Past meetings section */}
+      {pastMeetings.length > 0 && (
+        <div className="mt-8 pt-6 border-t border-border">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide flex items-center gap-2">
+            <Clock size={14} />
+            Vergangene Termine
+          </h3>
+          <div className="space-y-3">
+            {pastMeetings.map(meeting => (
+              <div
+                key={meeting.id}
+                className="bg-muted/30 border border-border/50 rounded-xl p-4 opacity-60"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-lg grayscale">{getPlatformIcon(meeting.platform)}</span>
+                      <h4 className="font-medium text-muted-foreground truncate">
+                        {meeting.title}
+                      </h4>
+                      <span className="px-2 py-0.5 bg-muted text-muted-foreground text-xs rounded-full">
+                        Beendet
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Clock size={14} />
+                        {format(new Date(meeting.start_time), 'HH:mm')} - {format(new Date(meeting.end_time), 'HH:mm')}
+                      </span>
+                      <span>{getDateLabel(meeting.start_time)}</span>
+                    </div>
+
+                    {meeting.attendees.length > 0 && (
+                      <div className="flex items-center gap-1 mt-2 text-sm text-muted-foreground">
+                        <Users size={14} />
+                        <span>{meeting.attendees.length} Teilnehmer</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
