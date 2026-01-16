@@ -289,41 +289,49 @@ const Settings = () => {
         uploadFile = await compressImage(file, maxSize);
       }
       
-      // Generate unique filename (always use jpg for compressed images)
+      // Get user for folder path
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Nicht angemeldet",
+          description: "Bitte melde dich an, um ein Profilbild hochzuladen.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Generate unique filename with user folder (always use jpg for compressed images)
       const fileExt = file.size > maxSize ? 'jpg' : file.name.split('.').pop();
-      const fileName = `bot-avatar-${Date.now()}.${fileExt}`;
+      const filePath = `${user.id}/bot-avatar-${Date.now()}.${fileExt}`;
       
       // Upload to Supabase storage
       const { data, error: uploadError } = await supabase.storage
         .from('bot-avatars')
-        .upload(fileName, uploadFile, { upsert: true });
+        .upload(filePath, uploadFile, { upsert: true });
       
       if (uploadError) throw uploadError;
       
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('bot-avatars')
-        .getPublicUrl(fileName);
+        .getPublicUrl(filePath);
       
       setBotAvatarUrl(publicUrl);
       localStorage.setItem('bot:avatarUrl', publicUrl);
       
-      // Save to database and sync to Recall.ai
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase
-          .from('recall_calendar_users')
-          .update({ bot_avatar_url: publicUrl })
-          .eq('supabase_user_id', user.id);
-        
-        // Sync bot settings to Recall.ai for automated calendar bots
-        try {
-          await supabase.functions.invoke('recall-calendar-meetings', {
-            body: { action: 'sync_bot_settings' }
-          });
-        } catch (syncErr) {
-          console.warn('Could not sync bot settings to Recall.ai:', syncErr);
-        }
+      // Save to database and sync to Recall.ai (user already fetched above)
+      await supabase
+        .from('recall_calendar_users')
+        .update({ bot_avatar_url: publicUrl })
+        .eq('supabase_user_id', user.id);
+      
+      // Sync bot settings to Recall.ai for automated calendar bots
+      try {
+        await supabase.functions.invoke('recall-calendar-meetings', {
+          body: { action: 'sync_bot_settings' }
+        });
+      } catch (syncErr) {
+        console.warn('Could not sync bot settings to Recall.ai:', syncErr);
       }
       
       toast({
