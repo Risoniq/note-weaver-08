@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
     console.log(`[Auth] Authenticated user: ${user.id}`);
 
     // 2. Daten vom Frontend holen
-    const { meetingUrl, meetingTitle, botName, botAvatarUrl } = await req.json();
+    const { meetingUrl, botName, botAvatarUrl } = await req.json();
 
     if (!meetingUrl) {
       return new Response(
@@ -359,23 +359,15 @@ Deno.serve(async (req) => {
     const meetingId = crypto.randomUUID();
 
     // 10. Bot-Daten in Supabase speichern mit user_id
-    const recordingData: Record<string, unknown> = {
-      meeting_id: meetingId,
-      meeting_url: meetingUrl,
-      recall_bot_id: botData.id,
-      status: "joining",
-      user_id: user.id, // Associate recording with authenticated user
-    };
-    
-    // Titel nur setzen wenn vom User angegeben
-    if (meetingTitle && meetingTitle.trim()) {
-      recordingData.title = meetingTitle.trim();
-      console.log(`[create-bot] Meeting-Titel vom User: "${meetingTitle.trim()}"`);
-    }
-    
     const { data: dbData, error: dbError } = await supabase
       .from("recordings")
-      .insert(recordingData)
+      .insert({
+        meeting_id: meetingId,
+        meeting_url: meetingUrl,
+        recall_bot_id: botData.id,
+        status: "joining",
+        user_id: user.id, // Associate recording with authenticated user
+      })
       .select()
       .single();
 
