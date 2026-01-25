@@ -136,7 +136,7 @@ export const QuickMeetingJoin = ({ onBotStarted }: QuickMeetingJoinProps) => {
       
       {/* Unterstützte Plattformen */}
       <p className="text-xs text-muted-foreground text-center">
-        Unterstützt: Google Meet • Teams • Zoom • Webex
+        Unterstützt: Google Meet • Teams • Zoom (coming soon) • Webex (coming soon)
       </p>
       
       {isExternalTeamsMeeting && (
