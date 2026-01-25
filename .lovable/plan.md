@@ -1,50 +1,111 @@
 
-# Sanfte Animation beim Theme-Wechsel
+# "Bot zu Meeting senden" lebendiger gestalten
 
 ## Übersicht
-Eine CSS-Transition wird hinzugefügt, die alle Farbänderungen beim Theme-Wechsel sanft animiert - Hintergründe, Textfarben, Rahmen und Schatten werden über 300ms weich übergeblendet.
+Der zentrale Call-to-Action-Bereich wird visuell hervorgehoben, um den Fokus direkt darauf zu lenken - minimalistisch und modern mit subtilen Animationen und einem dezenten Gradient-Akzent.
+
+## Design-Konzept
+
+**Visueller Fokus durch:**
+- Subtiler animierter Gradient-Rand (Primary-Farbe)
+- Leichte Pulse-Animation auf dem Bot-Icon
+- Größeres, prominenteres Input-Feld
+- Entfernung der doppelten Card-Verschachtelung
+- Hover-State mit sanftem Glow-Effekt
 
 ## Änderungen
 
-### 1. Globale Theme-Transition in CSS hinzufügen
+### 1. QuickMeetingJoin.tsx - Redesign
 
-**Datei: `src/index.css`**
+**Visuelle Verbesserungen:**
+- Entfernung des inneren `bg-card border` Containers (redundant mit GlassCard)
+- Größeres Bot-Icon mit subtiler Pulse-Animation
+- Prominentere Überschrift
+- Input und Button in einer visuell ansprechenderen Anordnung
+- Dezenter Gradient-Akzent am oberen Rand
 
-Im `@layer base` Abschnitt wird eine Transition für den `body` und alle Elemente hinzugefügt:
-
-```css
-body {
-  transition: background-color 0.3s ease, color 0.3s ease;
-}
-
-*, *::before, *::after {
-  transition: background-color 0.3s ease, 
-              border-color 0.3s ease, 
-              box-shadow 0.3s ease;
-}
+```text
+┌────────────────────────────────────────────────────┐
+│  ════════════ (Primary Gradient Line) ════════════ │
+│                                                     │
+│        🤖  Bot zu Meeting senden                   │
+│        (pulsierendes Icon)                         │
+│                                                     │
+│   ┌─────────────────────────────────┐  ┌────────┐  │
+│   │ Meeting-URL eingeben...         │  │ Senden │  │
+│   └─────────────────────────────────┘  └────────┘  │
+│                                                     │
+│   Unterstützt: Google Meet • Teams • Zoom • Webex  │
+└────────────────────────────────────────────────────┘
 ```
 
-### 2. Spezielle Transition-Klasse für Theme-Wechsel
+### 2. index.css - Neue Animationen
 
-Eine dedizierte Utility-Klasse wird erstellt:
+**Hinzufügen:**
+- `@keyframes subtle-pulse` - Sanftes Pulsieren für das Icon
+- `@keyframes gradient-shift` - Animierter Gradient für den Akzent
+- `.focus-glow` - Hover-Glow-Effekt
 
-```css
-.theme-transition {
-  transition: background-color 0.3s ease,
-              color 0.3s ease,
-              border-color 0.3s ease,
-              box-shadow 0.3s ease,
-              opacity 0.3s ease;
-}
-```
+### 3. GlassCard - Optionale Highlight-Variante
 
-## Ergebnis
-
-- Alle Farben (Hintergrund, Text, Rahmen, Schatten) werden sanft übergeblendet
-- Der Wechsel von Hell zu Dunkel und umgekehrt fühlt sich flüssig an
-- Die Animation dauert 300ms mit einer ease-Kurve für natürliches Gefühl
-- Keine Auswirkung auf andere Animationen oder Performance
+**Neue Prop `highlight`:**
+- Aktiviert einen dezenten Gradient-Akzent am oberen Rand
+- Leicht verstärkter Shadow bei Hover
 
 ## Technische Details
 
-Die Transition wird auf globaler Ebene in `src/index.css` definiert, sodass alle Elemente automatisch von der sanften Animation profitieren. Die `transition-property` ist auf spezifische Eigenschaften beschränkt (nicht `all`), um Performance-Probleme zu vermeiden.
+### QuickMeetingJoin.tsx Änderungen
+
+```typescript
+// Vorher: Doppelte Card-Struktur
+<div className="bg-card border border-border rounded-xl p-4">
+
+// Nachher: Fokus auf Inhalt, transparenter Hintergrund
+<div className="space-y-4">
+  {/* Gradient Akzent-Linie */}
+  <div className="h-1 bg-gradient-to-r from-primary/60 via-primary to-primary/60 rounded-full" />
+  
+  {/* Icon mit Animation */}
+  <div className="flex items-center gap-3">
+    <div className="p-3 rounded-2xl bg-primary/10 animate-subtle-pulse">
+      <Bot size={24} className="text-primary" />
+    </div>
+    <div>
+      <h3 className="text-lg font-semibold">Bot zu Meeting senden</h3>
+      <p className="text-sm text-muted-foreground">Sofort aufnehmen lassen</p>
+    </div>
+  </div>
+```
+
+### Neue CSS-Animationen
+
+```css
+@keyframes subtle-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.85;
+  }
+}
+
+.animate-subtle-pulse {
+  animation: subtle-pulse 3s ease-in-out infinite;
+}
+```
+
+## Dateien die geändert werden
+
+| Datei | Änderung |
+|-------|----------|
+| `src/components/calendar/QuickMeetingJoin.tsx` | Redesign mit Fokus-Elementen, größeres Icon, Gradient-Akzent |
+| `src/index.css` | Neue `subtle-pulse` Animation hinzufügen |
+
+## Ergebnis
+
+- **Minimalistisch**: Keine überladenen Elemente, klare Hierarchie
+- **Modern**: Glasmorphism + dezente Animationen + Gradient-Akzente
+- **Fokussiert**: Der Blick wird automatisch auf den CTA-Bereich gelenkt
+- **Subtil lebendig**: Sanftes Pulsieren signalisiert Aktivität ohne zu stören
