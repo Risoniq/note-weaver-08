@@ -1,146 +1,117 @@
 
-# Sprechererkennung im Transkript korrigieren
+# Meeting-Kontingent mit tatsächlicher Dauer verbinden
 
 ## Problem-Analyse
 
-Die Edge Function `sync-recording` extrahiert Sprechernamen falsch. Die Logs zeigen:
+Die Meeting-Kontingent-Leiste zeigt aktuell immer "0m" an, weil die `duration`-Spalte in der `recordings`-Tabelle für alle Einträge `NULL` ist:
 
-**Was die API liefert:**
+| Recording | duration |
+|-----------|----------|
+| Produkt-Update & Roadmap Diskussion | NULL |
+| Vertriebstraining und -strategie | NULL |
+| KI-Bot für Leadgenerierung | NULL |
+| ... | NULL |
+
+Die Duration-Daten sind jedoch verfügbar! Recall.ai liefert `started_at` und `completed_at` im Recording-Objekt:
+
 ```json
 {
-  "participant": {
-    "id": 200,
-    "name": "Dominik Bauer",
-    "platform": "desktop",
-    "is_host": false
-  },
-  "words": [...]
+  "started_at": "2026-01-21T18:35:57.672768Z",
+  "completed_at": "2026-01-21T19:42:27.506161Z"
 }
 ```
 
-**Was der Code sucht:**
-```typescript
-entry.user?.name   // undefined!
-entry.speaker_id   // undefined!
-```
+Die `sync-recording` Edge Function berechnet diese Differenz nicht und speichert sie nicht in der Datenbank.
 
-Der Code sucht nach `entry.user.name`, aber Recall.ai liefert `entry.participant.name`. Das erklärt, warum alle Sprecher als "Sprecher 1" erscheinen.
+---
 
-## Lösung
+## Lösungsansatz
 
-### 1. sync-recording Edge Function korrigieren
+### 1. sync-recording Edge Function erweitern
 
-Die `getBestSpeakerName`-Funktion muss `entry.participant` statt `entry.user` lesen:
+Die Funktion muss die Meeting-Dauer aus `started_at` und `completed_at` berechnen und als Sekunden in der `duration`-Spalte speichern.
 
 **Datei: `supabase/functions/sync-recording/index.ts`**
 
-| Änderung | Alt | Neu |
-|----------|-----|-----|
-| Participant-Feld | `entry.user` | `entry.participant` |
-| Name-Priorität 1 | `entry.user?.name` | `entry.participant?.name` |
-| ID-Lookup | `entry.user?.id` | `entry.participant?.id` |
-| Platform-ID | `entry.user?.platform_user_id` | `entry.participant?.platform_user_id` |
+Nach dem Abrufen der Bot-Daten von Recall.ai:
 
 ```typescript
-// VORHER (falsch)
-const getBestSpeakerName = (entry: { 
-  speaker?: string; 
-  speaker_id?: number; 
-  user?: { id?: number; name?: string; ... };
-}): string => {
-  if (entry.user?.name) { ... }
-}
-
-// NACHHER (korrekt)
-const getBestSpeakerName = (entry: { 
-  speaker?: string; 
-  speaker_id?: number; 
-  participant?: { id?: number; name?: string; ... };
-  user?: { id?: number; name?: string; ... }; // Fallback
-}): string => {
-  // Priorität 1: participant.name (Recall.ai aktuelles Format)
-  if (entry.participant?.name) { ... }
-  // Fallback: user.name (altes Format)
-  if (entry.user?.name) { ... }
-}
-```
-
-### 2. Teilnehmer-Extraktion verbessern
-
-Beim Formatieren des Transkripts auch die `participantsList` korrekt befüllen:
-
-```typescript
-// Nach dem Transkript-Parsing: Alle eindeutigen Sprecher sammeln
-const uniqueParticipants = new Map<string, { id: string; name: string }>();
-transcriptData.forEach(entry => {
-  if (entry.participant?.name) {
-    const id = String(entry.participant.id || '');
-    // Notetaker-Bots ausschließen
-    const name = entry.participant.name;
-    if (!name.toLowerCase().includes('notetaker') && 
-        !name.toLowerCase().includes('bot')) {
-      uniqueParticipants.set(id, { id, name });
+// Duration aus recordings[0] berechnen
+if (botData.recordings?.[0]) {
+  const recording = botData.recordings[0];
+  const startedAt = recording.started_at;
+  const completedAt = recording.completed_at;
+  
+  if (startedAt && completedAt) {
+    const startTime = new Date(startedAt).getTime();
+    const endTime = new Date(completedAt).getTime();
+    const durationSeconds = Math.round((endTime - startTime) / 1000);
+    
+    if (durationSeconds > 0) {
+      updates.duration = durationSeconds;
+      console.log(`Meeting-Dauer berechnet: ${durationSeconds}s (${Math.round(durationSeconds/60)}min)`);
     }
   }
-});
-participantsList = Array.from(uniqueParticipants.values());
+}
 ```
 
-### 3. Frontend: Teilnehmeranzahl korrekt zählen
+### 2. Bestehende Recordings reparieren
 
-**Datei: `src/pages/MeetingDetail.tsx`**
+Eine einmalige Reparatur-Funktion, die für alle bestehenden "done"-Recordings die Duration nachträglich berechnet. Dies kann über die existierende `repair-all-recordings` Edge Function erfolgen.
 
-Verbessere die `extractParticipants`-Funktion und Zähllogik:
+**Optionen:**
+- Button in Settings zum "Reparieren aller Recordings"  
+- Oder automatisches Re-Sync wenn ein User seine Recordings öffnet
+
+### 3. useUserQuota Hook (bereits korrekt implementiert)
+
+Der Hook summiert bereits die `duration` aller Recordings mit Status "done":
 
 ```typescript
-const extractParticipants = (transcript: string | null): string[] => {
-  if (!transcript) return [];
-  const speakerPattern = /^([^:]+):/gm;
-  const matches = transcript.match(speakerPattern);
-  if (!matches) return [];
-  const speakers = matches.map(m => m.replace(':', '').trim());
-  // Unique Sprecher ohne Bots
-  const unique = [...new Set(speakers)].filter(s => 
-    !s.toLowerCase().includes('notetaker') && 
-    !s.toLowerCase().includes('bot')
-  );
-  return unique;
-};
-
-// Teilnehmeranzahl: Zähle unique Sprecher (ohne generische Fallbacks)
-const nonGenericSpeakers = transcriptParticipants.filter(s => 
-  s !== 'Unbekannt' && 
-  !s.startsWith('Sprecher ') &&
-  !s.toLowerCase().includes('notetaker')
-);
+const usedSeconds = recordings?.reduce((sum, r) => sum + (r.duration || 0), 0) || 0;
+const usedMinutes = Math.round(usedSeconds / 60);
 ```
 
-### 4. Notetaker aus Zählung ausschließen
+Sobald die Duration-Werte in der DB stehen, funktioniert die Berechnung automatisch.
 
-Sowohl Backend als auch Frontend sollen Bots/Notetaker ignorieren:
+### 4. QuotaProgressBar (bereits korrekt implementiert)
 
-```typescript
-// Pattern für Bot-Erkennung
-const isBot = (name: string): boolean => {
-  const botPatterns = ['notetaker', 'bot', 'recording', 'assistant'];
-  return botPatterns.some(p => name.toLowerCase().includes(p));
-};
+Die Komponente zeigt bereits die Werte aus `useUserQuota` an und berechnet Farben basierend auf dem Verbrauch.
+
+---
+
+## Technische Umsetzung
+
+| Datei | Änderung |
+|-------|----------|
+| `supabase/functions/sync-recording/index.ts` | Duration aus `started_at`/`completed_at` berechnen und in `updates.duration` speichern |
+| `supabase/functions/repair-all-recordings/index.ts` | Prüfen/erweitern, dass Duration bei Re-Sync korrekt gesetzt wird |
+| (Optional) `src/pages/Settings.tsx` | Button "Kontingent aktualisieren" zum manuellen Re-Sync aller Recordings |
+
+---
+
+## Ablauf nach Implementierung
+
+```text
+Neues Meeting endet
+       ↓
+sync-recording wird aufgerufen
+       ↓
+Duration wird aus started_at/completed_at berechnet
+       ↓
+Duration (in Sekunden) wird in recordings.duration gespeichert
+       ↓
+useUserQuota summiert alle done-Recordings
+       ↓
+QuotaProgressBar zeigt: "1h 6m / 50h" (beispiel)
 ```
 
 ---
 
 ## Erwartetes Ergebnis
 
-Nach der Korrektur:
-
-1. **Transkript zeigt echte Namen**: "Dominik Bauer: ..." statt "Sprecher 1: ..."
-2. **Teilnehmeranzahl korrekt**: Zählt alle einzigartigen Sprecher (ohne Bots)
-3. **`participants`-Feld in DB gefüllt**: Enthält ID und Name jedes Sprechers
-4. **Re-Sync repariert bestehende Meetings**: Button "Transkript neu laden" aktualisiert mit korrekten Namen
-
-## Betroffene Dateien
-
-| Datei | Änderung |
-|-------|----------|
-| `supabase/functions/sync-recording/index.ts` | `participant` statt `user`, Bot-Filter |
-| `src/pages/MeetingDetail.tsx` | Verbesserte Teilnehmerzählung, Bot-Filter |
+- Bei jedem abgeschlossenen Meeting wird die tatsächliche Dauer in Sekunden gespeichert
+- Die Kontingent-Leiste auf dem Dashboard zeigt die korrekte Summe aller Meeting-Dauern
+- Die Warnung bei 80%/100% Verbrauch funktioniert korrekt
+- Admins können über das Admin-Dashboard die Kontingente pro User einsehen und anpassen
+- Bestehende Meetings können über "Transkript neu laden" oder eine Reparatur-Funktion aktualisiert werden
