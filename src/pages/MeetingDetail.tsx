@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { withTokenRefresh } from "@/lib/retryWithTokenRefresh";
@@ -28,11 +28,15 @@ import {
   Edit3,
   Save,
   X,
-  Replace
+  Replace,
+  History
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { toast } from "sonner";
+import { ColoredTranscript, SpeakerLegend } from "@/components/transcript/ColoredTranscript";
+import { useSpeakerSuggestions } from "@/hooks/useSpeakerSuggestions";
+import { extractSpeakersInOrder, createSpeakerColorMap, SPEAKER_COLORS } from "@/utils/speakerColors";
 
 type TimeFilter = 'heute' | '7tage' | '30tage' | '90tage' | 'alle';
 
@@ -45,6 +49,9 @@ export default function MeetingDetail() {
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [activeFilter, setActiveFilter] = useState<TimeFilter>('7tage');
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Speaker-Suggestions Hook
+  const { suggestions: speakerSuggestions, saveSpeakerName } = useSpeakerSuggestions();
   
   // Transkript-Bearbeitung States
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
@@ -59,6 +66,13 @@ export default function MeetingDetail() {
   const [calendarAttendees, setCalendarAttendees] = useState<{ name: string; email: string }[]>([]);
   const [dbParticipantSuggestions, setDbParticipantSuggestions] = useState<{ id: string; name: string }[]>([]);
   const [expectedSpeakerCount, setExpectedSpeakerCount] = useState<number>(0);
+  
+  // Sprecher-Farben für Edit-Modus
+  const speakerColorMap = useMemo(() => {
+    const transcript = isEditingTranscript ? editedTranscript : (recording?.transcript_text || '');
+    const speakers = extractSpeakersInOrder(transcript);
+    return createSpeakerColorMap(speakers);
+  }, [isEditingTranscript, editedTranscript, recording?.transcript_text]);
 
   const fetchRecording = useCallback(async () => {
     if (!id) return null;
@@ -354,6 +368,9 @@ export default function MeetingDetail() {
     
     setEditingSpeaker(null);
     setNewSpeakerName('');
+    
+    // Speichere den neuen Namen für zukünftige Vorschläge (ignoriert generische Namen automatisch)
+    saveSpeakerName(newName);
     
     toast.success(`"${oldName}" wurde ${replacements}x durch "${newName}" ersetzt`);
   };
@@ -830,10 +847,12 @@ export default function MeetingDetail() {
                         )}
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {detectedSpeakers.map((speakerData) => (
+                        {detectedSpeakers.map((speakerData) => {
+                          const color = speakerColorMap.get(speakerData.name) || SPEAKER_COLORS[0];
+                          return (
                           <div key={speakerData.name} className="relative">
                             {editingSpeaker === speakerData.name ? (
-                              <div className="flex flex-col gap-2 bg-background border border-primary rounded-xl p-2 min-w-[220px]">
+                              <div className="flex flex-col gap-2 bg-background border border-primary rounded-xl p-2 min-w-[220px] z-10 shadow-lg">
                                 <input
                                   type="text"
                                   value={newSpeakerName}
@@ -846,6 +865,35 @@ export default function MeetingDetail() {
                                   }}
                                   className="px-3 py-2 text-sm bg-secondary/50 rounded-lg border-0 focus:outline-none focus:ring-2 focus:ring-primary/50 w-full"
                                 />
+                                
+                                {/* Historische Sprechervorschläge aus DB */}
+                                {speakerSuggestions.length > 0 && (
+                                  <div className="space-y-1">
+                                    <p className="text-xs text-muted-foreground px-1 flex items-center gap-1">
+                                      <History className="h-3 w-3" />
+                                      Zuletzt verwendet:
+                                    </p>
+                                    <div className="max-h-24 overflow-y-auto space-y-1">
+                                      {speakerSuggestions
+                                        .filter(s => s.name.toLowerCase() !== speakerData.name.toLowerCase())
+                                        .slice(0, 5)
+                                        .map((suggestion, idx) => (
+                                          <button
+                                            key={`hist-${idx}`}
+                                            onClick={() => {
+                                              setNewSpeakerName(suggestion.name);
+                                              renameSpeaker(speakerData.name, suggestion.name);
+                                            }}
+                                            className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-primary/10 transition-colors flex items-center justify-between gap-2"
+                                          >
+                                            <span className="truncate">{suggestion.name}</span>
+                                            <span className="text-[10px] text-muted-foreground">{suggestion.usage_count}×</span>
+                                          </button>
+                                        ))
+                                      }
+                                    </div>
+                                  </div>
+                                )}
                                 
                                 {/* DB-Teilnehmer Vorschläge (echte Namen aus Recall.ai) */}
                                 {dbParticipantSuggestions.length > 0 && (
@@ -918,8 +966,12 @@ export default function MeetingDetail() {
                               </div>
                             ) : (
                               <Badge
-                                variant="secondary"
-                                className="cursor-pointer hover:bg-primary/20 transition-colors flex items-center gap-1"
+                                className="cursor-pointer hover:opacity-80 transition-colors flex items-center gap-1"
+                                style={{ 
+                                  backgroundColor: color.bg,
+                                  color: color.text,
+                                  border: `1px solid ${color.border}`,
+                                }}
                                 onClick={() => { setEditingSpeaker(speakerData.name); setNewSpeakerName(speakerData.name); }}
                               >
                                 {speakerData.name}
@@ -928,7 +980,7 @@ export default function MeetingDetail() {
                               </Badge>
                             )}
                           </div>
-                        ))}
+                        )})}
                       </div>
                       {calendarAttendees.length > 0 && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1">
@@ -998,10 +1050,9 @@ export default function MeetingDetail() {
                       placeholder="Transkript bearbeiten..."
                     />
                   ) : (
-                    <div className="max-h-80 overflow-y-auto rounded-2xl bg-secondary/30 p-4">
-                      <p className="text-foreground whitespace-pre-wrap text-sm leading-relaxed">
-                        {recording.transcript_text}
-                      </p>
+                    <div className="max-h-[500px] overflow-y-auto rounded-2xl bg-secondary/30 p-4">
+                      {/* Farbige Transkript-Anzeige mit Sprecher-Badges */}
+                      <ColoredTranscript transcript={recording.transcript_text} />
                     </div>
                   )}
                   
