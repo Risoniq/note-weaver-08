@@ -1,131 +1,123 @@
 
-# Kalender-Titel in Aufnahmen übernehmen und Titel bearbeitbar machen
+# Admin-Zugriff auf Recordings und User-ID im Transkript-Header
 
-## Analyse des aktuellen Zustands
+## Problem-Analyse
 
-**Datenbankprüfung zeigt:**
-- Viele fertige Recordings haben bereits beschreibende Titel (von AI generiert)
-- Einige Recordings mit Status `joining` haben keinen Titel (`NULL`)
-- Kalender-Meeting-Titel werden nicht automatisch übernommen
+**403-Fehler erklärt:**
+Die Edge Function Logs zeigen klar das Problem:
+- Eingeloggter User: `704551d2-286b-4e57-80d0-721f198aea43` (hat **Admin-Rolle**)
+- Recording-Owner: `725ab560-e2f9-4e4f-938f-635bc14951fe` (hat **approved-Rolle**)
 
-**Aktueller Datenfluss:**
-```text
-┌──────────────────┐    ┌─────────────────┐    ┌──────────────────────┐
-│ Kalender-Meeting │    │   create-bot    │    │ Recording erstellt   │
-│ (mit Titel)      │───▶│ (ohne Titel)    │───▶│ title = NULL         │
-└──────────────────┘    └─────────────────┘    └──────────────────────┘
-                                                         │
-                        ┌────────────────────────────────┘
-                        ▼
-              ┌─────────────────────┐    ┌────────────────────────┐
-              │   sync-recording    │───▶│   analyze-transcript   │
-              │ (holt Bot-Daten)    │    │ (generiert Titel wenn  │
-              └─────────────────────┘    │  keiner existiert)     │
-                                         └────────────────────────┘
-```
+Die Edge Functions `sync-recording` und `analyze-transcript` prüfen aktuell nur, ob der aktuelle Benutzer der Owner ist - sie ignorieren die Admin-Rolle, obwohl die RLS-Policies in der Datenbank Admins bereits Zugriff gewähren.
 
 ## Geplante Änderungen
 
-### 1. Kalender-Titel bei Bot-Erstellung übernehmen
+### 1. Admin-Prüfung in sync-recording hinzufügen
 
-**Datei: `supabase/functions/create-bot/index.ts`**
+**Datei: `supabase/functions/sync-recording/index.ts`**
 
-Wenn ein Bot manuell über die Quick-Join-Funktion erstellt wird, gibt es keinen Kalender-Titel. Aber in `sync-recording` können wir den Kalender-Titel nachträglich abrufen.
-
-**Datei: `supabase/functions/sync-recording/index.ts`** (Zeile ~190-220)
-
-Beim Abrufen der Kalender-Teilnehmer wird bereits das Calendar-Meeting abgerufen. Hier den Meeting-Titel extrahieren und speichern:
+Die Ownership-Prüfung (Zeile 115-122) erweitern um Admin-Check:
 
 ```typescript
-// Bestehender Code bei Zeile 204-219
-if (meetings.length > 0) {
-  const calendarMeeting = meetings[0]
+// Bestehend:
+if (recording.user_id && recording.user_id !== user.id) {
+  console.error(`[Auth] User ${user.id} tried to access recording owned by ${recording.user_id}`);
+  return new Response(
+    JSON.stringify({ error: 'Access denied' }),
+    { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
+}
+
+// Neu: Admin-Check hinzufügen
+if (recording.user_id && recording.user_id !== user.id) {
+  // Prüfe ob User Admin ist
+  const { data: adminCheck } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .eq('role', 'admin')
+    .maybeSingle();
   
-  // NEU: Meeting-Titel aus Kalender übernehmen (falls Recording noch keinen hat)
-  if (!recording.title && calendarMeeting.title) {
-    updates.title = calendarMeeting.title
-    console.log('Kalender-Titel übernommen:', calendarMeeting.title)
+  if (!adminCheck) {
+    console.error(`[Auth] User ${user.id} tried to access recording owned by ${recording.user_id}`);
+    return new Response(
+      JSON.stringify({ error: 'Access denied' }),
+      { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
-  
-  // Bestehende Teilnehmer-Logik...
-  const attendees = calendarMeeting.meeting_attendees || calendarMeeting.attendees || []
-  // ...
+  console.log(`[Auth] Admin ${user.id} accessing recording owned by ${recording.user_id}`);
 }
 ```
 
-### 2. Titel in RecordingDetailSheet bearbeitbar machen
+### 2. Admin-Prüfung in analyze-transcript hinzufügen
 
-**Datei: `src/components/recordings/RecordingDetailSheet.tsx`**
+**Datei: `supabase/functions/analyze-transcript/index.ts`**
 
-Titel-Feld durch ein bearbeitbares Feld ersetzen:
+Gleiche Logik bei Zeile 108-115 einbauen.
+
+### 3. User-ID im Transkript-Header in der Datenbank speichern
+
+**Datei: `supabase/functions/sync-recording/index.ts`**
+
+Beim Formatieren des Transkripts (ca. Zeile 510-535) einen Header mit User-Informationen einfügen:
 
 ```typescript
-// State für Titel-Bearbeitung
-const [isEditingTitle, setIsEditingTitle] = useState(false);
-const [editedTitle, setEditedTitle] = useState(recording.title || '');
+// Header für Datenbank-Transkript hinzufügen
+const userId = recording.user_id || user.id;
 
-// Update-Funktion
-const handleTitleSave = async () => {
-  if (editedTitle.trim() === recording.title) {
-    setIsEditingTitle(false);
-    return;
-  }
-  
-  const { error } = await supabase
-    .from('recordings')
-    .update({ title: editedTitle.trim() })
-    .eq('id', recording.id);
-    
-  if (!error) {
-    toast({ title: "Titel aktualisiert" });
-    setIsEditingTitle(false);
-  }
-};
+// User-Email abrufen für bessere Lesbarkeit
+const { data: userData } = await supabase.auth.admin.getUserById(userId);
+const userEmail = userData?.user?.email || 'Unbekannt';
 
-// UI: Klickbarer Titel mit Bearbeiten-Icon
-<div className="flex items-center gap-2">
-  {isEditingTitle ? (
-    <Input 
-      value={editedTitle}
-      onChange={(e) => setEditedTitle(e.target.value)}
-      onBlur={handleTitleSave}
-      onKeyDown={(e) => e.key === 'Enter' && handleTitleSave()}
-      autoFocus
-    />
-  ) : (
-    <>
-      <SheetTitle onClick={() => setIsEditingTitle(true)} className="cursor-pointer">
-        {recording.title || 'Untitled Meeting'}
-      </SheetTitle>
-      <Button variant="ghost" size="icon" onClick={() => setIsEditingTitle(true)}>
-        <Pencil className="h-4 w-4" />
-      </Button>
-    </>
-  )}
-</div>
+const transcriptHeader = `[Meeting-Info]
+User-ID: ${userId}
+User-Email: ${userEmail}
+Recording-ID: ${id}
+Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
+---\n\n`;
+
+updates.transcript_text = transcriptHeader + formattedTranscript;
 ```
-
-### 3. Kalender-Meeting-Titel bei automatischem Recording-Start übernehmen
-
-Für automatisch geplante Aufnahmen über den Kalender (Recall.ai) muss der Titel bereits beim Erstellen des Recordings gesetzt werden.
-
-**Recherche-Ergebnis:** Recall.ai erstellt Recordings automatisch wenn `will_record` aktiv ist. Der Webhook `meeting-bot-webhook` empfängt bereits den Titel. Dieser muss an das Recording weitergegeben werden.
-
-**Lösung:** In `sync-recording` wird der Titel aus den Kalender-Meeting-Daten geholt (bereits implementiert in Schritt 1).
 
 ## Zusammenfassung der Änderungen
 
 | Datei | Änderung |
 |-------|----------|
-| `supabase/functions/sync-recording/index.ts` | Kalender-Titel aus `calendarMeeting.title` übernehmen wenn Recording keinen Titel hat |
-| `src/components/recordings/RecordingDetailSheet.tsx` | Bearbeitbares Titel-Feld mit Pencil-Icon, Inline-Editing und Speichern in Supabase |
+| `supabase/functions/sync-recording/index.ts` | Admin-Check bei Ownership-Prüfung hinzufügen + User-ID/Email Header im Transkript |
+| `supabase/functions/analyze-transcript/index.ts` | Admin-Check bei Ownership-Prüfung hinzufügen |
 
 ## Ergebnis
 
-- **Automatische Kalender-Titel**: Meetings aus dem Kalender übernehmen automatisch deren Titel in die Aufnahme
-- **AI-Fallback**: Wenn kein Kalender-Titel vorhanden ist (z.B. bei manuellem Bot-Start), generiert die AI einen passenden Titel
-- **Manuelle Bearbeitung**: Der Titel kann jederzeit in der Aufnahme-Detailansicht geändert werden
-- **Reihenfolge der Titel-Quellen**:
-  1. Kalender-Meeting-Titel (wenn verfügbar)
-  2. AI-generierter Titel basierend auf Transkript-Inhalt
-  3. Manuell bearbeiteter Titel (überschreibt beide)
+- **Admin-Zugriff**: Admins können "Transkript neu laden" für alle Recordings ausführen
+- **Backend-Übersicht**: Jedes Transkript enthält im Header die User-ID und E-Mail des Besitzers
+- **Sicherheit bleibt erhalten**: Normale Benutzer können weiterhin nur ihre eigenen Recordings bearbeiten
+- **Konsistenz**: Sowohl sync-recording als auch analyze-transcript nutzen die gleiche Admin-Logik
+
+## Technische Details
+
+### Admin-Check Pattern
+```typescript
+// Wiederverwendbares Pattern für alle Edge Functions:
+async function isAdmin(supabase: SupabaseClient, userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', userId)
+    .eq('role', 'admin')
+    .maybeSingle();
+  return !!data;
+}
+```
+
+### Transkript-Header Format
+```text
+[Meeting-Info]
+User-ID: 725ab560-e2f9-4e4f-938f-635bc14951fe
+User-Email: user@example.com
+Recording-ID: 0865b411-5579-4b64-b45c-622c5c978a50
+Erstellt: 2026-01-21T14:58:56.705Z
+---
+
+Max Mustermann: Guten Morgen allerseits...
+Anna Schmidt: Hallo Max, danke für die Einladung...
+```
