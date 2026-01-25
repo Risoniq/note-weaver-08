@@ -95,38 +95,52 @@ export const QuickMeetingJoin = ({ onBotStarted }: QuickMeetingJoinProps) => {
   };
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <Video size={18} className="text-muted-foreground" />
-        <h3 className="font-medium text-foreground">Bot zu Meeting senden</h3>
+    <div className="space-y-4">
+      {/* Gradient Akzent-Linie */}
+      <div className="h-1 bg-gradient-to-r from-primary/40 via-primary to-primary/40 rounded-full" />
+      
+      {/* Header mit animiertem Icon */}
+      <div className="flex items-center gap-3">
+        <div className="p-3 rounded-2xl bg-primary/10 animate-subtle-pulse">
+          <Bot size={24} className="text-primary" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-foreground">Bot zu Meeting senden</h3>
+          <p className="text-sm text-muted-foreground">Sofort aufnehmen lassen</p>
+        </div>
       </div>
-      <p className="text-xs text-muted-foreground mb-3">
-        Füge eine Meeting-URL ein, um den Bot sofort beizutreten zu lassen.
-      </p>
+      
+      {/* Input und Button */}
       <div className="flex gap-2">
         <Input
           placeholder="https://meet.google.com/... oder Teams/Zoom Link"
           value={meetingUrl}
           onChange={(e) => setMeetingUrl(e.target.value)}
           disabled={isLoading}
-          className="flex-1"
+          className="flex-1 h-11"
         />
         <Button
           onClick={handleSendBot}
           disabled={isLoading || !meetingUrl.trim()}
-          size="default"
+          size="lg"
+          className="shadow-primary/20 shadow-lg hover:shadow-primary/30 transition-shadow"
         >
           {isLoading ? (
-            <Loader2 size={16} className="animate-spin mr-2" />
+            <Loader2 size={18} className="animate-spin mr-2" />
           ) : (
-            <Bot size={16} className="mr-2" />
+            <Bot size={18} className="mr-2" />
           )}
           Senden
         </Button>
       </div>
       
+      {/* Unterstützte Plattformen */}
+      <p className="text-xs text-muted-foreground text-center">
+        Unterstützt: Google Meet • Teams • Zoom • Webex
+      </p>
+      
       {isExternalTeamsMeeting && (
-        <Alert className="mt-3 border-warning bg-warning/10">
+        <Alert className="border-warning bg-warning/10">
           <AlertTriangle className="h-4 w-4 text-warning" />
           <AlertDescription className="text-sm">
             <strong>Externes Teams-Meeting erkannt:</strong> Bei Microsoft Teams Business/Enterprise 
