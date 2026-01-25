@@ -203,6 +203,13 @@ Deno.serve(async (req) => {
         
         if (meetings.length > 0) {
           const calendarMeeting = meetings[0]
+          
+          // Meeting-Titel aus Kalender übernehmen (falls Recording noch keinen hat)
+          if (!recording.title && calendarMeeting.title) {
+            updates.title = calendarMeeting.title
+            console.log('Kalender-Titel übernommen:', calendarMeeting.title)
+          }
+          
           const attendees = calendarMeeting.meeting_attendees || calendarMeeting.attendees || []
           
           if (attendees.length > 0) {
