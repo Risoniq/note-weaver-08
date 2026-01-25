@@ -112,13 +112,24 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 5. Verify ownership - user can only sync their own recordings
+    // 5. Verify ownership - user can only sync their own recordings (admins can access all)
     if (recording.user_id && recording.user_id !== user.id) {
-      console.error(`[Auth] User ${user.id} tried to access recording owned by ${recording.user_id}`);
-      return new Response(
-        JSON.stringify({ error: 'Access denied' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      // Check if user is admin
+      const { data: adminCheck } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('role', 'admin')
+        .maybeSingle();
+      
+      if (!adminCheck) {
+        console.error(`[Auth] User ${user.id} tried to access recording owned by ${recording.user_id}`);
+        return new Response(
+          JSON.stringify({ error: 'Access denied' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      console.log(`[Auth] Admin ${user.id} accessing recording owned by ${recording.user_id}`);
     }
 
     if (!recording.recall_bot_id) {
@@ -543,8 +554,26 @@ Deno.serve(async (req) => {
                 }
               })
               
-              updates.transcript_text = formattedTranscript
-              console.log('Transkript formatiert, Länge:', formattedTranscript.length, 'Zeichen')
+              // Add user information header to transcript for backend visibility
+              const ownerId = recording.user_id || user.id;
+              let ownerEmail = 'Unbekannt';
+              try {
+                const { data: userData } = await supabase.auth.admin.getUserById(ownerId);
+                ownerEmail = userData?.user?.email || 'Unbekannt';
+              } catch (e) {
+                console.log('Could not fetch owner email:', e);
+              }
+              
+              const transcriptHeader = `[Meeting-Info]
+User-ID: ${ownerId}
+User-Email: ${ownerEmail}
+Recording-ID: ${id}
+Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
+---
+
+`;
+              updates.transcript_text = transcriptHeader + formattedTranscript
+              console.log('Transkript formatiert mit User-Header, Länge:', (transcriptHeader + formattedTranscript).length, 'Zeichen')
             }
           } else {
             console.error('Transkript-Download fehlgeschlagen:', transcriptResponse.status, transcriptResponse.statusText)

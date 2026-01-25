@@ -105,13 +105,24 @@ serve(async (req) => {
       );
     }
 
-    // 2. Verify ownership (skip for service role calls)
+    // 2. Verify ownership (skip for service role calls, admins can access all)
     if (!isServiceRole && recording.user_id && recording.user_id !== user.id) {
-      console.error(`[Auth] User ${user.id} tried to analyze recording owned by ${recording.user_id}`);
-      return new Response(
-        JSON.stringify({ error: 'Access denied' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      // Check if user is admin
+      const { data: adminCheck } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('role', 'admin')
+        .maybeSingle();
+      
+      if (!adminCheck) {
+        console.error(`[Auth] User ${user.id} tried to analyze recording owned by ${recording.user_id}`);
+        return new Response(
+          JSON.stringify({ error: 'Access denied' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      console.log(`[Auth] Admin ${user.id} analyzing recording owned by ${recording.user_id}`);
     }
 
     if (!recording.transcript_text) {
