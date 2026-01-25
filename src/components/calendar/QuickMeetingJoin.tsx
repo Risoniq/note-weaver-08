@@ -13,6 +13,7 @@ interface QuickMeetingJoinProps {
 
 export const QuickMeetingJoin = ({ onBotStarted }: QuickMeetingJoinProps) => {
   const [meetingUrl, setMeetingUrl] = useState('');
+  const [meetingTitle, setMeetingTitle] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   // Erkennung von externen Teams-Meetings (Business/Enterprise)
@@ -63,6 +64,7 @@ export const QuickMeetingJoin = ({ onBotStarted }: QuickMeetingJoinProps) => {
         () => supabase.functions.invoke('create-bot', {
           body: {
             meetingUrl: meetingUrl.trim(),
+            meetingTitle: meetingTitle.trim() || null,
             botName,
             botAvatarUrl,
           },
@@ -81,6 +83,7 @@ export const QuickMeetingJoin = ({ onBotStarted }: QuickMeetingJoinProps) => {
       // Recording-ID aus Response extrahieren und via Callback zurückgeben
       const recordingId = data?.recording?.id;
       setMeetingUrl('');
+      setMeetingTitle('');
       onBotStarted?.(recordingId);
     } catch (error) {
       console.error('Error sending bot:', error);
@@ -110,28 +113,37 @@ export const QuickMeetingJoin = ({ onBotStarted }: QuickMeetingJoinProps) => {
         </div>
       </div>
       
-      {/* Input und Button */}
-      <div className="flex gap-2">
+      {/* Input-Felder */}
+      <div className="space-y-3">
         <Input
-          placeholder="https://meet.google.com/... oder Teams/Zoom Link"
-          value={meetingUrl}
-          onChange={(e) => setMeetingUrl(e.target.value)}
+          placeholder="Meeting-Titel (optional)"
+          value={meetingTitle}
+          onChange={(e) => setMeetingTitle(e.target.value)}
           disabled={isLoading}
-          className="flex-1 h-11"
+          className="h-10"
         />
-        <Button
-          onClick={handleSendBot}
-          disabled={isLoading || !meetingUrl.trim()}
-          size="lg"
-          className="shadow-primary/20 shadow-lg hover:shadow-primary/30 transition-shadow"
-        >
-          {isLoading ? (
-            <Loader2 size={18} className="animate-spin mr-2" />
-          ) : (
-            <Bot size={18} className="mr-2" />
-          )}
-          Senden
-        </Button>
+        <div className="flex gap-2">
+          <Input
+            placeholder="https://meet.google.com/... oder Teams/Zoom Link"
+            value={meetingUrl}
+            onChange={(e) => setMeetingUrl(e.target.value)}
+            disabled={isLoading}
+            className="flex-1 h-11"
+          />
+          <Button
+            onClick={handleSendBot}
+            disabled={isLoading || !meetingUrl.trim()}
+            size="lg"
+            className="shadow-primary/20 shadow-lg hover:shadow-primary/30 transition-shadow"
+          >
+            {isLoading ? (
+              <Loader2 size={18} className="animate-spin mr-2" />
+            ) : (
+              <Bot size={18} className="mr-2" />
+            )}
+            Senden
+          </Button>
+        </div>
       </div>
       
       {/* Unterstützte Plattformen */}
