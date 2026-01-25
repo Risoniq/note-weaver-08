@@ -1,85 +1,112 @@
 
-# Manueller Bot entfernen & QuickMeetingJoin erweitern
+# Transkript-Sprecheridentifikation verbessern
 
-## Übersicht
+## Problem-Analyse
 
-Der "Manueller Bot" Bereich wird entfernt, da er die gleiche Funktionalität wie "Schnell-Beitritt" bietet. Die nützlichen Features werden in `QuickMeetingJoin` integriert.
+Aktuell zeigen alle Transkripte nur "Unbekannt" als Sprecher, obwohl die `sync-recording` Funktion bereits versucht, Teilnehmernamen von Recall.ai zu holen. Die Datenbankabfrage zeigt:
+- `participants`: NULL für alle Recordings
+- `calendar_attendees`: NULL für alle Recordings
 
-## Änderungen
+## Ursachen
 
-### 1. Dashboard (src/pages/Index.tsx)
+1. **Recall.ai liefert Sprechernamen nur unter bestimmten Bedingungen:**
+   - MS Teams: Erfordert Enterprise-Konfiguration und Bot-Zulassung
+   - Zoom: Teilnehmernamen werden oft anonymisiert
+   - Google Meet: Benötigt spezielle Berechtigungen
 
-**Entfernen:**
-- GlassCard "Manueller Bot" mit MeetingBot-Komponente
-- Import von `MeetingBot`
+2. **Das Mapping funktioniert nicht richtig:** Die `speaker_timeline` enthält IDs, aber das Mapping zu echten Namen scheitert, weil `meeting_participants` leer ist
 
-**Anpassen:**
-- `QuickMeetingJoin` erhält den `onBotStarted` Callback, der die Recording-ID setzt
-- Der `RecordingViewer` bleibt erhalten und wird direkt unter QuickMeetingJoin angezeigt
+3. **Kalender-Teilnehmer werden nicht abgerufen:** Das Meeting muss mit einem Kalender-Event verknüpft sein, damit `calendar_attendees` befüllt wird
 
-**Neues Layout:**
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Quota Progress Bar                                         │
-├─────────────────────────────────────────────────────────────┤
-│  Header: Dashboard                                          │
-├─────────────────────────────────────────────────────────────┤
-│  ┌──────────────────────────────────────────────────────────┐│
-│  │ Bot zu Meeting senden (QuickMeetingJoin)                ││
-│  │ + Teams-Warnung bei Enterprise-Meetings                 ││
-│  └──────────────────────────────────────────────────────────┘│
-│  ┌──────────────────────────────────────────────────────────┐│
-│  │ Aktive Aufnahme (RecordingViewer) - nur wenn aktiv      ││
-│  └──────────────────────────────────────────────────────────┘│
-├─────────────────────────────────────────────────────────────┤
-│  Desktop-Aufnahme                                           │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────────────────┐ ┌─────────────────────────────┐│
-│  │ Letzte Aktivitäten      │ │ Aufnahmen                   ││
-│  └─────────────────────────┘ └─────────────────────────────┘│
-└─────────────────────────────────────────────────────────────┘
-```
+## Lösungsansatz (mehrstufig)
 
-### 2. QuickMeetingJoin erweitern (src/components/calendar/QuickMeetingJoin.tsx)
+### Phase 1: Verbesserung der Recall.ai-Datenextraktion
 
-**Neue Features hinzufügen:**
-- Teams Business/Enterprise Erkennung (wie in MeetingBot)
-- Warnung bei externen Teams-Meetings anzeigen
-- Recording-ID aus Response extrahieren und via Callback zurückgeben
+**Datei: `supabase/functions/sync-recording/index.ts`**
 
-**Interface ändern:**
-```typescript
-interface QuickMeetingJoinProps {
-  onBotStarted?: (recordingId?: string) => void;  // recordingId hinzufügen
-}
+- Erweiterte Logik für `speaker_timeline`: Nutze `user.name` direkt aus jedem Entry
+- Fallback auf `platform_user_id` als lesbaren Namen (bei MS Teams oft der UPN/E-Mail)
+- Speichere alle gefundenen Speaker-Daten in `participants`, auch wenn sie generisch sind
+
+### Phase 2: Alternative Sprecheridentifikation im Frontend
+
+**Datei: `src/pages/MeetingDetail.tsx`**
+
+- **Voice-Pattern-basierte Unterscheidung**: Automatisches Nummerieren bleibt, aber mit verbesserter Logik
+- **Verbesserte UI für manuelle Zuordnung**: 
+  - Zeige geschätzte Sprecherzahl basierend auf Gesprächsmustern
+  - Ermögliche Schnellzuordnung über Keyboard-Shortcuts
+  - Speichere Sprechernamen pro User für zukünftige Vorschläge
+
+### Phase 3: Historische Sprechernamen-Datenbank (optional)
+
+**Neue Tabelle: `speaker_names`**
+
+Speichert zugeordnete Sprechernamen pro User, um bei zukünftigen Meetings automatisch Vorschläge zu machen basierend auf häufig verwendeten Namen.
+
+---
+
+## Technische Änderungen
+
+### 1. sync-recording Edge Function verbessern
+
+| Änderung | Beschreibung |
+|----------|--------------|
+| Erweiterte speaker_timeline Auswertung | Nutze alle verfügbaren Felder: `user.name`, `user.platform_user_id`, `user.identifier` |
+| Platform-ID als Fallback-Name | Bei MS Teams oft lesbar (z.B. "Max.Mustermann@company.com") |
+| Verbesserte Logging | Detaillierte Logs um zu verstehen, was Recall.ai zurückgibt |
+| Kalender-API direkter Abruf | Falls bot_id vorhanden, hole calendar_attendees aktiv |
+
+### 2. MeetingDetail.tsx Frontend-Verbesserungen
+
+| Änderung | Beschreibung |
+|----------|--------------|
+| Sprecheranalyse verbessern | Nutze Gesprächsmuster (Pausen, Antwortreihenfolge) zur Unterscheidung |
+| Schnellaktionen | "Alle umbenennen" für Pattern wie "Sprecher 1" → Name |
+| Lokale Namenshistorie | Speichere zugeordnete Namen im localStorage für Vorschläge |
+| Visuelle Sprecherfarben | Jeder Sprecher erhält eine konsistente Farbe im Transkript |
+
+### 3. Neue Tabelle für Sprechervorschläge
+
+```sql
+CREATE TABLE speaker_suggestions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users NOT NULL,
+  name TEXT NOT NULL,
+  usage_count INTEGER DEFAULT 1,
+  last_used_at TIMESTAMPTZ DEFAULT now(),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- RLS: User sieht nur eigene Vorschläge
+ALTER TABLE speaker_suggestions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own suggestions" 
+ON speaker_suggestions FOR ALL 
+USING (auth.uid() = user_id);
 ```
 
 ---
 
-## Technische Details
+## Implementierungs-Reihenfolge
 
-### Dateien die geändert werden:
+1. **Sofort wirksam:** 
+   - Verbessere `sync-recording` um mehr Daten zu extrahieren
+   - Füge Logging hinzu um Recall.ai-Responses zu analysieren
 
-| Datei | Änderung |
-|-------|----------|
-| `src/pages/Index.tsx` | MeetingBot entfernen, Layout anpassen |
-| `src/components/calendar/QuickMeetingJoin.tsx` | Teams-Warnung + Recording-ID Callback |
+2. **Frontend-Verbesserungen:**
+   - Lokale Namensvorschläge basierend auf bisherigen Zuordnungen
+   - Verbesserte Sprecher-Badge-UI mit Farben
 
-### Änderungen in Index.tsx:
-- Import `MeetingBot` entfernen
-- 2-Spalten Grid für Bot-Steuerung → 1-Spalten Layout
-- QuickMeetingJoin erhält `onBotStarted` mit Recording-ID
-- RecordingViewer bleibt unter QuickMeetingJoin
+3. **Datenbank-Erweiterung:**
+   - `speaker_suggestions` Tabelle für lernende Vorschläge
 
-### Änderungen in QuickMeetingJoin.tsx:
-- `useMemo` Import hinzufügen
-- `isExternalTeamsMeeting` Erkennung hinzufügen
-- `Alert` und `AlertTriangle` Import hinzufügen
-- Warnung bei Teams Business/Enterprise anzeigen
-- `recording.id` aus Response extrahieren und an Callback übergeben
+---
 
-### Beibehaltene Funktionalität:
-- URL-Validierung (war nur in QuickMeetingJoin)
-- Teams-Warnung (übernommen von MeetingBot)
-- Recording-Viewer für aktive Aufnahmen
-- Bot-Settings aus localStorage
+## Erwartetes Ergebnis
+
+- Bei neuen Meetings werden Teilnehmernamen automatisch zugeordnet, wenn Recall.ai sie liefert
+- Fallback auf lesbare Platform-IDs (E-Mail-Adressen) statt "Unbekannt"
+- Benutzer können Sprecher manuell zuordnen, und das System merkt sich die Namen
+- Visuelle Unterscheidung der Sprecher durch Farben
+- Bei jedem neuen Meeting werden zuvor zugeordnete Namen als Vorschläge angezeigt
