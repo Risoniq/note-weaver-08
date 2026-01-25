@@ -1,111 +1,131 @@
 
-# "Bot zu Meeting senden" lebendiger gestalten
+# Kalender-Titel in Aufnahmen übernehmen und Titel bearbeitbar machen
 
-## Übersicht
-Der zentrale Call-to-Action-Bereich wird visuell hervorgehoben, um den Fokus direkt darauf zu lenken - minimalistisch und modern mit subtilen Animationen und einem dezenten Gradient-Akzent.
+## Analyse des aktuellen Zustands
 
-## Design-Konzept
+**Datenbankprüfung zeigt:**
+- Viele fertige Recordings haben bereits beschreibende Titel (von AI generiert)
+- Einige Recordings mit Status `joining` haben keinen Titel (`NULL`)
+- Kalender-Meeting-Titel werden nicht automatisch übernommen
 
-**Visueller Fokus durch:**
-- Subtiler animierter Gradient-Rand (Primary-Farbe)
-- Leichte Pulse-Animation auf dem Bot-Icon
-- Größeres, prominenteres Input-Feld
-- Entfernung der doppelten Card-Verschachtelung
-- Hover-State mit sanftem Glow-Effekt
-
-## Änderungen
-
-### 1. QuickMeetingJoin.tsx - Redesign
-
-**Visuelle Verbesserungen:**
-- Entfernung des inneren `bg-card border` Containers (redundant mit GlassCard)
-- Größeres Bot-Icon mit subtiler Pulse-Animation
-- Prominentere Überschrift
-- Input und Button in einer visuell ansprechenderen Anordnung
-- Dezenter Gradient-Akzent am oberen Rand
-
+**Aktueller Datenfluss:**
 ```text
-┌────────────────────────────────────────────────────┐
-│  ════════════ (Primary Gradient Line) ════════════ │
-│                                                     │
-│        🤖  Bot zu Meeting senden                   │
-│        (pulsierendes Icon)                         │
-│                                                     │
-│   ┌─────────────────────────────────┐  ┌────────┐  │
-│   │ Meeting-URL eingeben...         │  │ Senden │  │
-│   └─────────────────────────────────┘  └────────┘  │
-│                                                     │
-│   Unterstützt: Google Meet • Teams • Zoom • Webex  │
-└────────────────────────────────────────────────────┘
+┌──────────────────┐    ┌─────────────────┐    ┌──────────────────────┐
+│ Kalender-Meeting │    │   create-bot    │    │ Recording erstellt   │
+│ (mit Titel)      │───▶│ (ohne Titel)    │───▶│ title = NULL         │
+└──────────────────┘    └─────────────────┘    └──────────────────────┘
+                                                         │
+                        ┌────────────────────────────────┘
+                        ▼
+              ┌─────────────────────┐    ┌────────────────────────┐
+              │   sync-recording    │───▶│   analyze-transcript   │
+              │ (holt Bot-Daten)    │    │ (generiert Titel wenn  │
+              └─────────────────────┘    │  keiner existiert)     │
+                                         └────────────────────────┘
 ```
 
-### 2. index.css - Neue Animationen
+## Geplante Änderungen
 
-**Hinzufügen:**
-- `@keyframes subtle-pulse` - Sanftes Pulsieren für das Icon
-- `@keyframes gradient-shift` - Animierter Gradient für den Akzent
-- `.focus-glow` - Hover-Glow-Effekt
+### 1. Kalender-Titel bei Bot-Erstellung übernehmen
 
-### 3. GlassCard - Optionale Highlight-Variante
+**Datei: `supabase/functions/create-bot/index.ts`**
 
-**Neue Prop `highlight`:**
-- Aktiviert einen dezenten Gradient-Akzent am oberen Rand
-- Leicht verstärkter Shadow bei Hover
+Wenn ein Bot manuell über die Quick-Join-Funktion erstellt wird, gibt es keinen Kalender-Titel. Aber in `sync-recording` können wir den Kalender-Titel nachträglich abrufen.
 
-## Technische Details
+**Datei: `supabase/functions/sync-recording/index.ts`** (Zeile ~190-220)
 
-### QuickMeetingJoin.tsx Änderungen
+Beim Abrufen der Kalender-Teilnehmer wird bereits das Calendar-Meeting abgerufen. Hier den Meeting-Titel extrahieren und speichern:
 
 ```typescript
-// Vorher: Doppelte Card-Struktur
-<div className="bg-card border border-border rounded-xl p-4">
-
-// Nachher: Fokus auf Inhalt, transparenter Hintergrund
-<div className="space-y-4">
-  {/* Gradient Akzent-Linie */}
-  <div className="h-1 bg-gradient-to-r from-primary/60 via-primary to-primary/60 rounded-full" />
+// Bestehender Code bei Zeile 204-219
+if (meetings.length > 0) {
+  const calendarMeeting = meetings[0]
   
-  {/* Icon mit Animation */}
-  <div className="flex items-center gap-3">
-    <div className="p-3 rounded-2xl bg-primary/10 animate-subtle-pulse">
-      <Bot size={24} className="text-primary" />
-    </div>
-    <div>
-      <h3 className="text-lg font-semibold">Bot zu Meeting senden</h3>
-      <p className="text-sm text-muted-foreground">Sofort aufnehmen lassen</p>
-    </div>
-  </div>
-```
-
-### Neue CSS-Animationen
-
-```css
-@keyframes subtle-pulse {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 1;
+  // NEU: Meeting-Titel aus Kalender übernehmen (falls Recording noch keinen hat)
+  if (!recording.title && calendarMeeting.title) {
+    updates.title = calendarMeeting.title
+    console.log('Kalender-Titel übernommen:', calendarMeeting.title)
   }
-  50% {
-    transform: scale(1.05);
-    opacity: 0.85;
-  }
-}
-
-.animate-subtle-pulse {
-  animation: subtle-pulse 3s ease-in-out infinite;
+  
+  // Bestehende Teilnehmer-Logik...
+  const attendees = calendarMeeting.meeting_attendees || calendarMeeting.attendees || []
+  // ...
 }
 ```
 
-## Dateien die geändert werden
+### 2. Titel in RecordingDetailSheet bearbeitbar machen
+
+**Datei: `src/components/recordings/RecordingDetailSheet.tsx`**
+
+Titel-Feld durch ein bearbeitbares Feld ersetzen:
+
+```typescript
+// State für Titel-Bearbeitung
+const [isEditingTitle, setIsEditingTitle] = useState(false);
+const [editedTitle, setEditedTitle] = useState(recording.title || '');
+
+// Update-Funktion
+const handleTitleSave = async () => {
+  if (editedTitle.trim() === recording.title) {
+    setIsEditingTitle(false);
+    return;
+  }
+  
+  const { error } = await supabase
+    .from('recordings')
+    .update({ title: editedTitle.trim() })
+    .eq('id', recording.id);
+    
+  if (!error) {
+    toast({ title: "Titel aktualisiert" });
+    setIsEditingTitle(false);
+  }
+};
+
+// UI: Klickbarer Titel mit Bearbeiten-Icon
+<div className="flex items-center gap-2">
+  {isEditingTitle ? (
+    <Input 
+      value={editedTitle}
+      onChange={(e) => setEditedTitle(e.target.value)}
+      onBlur={handleTitleSave}
+      onKeyDown={(e) => e.key === 'Enter' && handleTitleSave()}
+      autoFocus
+    />
+  ) : (
+    <>
+      <SheetTitle onClick={() => setIsEditingTitle(true)} className="cursor-pointer">
+        {recording.title || 'Untitled Meeting'}
+      </SheetTitle>
+      <Button variant="ghost" size="icon" onClick={() => setIsEditingTitle(true)}>
+        <Pencil className="h-4 w-4" />
+      </Button>
+    </>
+  )}
+</div>
+```
+
+### 3. Kalender-Meeting-Titel bei automatischem Recording-Start übernehmen
+
+Für automatisch geplante Aufnahmen über den Kalender (Recall.ai) muss der Titel bereits beim Erstellen des Recordings gesetzt werden.
+
+**Recherche-Ergebnis:** Recall.ai erstellt Recordings automatisch wenn `will_record` aktiv ist. Der Webhook `meeting-bot-webhook` empfängt bereits den Titel. Dieser muss an das Recording weitergegeben werden.
+
+**Lösung:** In `sync-recording` wird der Titel aus den Kalender-Meeting-Daten geholt (bereits implementiert in Schritt 1).
+
+## Zusammenfassung der Änderungen
 
 | Datei | Änderung |
 |-------|----------|
-| `src/components/calendar/QuickMeetingJoin.tsx` | Redesign mit Fokus-Elementen, größeres Icon, Gradient-Akzent |
-| `src/index.css` | Neue `subtle-pulse` Animation hinzufügen |
+| `supabase/functions/sync-recording/index.ts` | Kalender-Titel aus `calendarMeeting.title` übernehmen wenn Recording keinen Titel hat |
+| `src/components/recordings/RecordingDetailSheet.tsx` | Bearbeitbares Titel-Feld mit Pencil-Icon, Inline-Editing und Speichern in Supabase |
 
 ## Ergebnis
 
-- **Minimalistisch**: Keine überladenen Elemente, klare Hierarchie
-- **Modern**: Glasmorphism + dezente Animationen + Gradient-Akzente
-- **Fokussiert**: Der Blick wird automatisch auf den CTA-Bereich gelenkt
-- **Subtil lebendig**: Sanftes Pulsieren signalisiert Aktivität ohne zu stören
+- **Automatische Kalender-Titel**: Meetings aus dem Kalender übernehmen automatisch deren Titel in die Aufnahme
+- **AI-Fallback**: Wenn kein Kalender-Titel vorhanden ist (z.B. bei manuellem Bot-Start), generiert die AI einen passenden Titel
+- **Manuelle Bearbeitung**: Der Titel kann jederzeit in der Aufnahme-Detailansicht geändert werden
+- **Reihenfolge der Titel-Quellen**:
+  1. Kalender-Meeting-Titel (wenn verfügbar)
+  2. AI-generierter Titel basierend auf Transkript-Inhalt
+  3. Manuell bearbeiteter Titel (überschreibt beide)
