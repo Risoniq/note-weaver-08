@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { LayoutDashboard, Calendar, FileText, Settings, Shield, Mic } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -75,6 +76,8 @@ export function AppLayout({ children }: AppLayoutProps) {
               <span className="hidden md:block">Admin</span>
             </NavLink>
           )}
+          
+          <ThemeToggle />
         </nav>
       </header>
       
