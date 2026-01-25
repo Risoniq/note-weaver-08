@@ -363,12 +363,97 @@ Deno.serve(async (req) => {
             const transcriptData = await transcriptResponse.json()
             console.log('Transkript abgerufen, Typ:', typeof transcriptData, 'Länge:', Array.isArray(transcriptData) ? transcriptData.length : 'N/A')
             
-            // Transkript formatieren mit Sprecher-Namen - verbesserte Logik
+            // Transkript formatieren mit Sprecher-Namen - verbesserte Logik mit E-Mail/Platform-ID Fallback
             if (Array.isArray(transcriptData) && transcriptData.length > 0) {
               let speakerCounter = 1
               const unknownSpeakerMap: Record<string, string> = {}
               
               console.log('Transkript Entry Sample:', JSON.stringify(transcriptData[0], null, 2))
+              
+              // Hilfsfunktion: E-Mail zu lesbarem Namen formatieren
+              const formatEmailToName = (email: string): string => {
+                if (!email || !email.includes('@')) return email
+                const localPart = email.split('@')[0]
+                // Ersetze Punkte und Unterstriche durch Leerzeichen, Großbuchstaben am Anfang
+                return localPart
+                  .replace(/[._-]/g, ' ')
+                  .split(' ')
+                  .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                  .join(' ')
+              }
+              
+              // Hilfsfunktion: Besten verfügbaren Namen ermitteln
+              const getBestSpeakerName = (entry: { 
+                speaker?: string; 
+                speaker_id?: number; 
+                user?: { id?: number; name?: string; platform_user_id?: string; identifier?: string };
+              }): string => {
+                // Priorität 1: user.name direkt im Entry (MS Teams liefert das oft so)
+                if (entry.user?.name && entry.user.name.trim() !== '' && entry.user.name !== 'unknown') {
+                  return entry.user.name
+                }
+                
+                // Priorität 2: user.id zum Nachschlagen in participantMap
+                if (entry.user?.id !== undefined) {
+                  const userId = String(entry.user.id)
+                  if (participantMap[userId] && !participantMap[userId].startsWith('Sprecher ')) {
+                    return participantMap[userId]
+                  }
+                }
+                
+                // Priorität 3: platform_user_id (bei Teams oft die E-Mail-Adresse)
+                if (entry.user?.platform_user_id && entry.user.platform_user_id.trim() !== '') {
+                  const platformId = entry.user.platform_user_id
+                  // Schaue erst in der Map, ob wir einen besseren Namen haben
+                  if (participantMap[platformId] && !participantMap[platformId].startsWith('Sprecher ')) {
+                    return participantMap[platformId]
+                  }
+                  // Nutze die E-Mail/Platform-ID direkt (formatiere wenn E-Mail)
+                  if (platformId.includes('@')) {
+                    return formatEmailToName(platformId)
+                  }
+                  return platformId
+                }
+                
+                // Priorität 4: identifier (alternative ID)
+                if (entry.user?.identifier && entry.user.identifier.trim() !== '') {
+                  const identifier = entry.user.identifier
+                  if (participantMap[identifier] && !participantMap[identifier].startsWith('Sprecher ')) {
+                    return participantMap[identifier]
+                  }
+                  // Falls es eine E-Mail ist, formatieren
+                  if (identifier.includes('@')) {
+                    return formatEmailToName(identifier)
+                  }
+                  return identifier
+                }
+                
+                // Priorität 5: speaker_id in participantMap nachschlagen
+                if (entry.speaker_id !== undefined) {
+                  const speakerId = String(entry.speaker_id)
+                  if (participantMap[speakerId] && !participantMap[speakerId].startsWith('Sprecher ')) {
+                    return participantMap[speakerId]
+                  }
+                }
+                
+                // Priorität 6: speaker String nutzen
+                if (entry.speaker && entry.speaker !== 'Unbekannt' && entry.speaker !== '' && entry.speaker !== 'unknown') {
+                  if (participantMap[entry.speaker] && !participantMap[entry.speaker].startsWith('Sprecher ')) {
+                    return participantMap[entry.speaker]
+                  }
+                  return entry.speaker
+                }
+                
+                // Fallback: Konsistente Nummerierung für unbekannte Sprecher
+                const speakerKey = entry.user?.id !== undefined ? String(entry.user.id) : 
+                                   entry.speaker_id !== undefined ? String(entry.speaker_id) : 
+                                   entry.speaker || 'unknown'
+                
+                if (!unknownSpeakerMap[speakerKey]) {
+                  unknownSpeakerMap[speakerKey] = `Sprecher ${speakerCounter++}`
+                }
+                return unknownSpeakerMap[speakerKey]
+              }
               
               const formattedTranscript = transcriptData
                 .map((entry: { 
@@ -377,40 +462,7 @@ Deno.serve(async (req) => {
                   user?: { id?: number; name?: string; platform_user_id?: string; identifier?: string };
                   words?: { text?: string }[] 
                 }) => {
-                  let speaker = 'Unbekannt'
-                  
-                  // Priorität 1: user.name direkt im Entry (MS Teams liefert das oft so)
-                  if (entry.user?.name && entry.user.name.trim() !== '') {
-                    speaker = entry.user.name
-                  }
-                  // Priorität 2: user.id zum Nachschlagen in participantMap
-                  else if (entry.user?.id !== undefined) {
-                    const userId = String(entry.user.id)
-                    speaker = participantMap[userId] || `Sprecher ${entry.user.id + 1}`
-                  }
-                  // Priorität 3: user.platform_user_id
-                  else if (entry.user?.platform_user_id) {
-                    speaker = participantMap[entry.user.platform_user_id] || entry.user.platform_user_id
-                  }
-                  // Priorität 4: speaker_id
-                  else if (entry.speaker_id !== undefined) {
-                    speaker = participantMap[String(entry.speaker_id)] || `Sprecher ${entry.speaker_id + 1}`
-                  }
-                  // Priorität 5: speaker String
-                  else if (entry.speaker) {
-                    if (participantMap[entry.speaker]) {
-                      speaker = participantMap[entry.speaker]
-                    } else if (entry.speaker !== 'Unbekannt' && entry.speaker !== '' && entry.speaker !== 'unknown') {
-                      speaker = entry.speaker
-                    } else {
-                      // Konsistente Nummerierung für unbekannte Sprecher
-                      if (!unknownSpeakerMap[entry.speaker || 'unknown']) {
-                        unknownSpeakerMap[entry.speaker || 'unknown'] = `Sprecher ${speakerCounter++}`
-                      }
-                      speaker = unknownSpeakerMap[entry.speaker || 'unknown']
-                    }
-                  }
-                  
+                  const speaker = getBestSpeakerName(entry)
                   const text = entry.words?.map(w => w.text).join(' ') || ''
                   return `${speaker}: ${text}`
                 })
