@@ -3,7 +3,7 @@ import { RecordingViewer } from "@/components/RecordingViewer";
 import { RecordingsList } from "@/components/recordings/RecordingsList";
 import { RecentActivityList } from "@/components/recordings/RecentActivityList";
 import { QuickMeetingJoin } from "@/components/calendar/QuickMeetingJoin";
-import { DesktopRecordingTab } from "@/components/desktop/DesktopRecordingTab";
+
 import { Toaster } from "@/components/ui/toaster";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -88,8 +88,6 @@ const Index = () => {
           </GlassCard>
         )}
 
-        {/* Desktop-Aufnahme */}
-        <DesktopRecordingTab />
 
         {/* Dashboard Grid - Letzte Aktivitäten & Aufnahmen */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
