@@ -1,73 +1,50 @@
 
-# Veraltete "Meeting läuft" Anzeigen bereinigen
+# Sanfte Animation beim Theme-Wechsel
 
-## Problem-Analyse
+## Übersicht
+Eine CSS-Transition wird hinzugefügt, die alle Farbänderungen beim Theme-Wechsel sanft animiert - Hintergründe, Textfarben, Rahmen und Schatten werden über 300ms weich übergeblendet.
 
-In der Datenbank befinden sich viele Aufnahmen mit Status `joining`, `pending` oder `recording`, die über Wochen oder sogar einen Monat alt sind. Diese werden in der RecordingCard fälschlicherweise als "Meeting läuft..." angezeigt.
+## Änderungen
 
-**Beispiele aus der Datenbank:**
-- Aufnahme vom 16.12.2025 mit Status "joining"
-- Aufnahme vom 13.01.2026 mit Status "joining"
-- Aufnahme vom 19.01.2026 mit Status "joining"
+### 1. Globale Theme-Transition in CSS hinzufügen
 
-## Lösungsansatz
+**Datei: `src/index.css`**
 
-### 1. Frontend: Zeitbasierte Erkennung von veralteten Meetings
+Im `@layer base` Abschnitt wird eine Transition für den `body` und alle Elemente hinzugefügt:
 
-**Datei: `src/components/recordings/RecordingCard.tsx`**
+```css
+body {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
 
-Füge eine Logik hinzu, die Meetings als "Abgebrochen" oder "Zeitüberschreitung" markiert, wenn sie einen aktiven Status haben, aber älter als 4 Stunden sind:
-
-```typescript
-const isStale = ['pending', 'joining', 'recording'].includes(recording.status) && 
-  (Date.now() - new Date(recording.created_at).getTime()) > 4 * 60 * 60 * 1000; // 4 Stunden
+*, *::before, *::after {
+  transition: background-color 0.3s ease, 
+              border-color 0.3s ease, 
+              box-shadow 0.3s ease;
+}
 ```
 
-- Wenn `isStale` true ist, zeige "Zeitüberschreitung" statt "Meeting läuft..."
-- Ändere die Badge-Farbe auf grau oder orange für veraltete Einträge
+### 2. Spezielle Transition-Klasse für Theme-Wechsel
 
-### 2. Backend: Automatische Bereinigung alter aktiver Aufnahmen
+Eine dedizierte Utility-Klasse wird erstellt:
 
-**Neue Datei: `supabase/functions/cleanup-stale-recordings/index.ts`**
-
-Eine Edge Function, die alte Aufnahmen mit aktiven Status automatisch auf "error" oder "timeout" setzt:
-
-- Findet alle Recordings mit Status `pending`, `joining`, `recording`
-- Deren `created_at` älter als 4 Stunden ist
-- Setzt deren Status auf `timeout` oder `error`
-
-### 3. Einmalige Datenbank-Bereinigung
-
-Ein SQL-Statement, das alle bestehenden veralteten Aufnahmen bereinigt:
-
-```sql
-UPDATE recordings 
-SET status = 'timeout', updated_at = NOW()
-WHERE status IN ('pending', 'joining', 'recording')
-AND created_at < NOW() - INTERVAL '4 hours';
+```css
+.theme-transition {
+  transition: background-color 0.3s ease,
+              color 0.3s ease,
+              border-color 0.3s ease,
+              box-shadow 0.3s ease,
+              opacity 0.3s ease;
+}
 ```
-
-### 4. Status-Typ erweitern
-
-**Datei: `src/types/recording.ts`**
-
-Füge `timeout` als neuen Status hinzu mit entsprechendem Label und Farbe:
-
-- Label: "Zeitüberschreitung"
-- Farbe: Gedämpftes Orange/Grau
-
-## Änderungen im Detail
-
-| Datei | Änderung |
-|-------|----------|
-| `src/components/recordings/RecordingCard.tsx` | Zeitbasierte Erkennung und angepasste Anzeige für veraltete Meetings |
-| `src/types/recording.ts` | Neuen Status `timeout` hinzufügen |
-| `supabase/functions/cleanup-stale-recordings/index.ts` | Neue Edge Function für automatische Bereinigung |
-| Datenbank-Migration | SQL zur einmaligen Bereinigung + optionaler Cron-Job |
 
 ## Ergebnis
 
-- Vergangene Meetings mit hängendem Status werden korrekt als "Zeitüberschreitung" angezeigt
-- Der Bot versucht nicht mehr, diesen Meetings beizutreten
-- Neue Meetings werden nach 4 Stunden automatisch als timeout markiert
-- Die Aufnahmen-Liste zeigt nur noch relevante Status an
+- Alle Farben (Hintergrund, Text, Rahmen, Schatten) werden sanft übergeblendet
+- Der Wechsel von Hell zu Dunkel und umgekehrt fühlt sich flüssig an
+- Die Animation dauert 300ms mit einer ease-Kurve für natürliches Gefühl
+- Keine Auswirkung auf andere Animationen oder Performance
+
+## Technische Details
+
+Die Transition wird auf globaler Ebene in `src/index.css` definiert, sodass alle Elemente automatisch von der sanften Animation profitieren. Die `transition-property` ist auf spezifische Eigenschaften beschränkt (nicht `all`), um Performance-Probleme zu vermeiden.
