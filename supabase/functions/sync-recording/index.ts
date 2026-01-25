@@ -239,6 +239,26 @@ Deno.serve(async (req) => {
         console.log('Keine Video-URL in media_shortcuts gefunden')
       }
       
+      // Meeting-Dauer aus started_at/completed_at berechnen (für Kontingent-Tracking)
+      if (botData.recordings?.[0]) {
+        const recData = botData.recordings[0]
+        const startedAt = recData.started_at
+        const completedAt = recData.completed_at
+        
+        if (startedAt && completedAt) {
+          const startTime = new Date(startedAt).getTime()
+          const endTime = new Date(completedAt).getTime()
+          const durationSeconds = Math.round((endTime - startTime) / 1000)
+          
+          if (durationSeconds > 0) {
+            updates.duration = durationSeconds
+            console.log(`Meeting-Dauer berechnet: ${durationSeconds}s (${Math.round(durationSeconds / 60)}min)`)
+          }
+        } else {
+          console.log('Keine Zeitstempel für Duration-Berechnung verfügbar:', { startedAt, completedAt })
+        }
+      }
+      
       // Teilnehmer von Recall.ai abrufen - verbesserte Logik für MS Teams
       let participantMap: Record<string, string> = {}
       let participantsList: { id: string; name: string }[] = []
