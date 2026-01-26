@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { AdminRoute } from "@/components/auth/AdminRoute";
+import { TourProvider } from "@/components/onboarding/TourProvider";
+import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Calendar from "./pages/Calendar";
@@ -21,9 +23,11 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <TourProvider>
       <TooltipProvider>
       <Toaster />
       <Sonner />
+      <OnboardingTour />
       <BrowserRouter>
         <Routes>
           <Route path="/auth" element={<Auth />} />
@@ -40,6 +44,7 @@ const App = () => (
         </Routes>
       </BrowserRouter>
       </TooltipProvider>
+      </TourProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );

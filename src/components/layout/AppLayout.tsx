@@ -45,10 +45,12 @@ export function AppLayout({ children }: AppLayoutProps) {
         <nav className="flex items-center gap-1">
           {navItems.map((item) => {
             const isActive = location.pathname === item.url;
+            const tourAttribute = item.url === "/calendar" ? "calendar-nav" : undefined;
             return (
               <NavLink
                 key={item.url}
                 to={item.url}
+                data-tour={tourAttribute}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-all duration-200",
                   isActive

@@ -31,7 +31,7 @@ const Calendar = () => {
         </div>
 
         {/* Calendar Connection Cards */}
-        <Card>
+        <Card data-tour="calendar-connection">
           <CardHeader>
             <div className="flex items-center gap-2">
               <CalendarIcon className="h-5 w-5 text-primary" />
@@ -75,7 +75,7 @@ const Calendar = () => {
             <CardDescription>Konfiguriere, welche Meetings automatisch aufgezeichnet werden sollen</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between" data-tour="auto-record">
               <div className="space-y-0.5">
                 <Label>Automatische Aufnahme</Label>
                 <p className="text-sm text-muted-foreground">Bot tritt automatisch allen Meetings bei</p>

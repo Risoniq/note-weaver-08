@@ -13,11 +13,15 @@ import { QuotaProgressBar } from "@/components/quota/QuotaProgressBar";
 import { QuotaExhaustedModal } from "@/components/quota/QuotaExhaustedModal";
 import { useUserQuota } from "@/hooks/useUserQuota";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useAutoStartTour } from "@/hooks/useOnboardingTour";
 
 const Index = () => {
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
   const { quota, loading: quotaLoading } = useUserQuota();
   const [showExhaustedModal, setShowExhaustedModal] = useState(false);
+
+  // Auto-start onboarding tour for first-time users
+  useAutoStartTour();
 
   // Modal anzeigen wenn Kontingent erschöpft
   useEffect(() => {

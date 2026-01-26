@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { ArrowLeft, Bell, Bot, Check, Download, FileText, Loader2, Mic, RefreshCw, Shield, Upload, Volume2, X } from "lucide-react";
+import { ArrowLeft, Bell, Bot, Check, Download, FileText, HelpCircle, Loader2, Mic, PlayCircle, RefreshCw, Shield, Upload, Volume2, X } from "lucide-react";
+import { useOnboardingTour } from "@/hooks/useOnboardingTour";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -15,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 
 const Settings = () => {
   const { toast } = useToast();
+  const { resetTour } = useOnboardingTour();
   
   // Bot settings state
   const [botName, setBotName] = useState("Notetaker Bot");
@@ -783,6 +785,34 @@ const Settings = () => {
                   <p className="text-sm text-muted-foreground">Ende-zu-Ende Verschlüsselung für Transkripte</p>
                 </div>
                 <Switch defaultChecked />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Help & Tutorials */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <HelpCircle className="h-5 w-5 text-primary" />
+                <CardTitle>Hilfe & Anleitungen</CardTitle>
+              </div>
+              <CardDescription>Lerne die App kennen und erhalte Unterstützung</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Kalender-Tour</Label>
+                  <p className="text-sm text-muted-foreground">Lerne, wie du deinen Kalender verbindest und automatische Aufnahmen aktivierst</p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={resetTour}
+                  className="gap-2"
+                >
+                  <PlayCircle className="h-4 w-4" />
+                  Tour starten
+                </Button>
               </div>
             </CardContent>
           </Card>
