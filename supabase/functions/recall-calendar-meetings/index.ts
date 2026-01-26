@@ -615,13 +615,16 @@ serve(async (req) => {
 
         const authData = await authResponse.json();
         
-        // Build the update payload
-        const updatePayload: Record<string, unknown> = { preferences: recallPreferences };
+        // Build the update payload - bot_name MUST be inside preferences object!
+        const updatePayload: Record<string, unknown> = { 
+          preferences: {
+            ...recallPreferences,
+            ...(botConfig?.bot_name && { bot_name: botConfig.bot_name })
+          }
+        };
         
-        // Add bot config if provided (for user-specific bot name and avatar)
         if (botConfig?.bot_name) {
-          updatePayload.bot_name = botConfig.bot_name;
-          console.log('[Sync] Including bot_name in sync:', botConfig.bot_name);
+          console.log('[Sync] Including bot_name INSIDE preferences:', botConfig.bot_name);
         }
         
         // Step 2: PATCH to /api/v1/calendar/user/ with auth token header (NO UUID in path!)
