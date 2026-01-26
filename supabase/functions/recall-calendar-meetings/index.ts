@@ -647,14 +647,16 @@ serve(async (req) => {
         }
         const result = await response.json();
         console.log('[Sync] Full response from Recall.ai:', JSON.stringify(result));
-        console.log('[Sync] Confirmed bot_name:', result.bot_name);
         console.log('[Sync] Received preferences from Recall:', JSON.stringify(result.preferences));
+
+        const confirmedBotName = (result?.preferences as any)?.bot_name ?? (result as any)?.bot_name;
+        console.log('[Sync] Confirmed bot_name:', confirmedBotName);
         
-        // Verify the bot name was actually set
-        if (botConfig?.bot_name && result.bot_name !== botConfig.bot_name) {
-          console.warn('[Sync] bot_name mismatch! Expected:', botConfig.bot_name, 'Got:', result.bot_name);
+        // Verify the bot name was actually set (Recall returns it inside preferences)
+        if (botConfig?.bot_name && confirmedBotName !== botConfig.bot_name) {
+          console.warn('[Sync] bot_name mismatch! Expected:', botConfig.bot_name, 'Got:', confirmedBotName);
         } else if (botConfig?.bot_name) {
-          console.log('[Sync] ✓ bot_name successfully set to:', result.bot_name);
+          console.log('[Sync] ✓ bot_name successfully set to:', confirmedBotName);
         }
         
         return true;
