@@ -1,84 +1,64 @@
 
+# Kalender-Automatik standardmäßig deaktivieren
 
-# Bot-Namen für Kalender-Automatik korrigieren
+## Übersicht
 
-## Problem-Analyse
+Die automatische Bot-Teilnahme an Meetings soll standardmäßig **deaktiviert** sein. Benutzer müssen die Funktion explizit einschalten.
 
-Die Logs zeigen klar das Problem:
-```
-[Sync] Sent preferences body: {"preferences":{...},"bot_name":"Risoniq Notetaker"}
-[Sync] Full response from Recall.ai: {...,"preferences":{"bot_name":"dominikbauer Notetaker"}}
-```
+## Änderungen
 
-**Ursache:** Der `bot_name` wird auf der **Root-Ebene** des API-Payloads gesendet, aber Recall.ai erwartet ihn **innerhalb des `preferences`-Objekts**.
+### 1. Frontend-Hook: useRecallCalendarMeetings.ts
 
-Laut Recall.ai API-Dokumentation ist die Response-Struktur:
-```json
-{
-  "preferences": {
-    "record_external": true,
-    "record_internal": true,
-    "bot_name": "string"  // <-- bot_name gehört HIER rein!
-  }
-}
-```
+**Datei:** `src/hooks/useRecallCalendarMeetings.ts`
 
-## Geplante Änderung
+Zeile 77-82 ändern:
 
-**Datei: `supabase/functions/recall-calendar-meetings/index.ts`**
-
-In der Funktion `syncPreferencesToRecall` (Zeile 587-662) muss der `bot_name` ins `preferences`-Objekt verschoben werden:
-
-```text
-VORHER (falsch):
-┌─────────────────────────────┐
-│ {                           │
-│   preferences: {            │
-│     record_external: true,  │
-│     record_internal: true   │
-│   },                        │
-│   bot_name: "RISONIQ..."    │  ← Recall.ai ignoriert dies!
-│ }                           │
-└─────────────────────────────┘
-
-NACHHER (korrekt):
-┌─────────────────────────────┐
-│ {                           │
-│   preferences: {            │
-│     record_external: true,  │
-│     record_internal: true,  │
-│     bot_name: "RISONIQ..."  │  ← Wird jetzt akzeptiert!
-│   }                         │
-│ }                           │
-└─────────────────────────────┘
-```
-
-### Code-Änderung
-
-In Zeile 619-625:
-
-**Aktuell:**
 ```typescript
-const updatePayload: Record<string, unknown> = { preferences: recallPreferences };
-
-if (botConfig?.bot_name) {
-  updatePayload.bot_name = botConfig.bot_name;  // FALSCH - auf Root-Ebene
-}
+const [preferences, setPreferences] = useState<RecordingPreferences>({
+  record_all: true,
+  record_only_owned: false,
+  record_external: true,
+  auto_record: false,  // ← von true auf false
+});
 ```
 
-**Neu:**
+### 2. Älterer Hook: useRecallCalendar.ts
+
+**Datei:** `src/hooks/useRecallCalendar.ts`
+
+Zeile 46-50 ändern:
+
 ```typescript
-const updatePayload: Record<string, unknown> = { 
-  preferences: {
-    ...recallPreferences,
-    ...(botConfig?.bot_name && { bot_name: botConfig.bot_name })  // RICHTIG - in preferences
-  }
+const [preferences, setPreferences] = useState<RecordingPreferences>({
+  record_all: true,
+  record_only_owned: false,
+  record_external: true,
+  auto_record: false,  // ← von true auf false
+});
+```
+
+### 3. Backend Edge Function: recall-calendar-meetings
+
+**Datei:** `supabase/functions/recall-calendar-meetings/index.ts`
+
+Zeile 688-692 in der `init_preferences` Aktion ändern:
+
+```typescript
+const defaultPreferences = {
+  record_all: true,
+  record_only_owned: false,
+  record_external: true,
+  auto_record: false,  // ← von true auf false
 };
 ```
 
 ## Ergebnis
 
-Nach dieser Änderung wird der Bot-Name "RISONIQ Notetaker" korrekt an Recall.ai übertragen und bei allen automatisch geplanten Kalender-Meetings verwendet.
+Nach dieser Änderung:
+- Neue Benutzer haben die Kalender-Automatik **standardmäßig deaktiviert**
+- Der Bot tritt erst automatisch Meetings bei, wenn der Benutzer "Automatische Aufnahme" auf der Kalender-Seite aktiviert
+- Bestehende Benutzer mit bereits gespeicherten Einstellungen sind nicht betroffen (ihre Einstellungen bleiben erhalten)
 
-**Hinweis:** Nach dem Deployment muss einmalig die Bot-Einstellung in den Settings gespeichert werden, um den neuen Namen zu Recall.ai zu synchronisieren.
+## Technischer Hinweis
 
+Die Einstellungen werden serverseitig in der `recall_calendar_users` Tabelle gespeichert. Die Frontend-Defaults dienen nur als Fallback, bis die tatsächlichen Einstellungen vom Server geladen wurden.
