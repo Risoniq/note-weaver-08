@@ -30,7 +30,7 @@ export const createSpeakerColorMap = (speakerNames: string[]): Map<string, typeo
 
 // Extrahiert alle einzigartigen Sprecher aus einem Transkript in Reihenfolge
 export const extractSpeakersInOrder = (transcript: string): string[] => {
-  const speakerPattern = /^([A-Za-zÀ-ÿ\s\-\.0-9]+?):\s/gm;
+  const speakerPattern = /^([A-Za-zÀ-ÿ\s\-\.,0-9]+?):\s/gm;
   const seenSpeakers = new Set<string>();
   const orderedSpeakers: string[] = [];
   
@@ -65,7 +65,7 @@ export const parseTranscriptWithColors = (transcript: string): TranscriptLine[] 
   let currentColor = SPEAKER_COLORS[0];
   
   for (const line of lines) {
-    const match = line.match(/^([A-Za-zÀ-ÿ\s\-\.0-9]+?):\s(.*)$/);
+    const match = line.match(/^([A-Za-zÀ-ÿ\s\-\.,0-9]+?):\s(.*)$/);
     
     if (match) {
       // Vorherigen Block speichern
