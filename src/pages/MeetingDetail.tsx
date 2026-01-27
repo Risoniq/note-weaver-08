@@ -35,8 +35,10 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { toast } from "sonner";
 import { ColoredTranscript, SpeakerLegend } from "@/components/transcript/ColoredTranscript";
+import { SpeakerQualityBanner } from "@/components/transcript/SpeakerQualityBanner";
 import { useSpeakerSuggestions } from "@/hooks/useSpeakerSuggestions";
 import { extractSpeakersInOrder, createSpeakerColorMap, SPEAKER_COLORS } from "@/utils/speakerColors";
+import { analyzeSpeakerQuality, SpeakerQualityResult } from "@/utils/speakerQuality";
 
 type TimeFilter = 'heute' | '7tage' | '30tage' | '90tage' | 'alle';
 
@@ -73,6 +75,13 @@ export default function MeetingDetail() {
     const speakers = extractSpeakersInOrder(transcript);
     return createSpeakerColorMap(speakers);
   }, [isEditingTranscript, editedTranscript, recording?.transcript_text]);
+
+  // Sprecher-Qualitätsprüfung
+  const speakerQuality = useMemo((): SpeakerQualityResult => {
+    const transcript = recording?.transcript_text || '';
+    const speakers = extractSpeakersInOrder(transcript);
+    return analyzeSpeakerQuality(speakers, expectedSpeakerCount || undefined);
+  }, [recording?.transcript_text, expectedSpeakerCount]);
 
   const fetchRecording = useCallback(async () => {
     if (!id) return null;
@@ -1078,10 +1087,18 @@ export default function MeetingDetail() {
                       placeholder="Transkript bearbeiten..."
                     />
                   ) : (
-                    <div className="max-h-[500px] overflow-y-auto rounded-2xl bg-secondary/30 p-4">
-                      {/* Farbige Transkript-Anzeige mit Sprecher-Badges */}
-                      <ColoredTranscript transcript={recording.transcript_text} />
-                    </div>
+                    <>
+                      {/* Sprecher-Qualitäts-Banner */}
+                      <SpeakerQualityBanner
+                        quality={speakerQuality}
+                        onEditClick={startEditingTranscript}
+                        className="mb-4"
+                      />
+                      <div className="max-h-[500px] overflow-y-auto rounded-2xl bg-secondary/30 p-4">
+                        {/* Farbige Transkript-Anzeige mit Sprecher-Badges */}
+                        <ColoredTranscript transcript={recording.transcript_text} />
+                      </div>
+                    </>
                   )}
                   
                   {isEditingTranscript && (
