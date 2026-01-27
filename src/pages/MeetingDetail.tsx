@@ -29,7 +29,8 @@ import {
   Save,
   X,
   Replace,
-  History
+  History,
+  Download
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -39,6 +40,8 @@ import { SpeakerQualityBanner } from "@/components/transcript/SpeakerQualityBann
 import { useSpeakerSuggestions } from "@/hooks/useSpeakerSuggestions";
 import { extractSpeakersInOrder, createSpeakerColorMap, SPEAKER_COLORS } from "@/utils/speakerColors";
 import { analyzeSpeakerQuality, SpeakerQualityResult } from "@/utils/speakerQuality";
+import { EmailEditModal } from "@/components/meeting/EmailEditModal";
+import { ReportDownloadModal } from "@/components/meeting/ReportDownloadModal";
 
 type TimeFilter = 'heute' | '7tage' | '30tage' | '90tage' | 'alle';
 
@@ -68,6 +71,13 @@ export default function MeetingDetail() {
   const [calendarAttendees, setCalendarAttendees] = useState<{ name: string; email: string }[]>([]);
   const [dbParticipantSuggestions, setDbParticipantSuggestions] = useState<{ id: string; name: string }[]>([]);
   const [expectedSpeakerCount, setExpectedSpeakerCount] = useState<number>(0);
+  
+  // E-Mail Bearbeitung States
+  const [showEmailEditModal, setShowEmailEditModal] = useState(false);
+  const [customEmail, setCustomEmail] = useState<string | null>(null);
+  
+  // Bericht Download States
+  const [showReportModal, setShowReportModal] = useState(false);
   
   // Sprecher-Farben für Edit-Modus
   const speakerColorMap = useMemo(() => {
@@ -235,7 +245,7 @@ export default function MeetingDetail() {
 
   const copyEmailToClipboard = () => {
     if (!recording) return;
-    const email = generateFollowUpEmail(recording);
+    const email = customEmail || generateFollowUpEmail(recording);
     navigator.clipboard.writeText(email);
     setCopiedEmail(true);
     toast.success("E-Mail in Zwischenablage kopiert");
@@ -811,8 +821,32 @@ export default function MeetingDetail() {
               </Card>
             )}
 
-            {/* Transcript */}
+            {/* Transcript Toolbar + Card */}
             {recording.transcript_text && (
+              <>
+                {/* Toolbar über dem Transkript */}
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-secondary/30 animate-fade-in" style={{ animationDelay: '380ms' }}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => syncRecordingStatus(true)}
+                    disabled={isSyncing}
+                    className="rounded-xl hover:bg-primary/10 transition-all"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
+                    {isSyncing ? 'Aktualisiere...' : 'Transkript neu laden'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowReportModal(true)}
+                    className="rounded-xl"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Bericht herunterladen
+                  </Button>
+                </div>
+
               <Card className="glass-card border-0 rounded-3xl shadow-card animate-fade-in" style={{ animationDelay: '400ms' }}>
                 <CardHeader className="pb-3 pt-6 px-6">
                   <div className="flex items-center justify-between">
@@ -1108,6 +1142,7 @@ export default function MeetingDetail() {
                   )}
                 </CardContent>
               </Card>
+              </>
             )}
           </div>
 
@@ -1147,30 +1182,40 @@ export default function MeetingDetail() {
               </CardHeader>
               <CardContent className="px-6 pb-6 space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Automatisch generierte Follow-Up E-Mail
+                  {customEmail ? 'Mit KI bearbeitete E-Mail' : 'Automatisch generierte Follow-Up E-Mail'}
                 </p>
                 <div className="max-h-48 overflow-y-auto rounded-2xl bg-secondary/30 p-4">
                   <pre className="text-xs text-foreground whitespace-pre-wrap font-sans">
-                    {generateFollowUpEmail(recording)}
+                    {customEmail || generateFollowUpEmail(recording)}
                   </pre>
                 </div>
-                <Button 
-                  className="w-full rounded-xl" 
-                  variant={copiedEmail ? "secondary" : "outline"}
-                  onClick={copyEmailToClipboard}
-                >
-                  {copiedEmail ? (
-                    <>
-                      <Check className="h-4 w-4 mr-2" />
-                      Kopiert!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-4 w-4 mr-2" />
-                      E-Mail kopieren
-                    </>
-                  )}
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    className="flex-1 rounded-xl" 
+                    variant="outline"
+                    onClick={() => setShowEmailEditModal(true)}
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Mit KI bearbeiten
+                  </Button>
+                  <Button 
+                    className="flex-1 rounded-xl" 
+                    variant={copiedEmail ? "secondary" : "outline"}
+                    onClick={copyEmailToClipboard}
+                  >
+                    {copiedEmail ? (
+                      <>
+                        <Check className="h-4 w-4 mr-2" />
+                        Kopiert!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4 mr-2" />
+                        Kopieren
+                      </>
+                    )}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 
@@ -1236,6 +1281,40 @@ export default function MeetingDetail() {
           </div>
         </div>
       </div>
+      
+      {/* Email Edit Modal */}
+      <EmailEditModal
+        open={showEmailEditModal}
+        onOpenChange={setShowEmailEditModal}
+        currentEmail={customEmail || generateFollowUpEmail(recording)}
+        onEmailUpdate={(newEmail) => setCustomEmail(newEmail)}
+        recordingContext={{
+          title: recording.title || undefined,
+          summary: recording.summary || undefined,
+          key_points: recording.key_points || undefined,
+          action_items: recording.action_items || undefined,
+        }}
+      />
+      
+      {/* Report Download Modal */}
+      <ReportDownloadModal
+        open={showReportModal}
+        onOpenChange={setShowReportModal}
+        recording={{
+          id: recording.id,
+          title: recording.title,
+          created_at: recording.created_at,
+          summary: recording.summary,
+          key_points: recording.key_points,
+          action_items: recording.action_items,
+          transcript_text: recording.transcript_text,
+          participants: recording.participants as { id: string; name: string }[] | null,
+          duration: recording.duration,
+          word_count: recording.word_count,
+          meeting_url: recording.meeting_url,
+        }}
+        followUpEmail={customEmail || generateFollowUpEmail(recording)}
+      />
     </div>
   );
 }

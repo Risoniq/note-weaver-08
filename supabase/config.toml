@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.cleanup-stale-recordings]
 verify_jwt = false
+
+[functions.edit-email-ai]
+verify_jwt = false
