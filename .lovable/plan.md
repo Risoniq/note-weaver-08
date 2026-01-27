@@ -1,157 +1,182 @@
 
-# Automatische Sprecher-Qualitaetspruefung
+
+# Bericht-Einstellungen und E-Mail-KI-Bearbeitung
 
 ## Uebersicht
 
-Bei jedem Meeting soll automatisch geprueft werden, ob eine saubere Unterscheidung zwischen den Sprechern besteht. Falls Probleme erkannt werden (z.B. alle Sprecher heissen "Unbekannt" oder es gibt nur generische Namen wie "Sprecher 1"), wird dem Benutzer eine Warnung angezeigt mit Handlungsempfehlungen.
+Der Benutzer moechte folgende drei Funktionen:
+1. **KI-gestuetzte E-Mail-Bearbeitung** (mit Claude/Lovable AI)
+2. **"Transkript neu laden" Button ueber dem Transkript** 
+3. **"Download Bericht" Button** mit einem Einstellungs-Layer (fuer Admin-Zwecke)
 
-## Analyse-Logik
+---
 
-Die Sprecher-Qualitaet wird anhand folgender Kriterien bewertet:
+## 1. E-Mail mit KI bearbeiten
 
-| Problem | Beschreibung | Schweregrad |
-|---------|--------------|-------------|
-| Alle "Unbekannt" | Alle Sprecher heissen "Unbekannt" | Kritisch |
-| Nur generische Namen | Nur "Sprecher 1", "Sprecher 2", etc. | Warnung |
-| Mischung | Echte Namen + generische Namen | Hinweis |
-| Erwartung nicht erfuellt | Weniger Sprecher erkannt als erwartet (vs. Kalender-Teilnehmer) | Hinweis |
+### Aktuelle Situation
+Die Follow-Up E-Mail wird in der rechten Spalte angezeigt und kann nur kopiert werden.
 
-## Loesung
+### Neue Funktion
+Ein "Mit KI bearbeiten" Button oeffnet ein Modal, in dem der Benutzer:
+- Die generierte E-Mail sieht
+- Anweisungen eingeben kann (z.B. "Mache die E-Mail formeller" oder "Fuege Deadline fuer To-Dos hinzu")
+- Die KI-generierte verbesserte Version erhaelt
 
-### 1. Neue Utility-Funktion: `analyzeSpeakerQuality`
+### Technische Umsetzung
 
-**Datei:** `src/utils/speakerQuality.ts` (neue Datei)
+**Neue Edge Function:** `supabase/functions/edit-email-ai/index.ts`
+- Nimmt die aktuelle E-Mail und Benutzeranweisungen entgegen
+- Verwendet Lovable AI (google/gemini-3-flash-preview) fuer die Bearbeitung
+- Gibt die ueberarbeitete E-Mail zurueck
 
-```typescript
-export interface SpeakerQualityResult {
-  status: 'good' | 'warning' | 'critical';
-  issues: string[];
-  suggestions: string[];
-  stats: {
-    totalSpeakers: number;
-    realNames: number;
-    genericNames: number;  // "Sprecher X"
-    unknownCount: number;  // "Unbekannt"
-  };
-}
+**Neue Komponente:** `src/components/meeting/EmailEditModal.tsx`
+- Modal mit Textarea fuer Anweisungen
+- Vorschau der aktuellen und neuen E-Mail
+- "Uebernehmen" und "Abbrechen" Buttons
 
-export const analyzeSpeakerQuality = (
-  speakers: string[],
-  expectedCount?: number
-): SpeakerQualityResult => {
-  // Kategorisiere Sprecher
-  const realNames = speakers.filter(s => 
-    !s.startsWith('Sprecher ') && 
-    s !== 'Unbekannt' &&
-    !s.match(/^Sprecher\s*\d+$/i)
-  );
-  const genericNames = speakers.filter(s => s.match(/^Sprecher\s*\d+$/i));
-  const unknownCount = speakers.filter(s => s === 'Unbekannt').length;
-  
-  const issues: string[] = [];
-  const suggestions: string[] = [];
-  let status: 'good' | 'warning' | 'critical' = 'good';
-  
-  // Pruefe auf kritische Probleme
-  if (speakers.length > 0 && realNames.length === 0) {
-    if (unknownCount > 0 || genericNames.length > 0) {
-      status = 'critical';
-      issues.push('Keine echten Sprechernamen erkannt');
-      suggestions.push('Klicke auf "Namen bearbeiten" um Sprecher zu identifizieren');
-    }
-  }
-  
-  // Pruefe auf Warnungen
-  if (genericNames.length > 0 && realNames.length > 0) {
-    status = status === 'critical' ? 'critical' : 'warning';
-    issues.push(`${genericNames.length} Sprecher noch nicht identifiziert`);
-    suggestions.push('Ordne die generischen Namen den echten Teilnehmern zu');
-  }
-  
-  // Pruefe Erwartung
-  if (expectedCount && realNames.length < expectedCount) {
-    const missing = expectedCount - realNames.length;
-    issues.push(`${missing} erwartete Teilnehmer nicht zugeordnet`);
-  }
-  
-  return {
-    status,
-    issues,
-    suggestions,
-    stats: {
-      totalSpeakers: speakers.length,
-      realNames: realNames.length,
-      genericNames: genericNames.length,
-      unknownCount,
-    },
-  };
-};
-```
+**Aenderung:** `src/pages/MeetingDetail.tsx`
+- Neuer State fuer E-Mail-Bearbeitung
+- Button "Mit KI bearbeiten" neben dem "E-Mail kopieren" Button
+- Integration des Modals
 
-### 2. Neue Komponente: `SpeakerQualityBanner`
+---
 
-**Datei:** `src/components/transcript/SpeakerQualityBanner.tsx` (neue Datei)
+## 2. "Transkript neu laden" Button ueber dem Transkript
 
-Eine Banner-Komponente, die Warnungen anzeigt:
+### Aktuelle Situation
+Der Button befindet sich im Header der Seite (oben rechts neben dem Status-Badge).
 
-- **Kritisch (rot):** "Sprecher nicht unterscheidbar - bitte Namen zuordnen"
-- **Warnung (gelb):** "X von Y Sprechern noch nicht identifiziert"  
-- **Hinweis (blau):** "Kalender zeigt mehr Teilnehmer als erkannt"
+### Neue Platzierung
+Der Button wird zusaetzlich direkt ueber dem Transkript-Card angezeigt, zusammen mit dem "Download Bericht" Button.
 
-Mit einem Button der direkt zum "Namen bearbeiten" Modus wechselt.
+### Technische Umsetzung
 
-### 3. Integration in MeetingDetail
+**Aenderung:** `src/pages/MeetingDetail.tsx`
+- Neue Button-Leiste oberhalb des Transkript-Cards
+- Enthaelt "Transkript neu laden" und "Download Bericht" Buttons
+- Wird nur angezeigt wenn `recording.transcript_text` existiert
 
-**Datei:** `src/pages/MeetingDetail.tsx`
+---
 
-Die Qualitaetspruefung wird automatisch beim Laden des Meetings ausgefuehrt. Das Banner erscheint oberhalb des Transkripts, wenn Probleme erkannt werden.
+## 3. "Download Bericht" mit Einstellungs-Layer
 
-```text
-+------------------------------------------+
-|  [!] 2 Sprecher noch nicht identifiziert |
-|      Klicke hier um Namen zuzuordnen     |
-+------------------------------------------+
-|  Transkript                              |
-|  ...                                     |
-+------------------------------------------+
-```
+### Funktion
+Ein Button der ein Modal oeffnet mit konfigurierbaren Export-Optionen:
 
-## Benutzer-Flow
+**Konfigurationsoptionen:**
+- Dateiformat: TXT, Markdown, PDF (zukuenftig)
+- Inhalt auswaehlen:
+  - Zusammenfassung
+  - Key Points
+  - Action Items
+  - Vollstaendiges Transkript
+  - Teilnehmerliste
+- E-Mail-Vorlage einbeziehen
+- Sprache der Ausgabe
 
-1. Meeting-Detail Seite wird geladen
-2. Sprecher werden aus Transkript extrahiert
-3. Qualitaetspruefung wird automatisch durchgefuehrt
-4. Bei Problemen: Banner erscheint mit klarer Handlungsanweisung
-5. Benutzer klickt auf Banner -> "Namen bearbeiten" Modus startet automatisch
+**Admin-Only Optionen (spaeter ausblendbar):**
+- Metadaten einbeziehen (IDs, Timestamps)
+- Debug-Informationen
+- Rohformat der Daten
+
+### Technische Umsetzung
+
+**Neue Komponente:** `src/components/meeting/ReportDownloadModal.tsx`
+- Modal mit Checkboxen fuer Inhaltsauswahl
+- Format-Dropdown
+- Admin-Bereich (kann spaeter mit Feature-Flag ausgeblendet werden)
+- Generiert und downloadet den Bericht
+
+**Aenderung:** `src/pages/MeetingDetail.tsx`
+- State fuer Modal-Sichtbarkeit
+- Button "Download Bericht" in der Transkript-Leiste
+
+---
 
 ## Betroffene Dateien
 
 | Datei | Aenderung |
 |-------|-----------|
-| `src/utils/speakerQuality.ts` | Neue Datei mit Analyse-Logik |
-| `src/components/transcript/SpeakerQualityBanner.tsx` | Neue Banner-Komponente |
-| `src/pages/MeetingDetail.tsx` | Integration der Qualitaetspruefung und Banner |
+| `supabase/functions/edit-email-ai/index.ts` | Neue Edge Function fuer KI-E-Mail-Bearbeitung |
+| `src/components/meeting/EmailEditModal.tsx` | Neues Modal fuer E-Mail-Bearbeitung mit KI |
+| `src/components/meeting/ReportDownloadModal.tsx` | Neues Modal fuer Bericht-Einstellungen |
+| `src/pages/MeetingDetail.tsx` | Integration beider Modals und Button-Platzierung |
+| `supabase/config.toml` | Edge Function Konfiguration |
 
-## Technische Details
+---
 
-### Sprecher-Kategorisierung
+## UI-Layout Aenderungen
 
+### Aktuelle Struktur (Header):
 ```text
-"Dominik Bauer"    -> realName (echter Name)
-"Sforzin, Marco"   -> realName (echter Name mit Komma)
-"Sprecher 1"       -> genericName (automatisch nummeriert)
-"Sprecher 2"       -> genericName
-"Unbekannt"        -> unknown (nicht unterscheidbar)
+[<] Meeting Titel                     [Transkript neu laden] [Status]
 ```
 
-### Banner-Styling
+### Neue Struktur (ueber Transkript-Card):
+```text
++--------------------------------------------------------+
+| [RefreshCw] Transkript neu laden    [Download] Bericht |
++--------------------------------------------------------+
+| Transkript                                             |
+| [Quality Banner]                                       |
+| [Transkript Inhalt...]                                 |
++--------------------------------------------------------+
+```
 
-- Kritisch: `bg-destructive/10 border-destructive text-destructive`
-- Warnung: `bg-warning/10 border-warning text-warning-foreground`
-- Hinweis: `bg-primary/10 border-primary text-primary`
+### Neue E-Mail Sektion:
+```text
++----------------------------------+
+| Follow-Up E-Mail                 |
++----------------------------------+
+| [E-Mail Vorschau]                |
++----------------------------------+
+| [Mit KI bearbeiten] [Kopieren]   |
++----------------------------------+
+```
 
-### Automatisches Ausblenden
+---
 
-Das Banner wird ausgeblendet, wenn:
-- Alle Sprecher echte Namen haben
-- Der Benutzer die Warnung bereits im Edit-Modus bearbeitet
+## Edge Function: edit-email-ai
+
+```typescript
+// Verwendet Lovable AI fuer E-Mail-Bearbeitung
+// Input: { email: string, instructions: string, recording_context: {...} }
+// Output: { edited_email: string }
+
+const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${LOVABLE_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "google/gemini-3-flash-preview",
+    messages: [
+      { role: "system", content: "Du bist ein professioneller E-Mail-Assistent..." },
+      { role: "user", content: `Bearbeite diese E-Mail: ${email}\n\nAnweisungen: ${instructions}` }
+    ],
+    stream: false,
+  }),
+});
+```
+
+---
+
+## Feature-Flag fuer Admin-Optionen
+
+Um die Admin-Optionen spaeter auszublenden:
+
+```typescript
+// In ReportDownloadModal.tsx
+const isAdmin = true; // Spaeter: useAdminCheck() oder Feature-Flag
+
+{isAdmin && (
+  <div className="border-t pt-4 mt-4">
+    <p className="text-sm font-medium text-muted-foreground mb-2">
+      Erweiterte Optionen (Admin)
+    </p>
+    {/* Admin-only Optionen */}
+  </div>
+)}
+```
+
