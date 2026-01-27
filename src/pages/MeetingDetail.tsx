@@ -470,8 +470,15 @@ export default function MeetingDetail() {
   // Teilnehmer aus Transkript oder participants-Feld extrahieren
   const extractParticipants = (transcript: string | null): string[] => {
     if (!transcript) return [];
+    
+    // Meta-Daten am Anfang entfernen (alles vor der --- Trennlinie)
+    const separatorIndex = transcript.indexOf('---');
+    const cleanedTranscript = separatorIndex !== -1 
+      ? transcript.substring(separatorIndex + 3) 
+      : transcript;
+    
     const speakerPattern = /^([^:]+):/gm;
-    const matches = transcript.match(speakerPattern);
+    const matches = cleanedTranscript.match(speakerPattern);
     if (!matches) return [];
     const speakers = matches.map(m => m.replace(':', '').trim());
     // Alle unique Sprecher zurückgeben (auch "Unbekannt" und "Sprecher X")
