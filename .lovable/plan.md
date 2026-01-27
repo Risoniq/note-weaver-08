@@ -1,90 +1,115 @@
 
 
-# Teilnehmeranzahl nur mit echten Usern zaehlen
+# Teilnehmeranzahl-Bug: Meta-Daten werden als Sprecher gezaehlt
 
-## Uebersicht
+## Problem-Analyse
 
-Die Teilnehmeranzahl soll ueberall im System nur tatsaechliche Meeting-Teilnehmer zaehlen und Bots/Notetaker ausschliessen. Aktuell filtert `MeetingDetail.tsx` bereits korrekt, aber `TranscriptCard.tsx` zeigt alle Teilnehmer inklusive Bots an.
+Das Transkript enthaelt am Anfang Meta-Daten im Format:
 
-## Analyse der betroffenen Komponenten
+```text
+[Meeting-Info]
+User-ID: 704551d2-286b-4e57-80d0-721f198aea43
+User-Email: dominik@risoniq.ai
+Recording-ID: a7f0cdf9-b6ca-47f6-8f48-3992a318b979
+Erstellt: 2026-01-27T11:01:24.170Z
+---
+```
 
-| Komponente | Aktueller Zustand | Aenderung noetig |
-|------------|-------------------|------------------|
-| `MeetingDetail.tsx` | Filtert Bots mit `isBot()` Funktion | Nein |
-| `TranscriptCard.tsx` | Keine Filterung (`participants?.length`) | Ja |
-| `UpcomingMeetings.tsx` | Zeigt Kalender-Teilnehmer (nicht Recordings) | Nein |
-| `RecordingCard.tsx` | Zeigt keine Teilnehmeranzahl | Nein |
+Die `extractParticipants`-Funktion in `MeetingDetail.tsx` verwendet `/^([^:]+):/gm` um Sprecher zu erkennen. Dies erfasst faelschlicherweise auch die Meta-Zeilen:
+- `User-ID`
+- `User-Email`  
+- `Recording-ID`
+- `Erstellt`
+
+Plus die 2 echten Sprecher (`Sforzin, Marco` und `Dominik Bauer`) = **6 "Teilnehmer"**
 
 ## Loesung
 
-Eine wiederverwendbare Utility-Funktion erstellen und in `TranscriptCard.tsx` anwenden.
+Es gibt zwei Ansaetze:
 
-### 1. Neue Utility-Funktion erstellen
+### Option A: Meta-Daten vor Extraktion entfernen (empfohlen)
 
-**Datei:** `src/utils/participantUtils.ts` (neue Datei)
+Den Transkript-Block nach der `---` Trennlinie fuer die Sprecher-Extraktion verwenden:
 
 ```typescript
-// Bot/Notetaker-Erkennung
-const BOT_PATTERNS = ['notetaker', 'bot', 'recording', 'assistant', 'meetingbot'];
-
-export const isBot = (name: string): boolean => {
-  const lowercaseName = name.toLowerCase();
-  return BOT_PATTERNS.some(pattern => lowercaseName.includes(pattern));
-};
-
-export interface Participant {
-  id: string;
-  name: string;
-}
-
-// Filtert Bots aus Teilnehmerliste
-export const filterRealParticipants = (
-  participants: Participant[] | null | undefined
-): Participant[] => {
-  if (!participants || !Array.isArray(participants)) return [];
-  return participants.filter(p => p.name && !isBot(p.name));
-};
-
-// Zaehlt nur echte Teilnehmer
-export const countRealParticipants = (
-  participants: Participant[] | null | undefined
-): number => {
-  return filterRealParticipants(participants).length;
+const extractParticipants = (transcript: string | null): string[] => {
+  if (!transcript) return [];
+  
+  // Meta-Daten am Anfang entfernen (alles vor ---)
+  const separatorIndex = transcript.indexOf('---');
+  const cleanedTranscript = separatorIndex !== -1 
+    ? transcript.substring(separatorIndex + 3) 
+    : transcript;
+  
+  const speakerPattern = /^([^:]+):/gm;
+  const matches = cleanedTranscript.match(speakerPattern);
+  if (!matches) return [];
+  const speakers = matches.map(m => m.replace(':', '').trim());
+  return [...new Set(speakers)];
 };
 ```
 
-### 2. TranscriptCard.tsx aktualisieren
+### Option B: Bekannte Meta-Felder filtern
 
-**Datei:** `src/components/transcripts/TranscriptCard.tsx`
+Die extrahierten Namen gegen eine Blocklist pruefen:
 
-**Zeile 49 aendern von:**
 ```typescript
-const participantCount = recording.participants?.length ?? 0;
+const META_FIELDS = ['User-ID', 'User-Email', 'Recording-ID', 'Erstellt', 'Meeting-Info'];
+
+const speakers = matches
+  .map(m => m.replace(':', '').trim())
+  .filter(s => !META_FIELDS.includes(s));
+```
+
+## Empfehlung
+
+**Option A** ist robuster, da sie alle zukuenftigen Meta-Felder automatisch ignoriert.
+
+## Aenderung
+
+**Datei:** `src/pages/MeetingDetail.tsx`
+
+**Zeilen 471-479 aendern von:**
+```typescript
+const extractParticipants = (transcript: string | null): string[] => {
+  if (!transcript) return [];
+  const speakerPattern = /^([^:]+):/gm;
+  const matches = transcript.match(speakerPattern);
+  if (!matches) return [];
+  const speakers = matches.map(m => m.replace(':', '').trim());
+  return [...new Set(speakers)];
+};
 ```
 
 **Zu:**
 ```typescript
-import { countRealParticipants } from "@/utils/participantUtils";
-// ...
-const participantCount = countRealParticipants(recording.participants);
+const extractParticipants = (transcript: string | null): string[] => {
+  if (!transcript) return [];
+  
+  // Meta-Daten am Anfang entfernen (alles vor der --- Trennlinie)
+  const separatorIndex = transcript.indexOf('---');
+  const cleanedTranscript = separatorIndex !== -1 
+    ? transcript.substring(separatorIndex + 3) 
+    : transcript;
+  
+  const speakerPattern = /^([^:]+):/gm;
+  const matches = cleanedTranscript.match(speakerPattern);
+  if (!matches) return [];
+  const speakers = matches.map(m => m.replace(':', '').trim());
+  return [...new Set(speakers)];
+};
 ```
-
-### 3. MeetingDetail.tsx refaktorieren (optional)
-
-Die bestehende `isBot()` Funktion in `MeetingDetail.tsx` (Zeilen 486-489) kann durch den Import aus `participantUtils.ts` ersetzt werden, um Code-Duplikation zu vermeiden.
 
 ## Ergebnis
 
 Nach dieser Aenderung:
-- Die Teilnehmeranzahl in der Transkript-Uebersicht zeigt nur echte Meeting-Teilnehmer
-- Bots wie "Notetaker", "Recording Bot", "Assistant" werden nicht gezaehlt
-- Die Logik ist zentral und wiederverwendbar fuer zukuenftige Komponenten
+- Die Meta-Daten (`User-ID`, `User-Email`, etc.) werden nicht mehr als Sprecher gezaehlt
+- Die Teilnehmeranzahl zeigt korrekt **2** fuer dieses Meeting (Sforzin, Marco und Dominik Bauer)
+- Die bestehende Bot-Filterung bleibt weiterhin aktiv
 
 ## Betroffene Dateien
 
 | Datei | Aenderung |
 |-------|-----------|
-| `src/utils/participantUtils.ts` | Neue Datei mit Bot-Filter-Logik |
-| `src/components/transcripts/TranscriptCard.tsx` | Import und Nutzung von `countRealParticipants` |
-| `src/pages/MeetingDetail.tsx` | Optional: Import statt lokaler `isBot()` Funktion |
+| `src/pages/MeetingDetail.tsx` | `extractParticipants` Funktion erweitert um Meta-Daten zu ignorieren |
 
