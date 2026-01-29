@@ -84,12 +84,9 @@ const SpeakerPieChart = ({ data }: { data: SpeakerShare[] }) => {
               className="w-3 h-3 rounded-full" 
               style={{ backgroundColor: speaker.color }}
             />
-            <span className="text-muted-foreground">
-              {speaker.name}
-              {!speaker.isCustomer && (
-                <span className="text-primary ml-1">(Sie)</span>
-              )}
-            </span>
+        <span className="text-muted-foreground">
+          {speaker.name}
+        </span>
           </div>
         ))}
       </div>
