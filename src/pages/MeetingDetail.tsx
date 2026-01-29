@@ -42,6 +42,8 @@ import { extractSpeakersInOrder, createSpeakerColorMap, SPEAKER_COLORS } from "@
 import { analyzeSpeakerQuality, SpeakerQualityResult } from "@/utils/speakerQuality";
 import { EmailEditModal } from "@/components/meeting/EmailEditModal";
 import { ReportDownloadModal } from "@/components/meeting/ReportDownloadModal";
+import { DeepDiveModal } from "@/components/meeting/DeepDiveModal";
+import { useAuth } from "@/hooks/useAuth";
 
 type TimeFilter = 'heute' | '7tage' | '30tage' | '90tage' | 'alle';
 
@@ -78,6 +80,12 @@ export default function MeetingDetail() {
   
   // Bericht Download States
   const [showReportModal, setShowReportModal] = useState(false);
+  
+  // Deep Dive Modal States
+  const [showDeepDiveModal, setShowDeepDiveModal] = useState(false);
+  
+  // Auth für User-Email
+  const { user } = useAuth();
   
   // Sprecher-Farben für Edit-Modus
   const speakerColorMap = useMemo(() => {
@@ -1161,7 +1169,7 @@ export default function MeetingDetail() {
                   </p>
                   <Button 
                     className="w-full rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-primary transition-all"
-                    onClick={() => toast.info("Deep Dive Analyse wird gestartet...")}
+                    onClick={() => setShowDeepDiveModal(true)}
                   >
                     <Sparkles className="h-4 w-4 mr-2" />
                     Analyse starten
@@ -1314,6 +1322,14 @@ export default function MeetingDetail() {
           meeting_url: recording.meeting_url,
         }}
         followUpEmail={customEmail || generateFollowUpEmail(recording)}
+      />
+      
+      {/* Deep Dive Modal */}
+      <DeepDiveModal
+        open={showDeepDiveModal}
+        onOpenChange={setShowDeepDiveModal}
+        transcript={recording.transcript_text}
+        userEmail={user?.email || null}
       />
     </div>
   );
