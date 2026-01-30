@@ -1,195 +1,105 @@
 
-# Dashboard Deep Dive Analyse - Aggregierte Meeting-Metriken
+# Plan: CORS-Fehler in Kalender Edge Functions beheben
 
-## Uebersicht
+## Problem-Analyse
 
-Neben dem "Bot zu Meeting senden" Fenster wird ein gleichgrosses Fenster mit einer aggregierten Deep Dive Analyse hinzugefuegt. Dieses zeigt Auswertungen ueber ALLE Meetings des Accounts mit Metriken in Kreisdiagrammen und Statistiken.
+Die Fehlermeldung "Failed to send a request to the Edge Function" für beide Kalender (Google und Microsoft) wird durch **unvollständige CORS-Header** in drei Edge Functions verursacht:
 
-## Neue Komponente: AccountAnalyticsCard
+1. `google-recall-auth/index.ts`
+2. `microsoft-recall-auth/index.ts` 
+3. `recall-calendar-meetings/index.ts`
 
-Ein Dashboard-Widget das folgende aggregierte Metriken aus allen Meetings anzeigt:
+### Zwei Hauptprobleme:
 
+**Problem 1: Fehlende Supabase-Client-Header**
+Die Header-Liste ist unvollständig und blockiert Browser-Anfragen:
 ```text
-+------------------------------------------+------------------------------------------+
-| Bot zu Meeting senden                    | Account-Analyse                          |
-|                                          |                                          |
-| [Meeting-Link eingeben]                  | [Pie: Sprechanteile]  [Pie: Content]    |
-| [Bot senden]                             |                                          |
-|                                          | Gesamt: 12 Meetings | 8.5h Aufnahmezeit  |
-| Unterstuetzte Plattformen:               | 47 Action Items | 23 offene Fragen       |
-| Teams, Meet, Zoom (soon), Webex (soon)   |                                          |
-+------------------------------------------+ [Deep Dive oeffnen ->]                   |
-                                           +------------------------------------------+
+Aktuell:    authorization, x-client-info, apikey, content-type
+Erforderlich: authorization, x-client-info, apikey, content-type, 
+              x-supabase-client-platform, x-supabase-client-platform-version, 
+              x-supabase-client-runtime, x-supabase-client-runtime-version
 ```
 
-## Aggregierte Metriken
-
-Aus allen abgeschlossenen Meetings (`status = 'done'`) werden folgende Daten aggregiert:
-
-### Uebersichts-Statistiken
-- Gesamtanzahl Meetings
-- Gesamte Aufnahmezeit (Stunden)
-- Durchschnittliche Meeting-Dauer
-- Anzahl Action Items insgesamt
-- Anzahl Key Points insgesamt
-- Anzahl Teilnehmer insgesamt
-
-### Kreisdiagramme (wie bei einzelnem Meeting)
-1. **Aggregierte Sprechanteile**: Wer spricht am meisten ueber alle Meetings
-2. **Business vs. Small Talk**: Durchschnitt ueber alle Transkripte
-
-### Button zum Detail-Layer
-Ein Button "Analyse oeffnen" oeffnet ein grosses Modal/Sheet mit detaillierteren Auswertungen:
-- Zeitlicher Verlauf der Meetings (Linienchart)
-- Top-Sprecher ueber alle Meetings
-- Haeufigste offene Fragen-Themen
-- Haeufigste Kundenbeduerfnisse
-- Meeting-Effizienz-Score (Business-Anteil, Action-Items pro Stunde)
+**Problem 2: Custom Domain wird nicht erkannt**
+Die Domain `notetaker2pro.com` wird von der Origin-Prüfung nicht akzeptiert. Nur `.lovableproject.com` und `.lovable.app` werden automatisch erkannt.
 
 ---
 
-## Technische Umsetzung
+## Lösung
 
-### 1. Neue Utility: `src/utils/accountAnalytics.ts`
+### Schritt 1: CORS-Funktion in allen drei Edge Functions aktualisieren
+
+Die `getCorsHeaders`-Funktion wird in allen drei Dateien durch eine standardkonforme Version ersetzt:
+
+```text
+supabase/functions/google-recall-auth/index.ts (Zeile 4-24)
+supabase/functions/microsoft-recall-auth/index.ts (Zeile 4-24)
+supabase/functions/recall-calendar-meetings/index.ts (Zeile 4-25)
+```
+
+### Neue CORS-Funktion:
 
 ```typescript
-export interface AccountAnalytics {
-  totalMeetings: number;
-  totalDurationMinutes: number;
-  totalActionItems: number;
-  totalKeyPoints: number;
-  totalParticipants: number;
-  averageDuration: number;
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigins = [
+    Deno.env.get('APP_URL') || '',
+    'https://notetaker2pro.com',
+    'https://www.notetaker2pro.com',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
+  ].filter(Boolean);
   
-  // Aggregierte Deep Dive Daten
-  aggregatedSpeakerShares: SpeakerShare[];
-  aggregatedContentBreakdown: ContentBreakdown;
-  aggregatedOpenQuestions: OpenQuestion[];
-  aggregatedCustomerNeeds: CustomerNeed[];
+  const isLovablePreview = origin.endsWith('.lovableproject.com') || origin.endsWith('.lovable.app');
+  const allowOrigin = allowedOrigins.includes(origin) || isLovablePreview 
+    ? origin 
+    : '*';
   
-  // Zeitliche Daten fuer Charts
-  meetingsPerWeek: { week: string; count: number }[];
-  durationPerWeek: { week: string; minutes: number }[];
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+    'Access-Control-Allow-Credentials': 'true',
+  };
 }
-
-export const calculateAccountAnalytics = (
-  recordings: Recording[],
-  userEmail: string | null
-): AccountAnalytics => { ... }
 ```
 
-### 2. Neue Komponente: `src/components/dashboard/AccountAnalyticsCard.tsx`
+### Änderungen im Detail:
 
-Diese Komponente:
-- Laedt alle abgeschlossenen Recordings
-- Berechnet aggregierte Metriken
-- Zeigt Mini-Kreisdiagramme und Statistiken
-- Hat einen Button zum Oeffnen des Detail-Layers
-
-### 3. Neues Modal: `src/components/dashboard/AccountAnalyticsModal.tsx`
-
-Das vollstaendige Analyse-Modal mit:
-- Groessere Kreisdiagramme
-- Zeitliche Verlaufs-Charts (Linienchart mit recharts)
-- Detaillierte Listen (Top-Sprecher, Top-Fragen, Top-Beduerfnisse)
-- Export-Optionen
-
-### 4. Aenderungen: `src/pages/Index.tsx`
-
-```typescript
-{/* Bot-Steuerung - nur wenn Kontingent verfuegbar */}
-{!quota?.is_exhausted && (
-  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-    <GlassCard title="Bot zu Meeting senden">
-      <QuickMeetingJoin onBotStarted={setActiveRecordingId} />
-    </GlassCard>
-    
-    <GlassCard title="Account-Analyse">
-      <AccountAnalyticsCard />
-    </GlassCard>
-  </div>
-)}
-```
+| Änderung | Grund |
+|----------|-------|
+| `notetaker2pro.com` hinzugefügt | Custom Domain explizit erlauben |
+| Header-Liste erweitert | Supabase JS Client sendet diese Header |
+| Fallback auf `*` statt erste Origin | Verhindert Fehler bei unbekannten Origins |
 
 ---
 
 ## Betroffene Dateien
 
-| Datei | Aenderung |
-|-------|-----------|
-| `src/utils/accountAnalytics.ts` | Neue Utility fuer aggregierte Berechnungen |
-| `src/components/dashboard/AccountAnalyticsCard.tsx` | Neues Dashboard-Widget mit Mini-Charts |
-| `src/components/dashboard/AccountAnalyticsModal.tsx` | Neues Detail-Modal mit vollstaendiger Analyse |
-| `src/pages/Index.tsx` | Grid-Layout mit zwei gleichgrossen Cards |
+| Datei | Zeilen | Änderung |
+|-------|--------|----------|
+| `supabase/functions/google-recall-auth/index.ts` | 4-24 | CORS-Funktion aktualisieren |
+| `supabase/functions/microsoft-recall-auth/index.ts` | 4-24 | CORS-Funktion aktualisieren |
+| `supabase/functions/recall-calendar-meetings/index.ts` | 4-25 | CORS-Funktion aktualisieren |
 
 ---
 
-## UI Design
+## Nach der Änderung
 
-### AccountAnalyticsCard (kompakte Ansicht)
+Die Edge Functions werden automatisch deployed. Danach:
 
-```text
-+--------------------------------------------------+
-| Account-Analyse                                  |
-+--------------------------------------------------+
-|                                                  |
-| +------------------+  +------------------+       |
-| | [Pie Chart]      |  | [Pie Chart]      |       |
-| | Sprechanteile    |  | Business/SmallT  |       |
-| +------------------+  +------------------+       |
-|                                                  |
-| +----------------------------------------------+ |
-| | 12 Meetings | 8.5h total | 42min avg        | |
-| | 47 Action Items | 156 Key Points            | |
-| +----------------------------------------------+ |
-|                                                  |
-| [TrendingUp] Deep Dive Analyse oeffnen    [->]   |
-+--------------------------------------------------+
-```
-
-### AccountAnalyticsModal (Detail-Ansicht)
-
-```text
-+----------------------------------------------------------------+
-| Account-Analyse - Alle Meetings                          [X]   |
-+----------------------------------------------------------------+
-|                                                                |
-| Uebersicht                                                     |
-| +------------+ +------------+ +------------+ +------------+    |
-| | 12         | | 8.5h       | | 47         | | 23         |    |
-| | Meetings   | | Aufnahme   | | To-Dos     | | Fragen     |    |
-| +------------+ +------------+ +------------+ +------------+    |
-|                                                                |
-| [Grosses Pie: Sprechanteile]    [Grosses Pie: Content]         |
-|                                                                |
-| Meetings pro Woche                                             |
-| [Line Chart: Zeitlicher Verlauf]                               |
-|                                                                |
-| Top Sprecher                    Haeufigste Beduerfnisse        |
-| 1. Max Mustermann (45%)        1. Schnellere Lieferung         |
-| 2. Kunde A (30%)               2. Besserer Support             |
-| 3. Kunde B (25%)               3. Preisreduktion               |
-|                                                                |
-+----------------------------------------------------------------+
-```
+1. Lade die Seite auf `notetaker2pro.com` neu
+2. Versuche erneut, Google oder Microsoft Kalender zu verbinden
+3. Die CORS-Fehler sollten behoben sein
 
 ---
 
-## Datenfluss
+## Technische Details
 
-1. **AccountAnalyticsCard** mounted
-2. Laedt alle Recordings mit `status = 'done'` via Supabase
-3. Fuer jedes Recording mit `transcript_text`:
-   - Fuehrt `performDeepDiveAnalysis()` aus
-   - Aggregiert die Ergebnisse
-4. Zeigt kompakte Uebersicht mit Mini-Charts
-5. Bei Klick auf "Deep Dive oeffnen" -> Modal mit Details
+Die Supabase JS Client Bibliothek (Version 2.87.1) sendet folgende Header bei jedem Request:
+- `x-supabase-client-platform`: Browser-Plattform
+- `x-supabase-client-platform-version`: Version
+- `x-supabase-client-runtime`: Runtime-Info
+- `x-supabase-client-runtime-version`: Runtime-Version
 
----
-
-## Performance-Ueberlegungen
-
-- **Lazy Loading**: Analyse nur fuer sichtbare/relevante Meetings
-- **Caching**: Aggregierte Daten in State cachen
-- **Limitierung**: Maximal 50 neueste Meetings analysieren
-- **useMemo**: Teure Berechnungen memoisieren
+Wenn diese Header nicht in `Access-Control-Allow-Headers` aufgeführt sind, blockiert der Browser den Request mit einem CORS-Fehler.
