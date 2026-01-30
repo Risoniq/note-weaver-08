@@ -146,7 +146,7 @@ export const MeetingChatWidget = () => {
     setInput("");
   };
   return <div className="rounded-xl p-4 bg-secondary-foreground">
-      <h3 className="font-medium mb-3 flex items-center gap-2">
+      <h3 className="font-medium mb-3 flex items-center gap-2 text-primary-foreground">
         <MessageCircle className="h-4 w-4 text-primary" />
         Fragen zu deinen Meetings
       </h3>
