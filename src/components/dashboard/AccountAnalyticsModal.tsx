@@ -187,9 +187,9 @@ export const AccountAnalyticsModal = ({ open, onClose, analytics }: AccountAnaly
             {/* Top Sprecher und Kundenbedürfnisse */}
             <div className="grid grid-cols-2 gap-6">
               {/* Top Sprecher */}
-              <div>
+              <div className="bg-muted/30 rounded-xl p-4">
                 <h3 className="font-medium mb-3 flex items-center gap-2">
-                  <Users className="h-4 w-4" />
+                  <Users className="h-4 w-4 text-primary" />
                   Top Sprecher
                 </h3>
                 <div className="space-y-2">
@@ -212,9 +212,9 @@ export const AccountAnalyticsModal = ({ open, onClose, analytics }: AccountAnaly
               </div>
 
               {/* Kundenbedürfnisse */}
-              <div>
+              <div className="bg-muted/30 rounded-xl p-4">
                 <h3 className="font-medium mb-3 flex items-center gap-2">
-                  <HeartHandshake className="h-4 w-4" />
+                  <HeartHandshake className="h-4 w-4 text-primary" />
                   Häufigste Bedürfnisse
                 </h3>
                 {analytics.aggregatedCustomerNeeds.length > 0 ? (
