@@ -59,3 +59,9 @@ verify_jwt = false
 
 [functions.edit-email-ai]
 verify_jwt = false
+
+[functions.meeting-chat]
+verify_jwt = false
+
+[functions.single-meeting-chat]
+verify_jwt = false

@@ -1330,6 +1330,10 @@ export default function MeetingDetail() {
         onOpenChange={setShowDeepDiveModal}
         transcript={recording.transcript_text}
         userEmail={user?.email || null}
+        meetingTitle={recording.title || undefined}
+        summary={recording.summary || undefined}
+        keyPoints={recording.key_points || undefined}
+        actionItems={recording.action_items || undefined}
       />
     </div>
   );
