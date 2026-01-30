@@ -19,12 +19,18 @@ interface AccountAnalyticsModalProps {
 export const AccountAnalyticsModal = ({ open, onClose, analytics }: AccountAnalyticsModalProps) => {
   if (!analytics) return null;
 
-  // Pie Chart Daten
-  const speakerChartData = analytics.aggregatedSpeakerShares.slice(0, 8).map(s => ({
-    name: s.name,
-    value: s.percentage,
-    color: s.color,
-  }));
+  // Aggregierte Sprechanteile: Eigener Account vs. Andere
+  const ownAccountTotal = analytics.aggregatedSpeakerShares
+    .filter(s => !s.isCustomer)
+    .reduce((sum, s) => sum + s.percentage, 0);
+  const othersTotal = analytics.aggregatedSpeakerShares
+    .filter(s => s.isCustomer)
+    .reduce((sum, s) => sum + s.percentage, 0);
+
+  const speakerChartData = [
+    { name: "Eigener Account", value: ownAccountTotal, color: "hsl(210, 80%, 55%)" },
+    { name: "Andere", value: othersTotal, color: "hsl(150, 70%, 50%)" },
+  ];
 
   const contentChartData = [
     { name: "Business", value: analytics.aggregatedContentBreakdown.business, color: "hsl(210, 80%, 55%)" },
@@ -69,7 +75,7 @@ export const AccountAnalyticsModal = ({ open, onClose, analytics }: AccountAnaly
 
             {/* Pie Charts */}
             <div className="grid grid-cols-2 gap-6">
-              {/* Sprechanteile */}
+              {/* Sprechanteile: Eigener Account vs. Andere */}
               <div className="bg-muted/30 rounded-xl p-4">
                 <h3 className="font-medium mb-3">Sprechanteile</h3>
                 <div className="h-40">
@@ -83,10 +89,6 @@ export const AccountAnalyticsModal = ({ open, onClose, analytics }: AccountAnaly
                         outerRadius={65}
                         paddingAngle={2}
                         dataKey="value"
-                        label={({ name, percent }) => 
-                          `${name.split(' ')[0]} ${Math.round(percent * 100)}%`
-                        }
-                        labelLine={false}
                       >
                         {speakerChartData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
@@ -95,16 +97,14 @@ export const AccountAnalyticsModal = ({ open, onClose, analytics }: AccountAnaly
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {speakerChartData.slice(0, 4).map((s, i) => (
-                    <div key={i} className="flex items-center gap-1 text-xs">
+                <div className="flex justify-center gap-4 mt-2">
+                  {speakerChartData.map((s, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
                       <div 
-                        className="w-2 h-2 rounded-full" 
+                        className="w-3 h-3 rounded-full" 
                         style={{ backgroundColor: s.color }}
                       />
-                      <span className="text-muted-foreground truncate max-w-[80px]">
-                        {s.name}
-                      </span>
+                      <span>{s.name} {s.value}%</span>
                     </div>
                   ))}
                 </div>
