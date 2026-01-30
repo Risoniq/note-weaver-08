@@ -6,22 +6,78 @@ function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || '';
   const allowedOrigins = [
     Deno.env.get('APP_URL') || '',
+    'https://notetaker2pro.com',
+    'https://www.notetaker2pro.com',
     'http://localhost:5173',
     'http://localhost:8080',
     'http://localhost:3000',
   ].filter(Boolean);
   
-  // Check if origin matches allowed origins or is a Lovable preview domain
   const isLovablePreview = origin.endsWith('.lovableproject.com') || origin.endsWith('.lovable.app');
   const allowOrigin = allowedOrigins.includes(origin) || isLovablePreview 
     ? origin 
-    : allowedOrigins[0] || '*';
+    : '*';
   
   return {
     'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
     'Access-Control-Allow-Credentials': 'true',
   };
+}
+
+// Extract real meeting URL from Teams deep links
+function extractRealMeetingUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    
+    // Check if this is a Teams launcher/deep link
+    if (parsed.hostname === 'teams.microsoft.com' && parsed.pathname.includes('/dl/launcher')) {
+      // Extract the encoded URL from the 'url' parameter
+      const encodedUrl = parsed.searchParams.get('url');
+      if (encodedUrl) {
+        // Decode the URL parameter - it's typically double-encoded
+        let decodedUrl = decodeURIComponent(encodedUrl);
+        
+        // If it starts with /_#/meet/, convert to proper Teams meeting URL
+        if (decodedUrl.startsWith('/_#/meet/') || decodedUrl.startsWith('/#/meet/')) {
+          // Extract meeting ID and password from the path
+          const meetMatch = decodedUrl.match(/meet\/(\d+)(?:\?p=([^&]+))?/);
+          if (meetMatch) {
+            const meetingId = meetMatch[1];
+            const password = meetMatch[2] || '';
+            // Build proper Teams Live meeting URL
+            const realUrl = `https://teams.live.com/meet/${meetingId}${password ? `?p=${password}` : ''}`;
+            console.log(`[URL] Converted Teams deep link to: ${realUrl}`);
+            return realUrl;
+          }
+        }
+        
+        // If it starts with /l/meetup-join, it's already a proper format
+        if (decodedUrl.startsWith('/l/meetup-join/')) {
+          const realUrl = `https://teams.microsoft.com${decodedUrl}`;
+          console.log(`[URL] Converted Teams deep link to: ${realUrl}`);
+          return realUrl;
+        }
+      }
+    }
+    
+    // Check for teams.live.com launcher links
+    if (parsed.hostname === 'teams.live.com' && parsed.pathname.includes('/dl/launcher')) {
+      const encodedUrl = parsed.searchParams.get('url');
+      if (encodedUrl) {
+        let decodedUrl = decodeURIComponent(encodedUrl);
+        if (decodedUrl.startsWith('/meet/')) {
+          const realUrl = `https://teams.live.com${decodedUrl}`;
+          console.log(`[URL] Converted Teams Live deep link to: ${realUrl}`);
+          return realUrl;
+        }
+      }
+    }
+    
+    return url;
+  } catch {
+    return url;
+  }
 }
 
 // Validate meeting URL - only allow known meeting platforms
@@ -176,8 +232,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 3. Validate meeting URL
-    const urlValidation = validateMeetingUrl(meetingUrl);
+    // 3. Extract real meeting URL from deep links
+    const realMeetingUrl = extractRealMeetingUrl(meetingUrl);
+    if (realMeetingUrl !== meetingUrl) {
+      console.log(`[URL] Original URL: ${meetingUrl}`);
+      console.log(`[URL] Extracted URL: ${realMeetingUrl}`);
+    }
+
+    // 4. Validate meeting URL
+    const urlValidation = validateMeetingUrl(realMeetingUrl);
     if (!urlValidation.valid) {
       console.error(`[Validation] Invalid meeting URL: ${urlValidation.error}`);
       return new Response(
@@ -274,11 +337,11 @@ Deno.serve(async (req) => {
     
     console.log(`[create-bot] Empfangene Parameter - botName: "${botName}", botAvatarUrl: "${botAvatarUrl}"`);
     console.log(`[create-bot] Finaler Bot Name: "${finalBotName}", Finaler Avatar: "${finalAvatarUrl}"`);
-    console.log(`[Recall] Sende Bot zu: ${meetingUrl}`);
+    console.log(`[Recall] Sende Bot zu: ${realMeetingUrl}`);
 
     // 7. Bot-Konfiguration erstellen
     const botConfig: Record<string, unknown> = {
-      meeting_url: meetingUrl,
+      meeting_url: realMeetingUrl,
       bot_name: finalBotName,
       join_at: new Date().toISOString(),
       // Speaker Timeline für Sprecher-Identifikation aktivieren
@@ -363,7 +426,7 @@ Deno.serve(async (req) => {
       .from("recordings")
       .insert({
         meeting_id: meetingId,
-        meeting_url: meetingUrl,
+        meeting_url: realMeetingUrl,
         recall_bot_id: botData.id,
         status: "joining",
         user_id: user.id, // Associate recording with authenticated user
