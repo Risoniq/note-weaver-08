@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { formatDuration, type AccountAnalytics } from "@/utils/accountAnalytics";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { MeetingChatWidget } from "./MeetingChatWidget";
 
 interface AccountAnalyticsModalProps {
   open: boolean;
@@ -183,6 +184,9 @@ export const AccountAnalyticsModal = ({ open, onClose, analytics }: AccountAnaly
                 </div>
               </div>
             )}
+
+            {/* Meeting Chat Widget */}
+            <MeetingChatWidget />
 
             {/* Top Sprecher */}
             <div className="bg-muted/30 rounded-xl p-4">
