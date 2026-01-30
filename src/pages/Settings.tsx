@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { ArrowLeft, Bell, Bot, Check, Download, FileText, HelpCircle, Loader2, Mic, PlayCircle, RefreshCw, Shield, Upload, Volume2, X } from "lucide-react";
+import { ArrowLeft, Bell, Bot, Check, Download, FileText, HelpCircle, Loader2, LogOut, Mic, PlayCircle, RefreshCw, Shield, Upload, Volume2, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useOnboardingTour } from "@/hooks/useOnboardingTour";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +18,12 @@ import { useToast } from "@/hooks/use-toast";
 const Settings = () => {
   const { toast } = useToast();
   const { resetTour } = useOnboardingTour();
+  const navigate = useNavigate();
+  
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/auth");
+  };
   
   // Bot settings state
   const [botName, setBotName] = useState("Notetaker Bot");
@@ -814,6 +821,27 @@ const Settings = () => {
                   Tour starten
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Logout */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <LogOut className="h-5 w-5 text-destructive" />
+                <CardTitle>Abmelden</CardTitle>
+              </div>
+              <CardDescription>Melde dich von deinem Konto ab</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button 
+                variant="destructive" 
+                onClick={handleLogout}
+                className="gap-2"
+              >
+                <LogOut className="h-4 w-4" />
+                Abmelden
+              </Button>
             </CardContent>
           </Card>
         </div>
