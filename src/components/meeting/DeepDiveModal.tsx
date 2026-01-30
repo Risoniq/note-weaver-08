@@ -24,12 +24,17 @@ import {
   SpeakerShare,
   ContentBreakdown 
 } from "@/utils/deepDiveAnalysis";
+import { MeetingChatWidget } from "./MeetingChatWidget";
 
 interface DeepDiveModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   transcript: string | null;
   userEmail: string | null;
+  meetingTitle?: string;
+  summary?: string;
+  keyPoints?: string[];
+  actionItems?: string[];
 }
 
 // Custom Tooltip für Pie Charts
@@ -141,7 +146,11 @@ export const DeepDiveModal = ({
   open, 
   onOpenChange, 
   transcript,
-  userEmail 
+  userEmail,
+  meetingTitle,
+  summary,
+  keyPoints,
+  actionItems
 }: DeepDiveModalProps) => {
   const analysis = useMemo((): DeepDiveAnalysis | null => {
     if (!transcript) return null;
@@ -291,6 +300,15 @@ export const DeepDiveModal = ({
                 )}
               </CardContent>
             </Card>
+
+            {/* Meeting Chat Widget */}
+            <MeetingChatWidget 
+              transcript={transcript}
+              meetingTitle={meetingTitle}
+              summary={summary}
+              keyPoints={keyPoints}
+              actionItems={actionItems}
+            />
 
             {/* Zusammenfassung Stats */}
             <Card className="border rounded-2xl bg-gradient-to-br from-primary/5 to-accent/5">
