@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.admin-view-user-data]
 verify_jwt = false
+
+[functions.admin-create-meeting]
+verify_jwt = false

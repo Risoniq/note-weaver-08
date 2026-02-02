@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, FileText, Clock, Activity, Calendar, CheckCircle, XCircle, Trash2, Shield, Settings, Eye } from 'lucide-react';
+import { ArrowLeft, Users, FileText, Clock, Activity, Calendar, CheckCircle, XCircle, Trash2, Shield, Settings, Eye, Plus } from 'lucide-react';
 import { withTokenRefresh } from '@/lib/retryWithTokenRefresh';
 import { useImpersonation } from '@/contexts/ImpersonationContext';
+import { AdminCreateMeetingDialog } from '@/components/admin/AdminCreateMeetingDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -79,6 +80,9 @@ const Admin = () => {
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [quotaHours, setQuotaHours] = useState<number>(2);
+  
+  // Create Meeting Dialog
+  const [createMeetingOpen, setCreateMeetingOpen] = useState(false);
 
   const handleViewAsUser = (user: UserData) => {
     startImpersonating(user.id, user.email);
@@ -295,14 +299,20 @@ const Admin = () => {
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-7xl">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-            <p className="text-muted-foreground">Benutzerübersicht und Statistiken</p>
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+              <p className="text-muted-foreground">Benutzerübersicht und Statistiken</p>
+            </div>
           </div>
+          <Button onClick={() => setCreateMeetingOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Meeting anlegen
+          </Button>
         </div>
 
         {/* Summary Cards */}
@@ -590,6 +600,14 @@ const Admin = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Create Meeting Dialog */}
+        <AdminCreateMeetingDialog
+          open={createMeetingOpen}
+          onOpenChange={setCreateMeetingOpen}
+          users={users.map(u => ({ id: u.id, email: u.email }))}
+          onSuccess={fetchData}
+        />
       </div>
     </div>
   );
