@@ -6,6 +6,11 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -91,9 +96,16 @@ const SpeakerPieChart = ({ data }: { data: SpeakerShare[] }) => {
               className="w-2.5 h-2.5 rounded-full flex-shrink-0" 
               style={{ backgroundColor: speaker.color }}
             />
-            <span className="text-[11px] text-muted-foreground truncate">
-              {speaker.name}
-            </span>
+            <UITooltip>
+              <TooltipTrigger asChild>
+                <span className="text-[11px] text-muted-foreground truncate cursor-default">
+                  {speaker.name}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p>{speaker.name}</p>
+              </TooltipContent>
+            </UITooltip>
           </div>
         ))}
       </div>
