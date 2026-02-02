@@ -1,146 +1,197 @@
 
-# Plan: Admin "Als Benutzer anzeigen"-Funktion
+# Plan: Admin-Funktion zum Anlegen von Meetings und Transkript-Upload
 
 ## Übersicht
 
-Als Admin möchtest du in die Einstellungen anderer Benutzer wechseln können, um deren Ansicht einzusehen. Dies wird durch eine **Impersonation-Funktion** umgesetzt, die es Admins ermöglicht, die App temporär "durch die Brille" eines anderen Benutzers zu sehen.
+Als Admin möchtest du Meetings für beliebige Benutzer-Accounts anlegen und manuell Transkripte hochladen können, die dann automatisch analysiert werden (Titel, Zusammenfassung, Key Points, Action Items).
 
 ## Architektur
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     Admin Dashboard                          │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Benutzer-Tabelle                                   │    │
-│  │  ┌────────────────────────────────────────────────┐ │    │
-│  │  │ user@example.com  │ ... │ [👁️ Ansicht anzeigen] │ │    │
-│  │  └────────────────────────────────────────────────┘ │    │
-│  └─────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Impersonation Context (React Context)                       │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │ impersonatedUserId: "abc-123"                           ││
-│  │ impersonatedUserEmail: "user@example.com"               ││
-│  │ isImpersonating: true                                   ││
-│  │ stopImpersonating: () => void                           ││
+│  │  [+ Meeting für Benutzer anlegen]   Button im Header    ││
 │  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Benutzer-Ansicht (Dashboard/Settings/etc.)                 │
+│  Dialog: Meeting anlegen                                     │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │ ⚠️ Banner: "Du siehst die Ansicht von user@example.com" ││
-│  │                                    [Zurück zum Admin]   ││
+│  │ Benutzer auswählen:  [Dropdown mit allen Usern]         ││
+│  │ Meeting-Titel:       [___________________________]      ││
+│  │ Transkript:          [Datei hochladen (.txt)]           ││
+│  │                      ODER                                ││
+│  │                      [Textarea für direkten Text]       ││
+│  │ Meeting-Datum:       [Datepicker - optional]            ││
+│  │                                                          ││
+│  │              [Abbrechen]  [Meeting anlegen]             ││
 │  └─────────────────────────────────────────────────────────┘│
-│                                                              │
-│  • Recordings werden für impersonatedUserId geladen          │
-│  • Settings werden für impersonatedUserId angezeigt          │
-│  • Quota wird für impersonatedUserId berechnet               │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Edge Function: admin-create-meeting                         │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ 1. Admin-Berechtigung prüfen (has_role)                 ││
+│  │ 2. Recording in DB erstellen mit target_user_id         ││
+│  │ 3. analyze-transcript aufrufen                          ││
+│  │ 4. Erfolg zurückmelden                                  ││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Ergebnis: Neues Meeting im Account des Benutzers           │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ • Titel (generiert oder manuell)                        ││
+│  │ • Zusammenfassung                                       ││
+│  │ • Key Points                                            ││
+│  │ • Action Items                                          ││
+│  │ • Wortanzahl                                            ││
+│  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Umsetzungsschritte
 
-### Schritt 1: Impersonation Context erstellen
+### Schritt 1: Edge Function erstellen
 
-Neue Datei: `src/contexts/ImpersonationContext.tsx`
+Neue Datei: `supabase/functions/admin-create-meeting/index.ts`
 
+Diese Edge Function wird:
+- Admin-Berechtigung via `has_role()` prüfen
+- Ein neues Recording in der `recordings`-Tabelle erstellen
+- Das Transkript in `transcript_text` speichern
+- Die `analyze-transcript` Edge Function aufrufen
+- Den Status auf "done" setzen nach erfolgreicher Analyse
+
+Erwartete Request-Parameter:
 ```typescript
-interface ImpersonationContextType {
-  impersonatedUserId: string | null;
-  impersonatedUserEmail: string | null;
-  isImpersonating: boolean;
-  startImpersonating: (userId: string, email: string) => void;
-  stopImpersonating: () => void;
-  getEffectiveUserId: () => string | null;
+{
+  target_user_id: string;      // UUID des Ziel-Benutzers
+  title?: string;              // Optionaler Titel (sonst KI-generiert)
+  transcript_text: string;     // Das Transkript als Text
+  meeting_date?: string;       // ISO-Datum (optional, sonst jetzt)
+  duration?: number;           // Dauer in Sekunden (optional)
 }
 ```
 
-- Speichert temporär die ID des impersonierten Benutzers
-- Stellt `getEffectiveUserId()` bereit, die entweder die impersonierte ID oder die echte User-ID zurückgibt
-- Bietet Funktionen zum Starten und Beenden der Impersonation
+### Schritt 2: Admin-Dialog-Komponente erstellen
 
-### Schritt 2: Impersonation Banner-Komponente
+Neue Datei: `src/components/admin/AdminCreateMeetingDialog.tsx`
 
-Neue Datei: `src/components/admin/ImpersonationBanner.tsx`
-
-- Zeigt einen auffälligen Banner oben in der App, wenn Impersonation aktiv ist
-- Enthält "Zurück zum Admin"-Button
-- Zeigt E-Mail des impersonierten Benutzers an
+Der Dialog enthält:
+- Benutzer-Dropdown (lädt alle User aus dem Admin-Dashboard)
+- Titel-Eingabefeld (optional, wird von KI generiert wenn leer)
+- Transkript-Input mit zwei Modi:
+  - Datei-Upload (.txt)
+  - Textarea für direkten Text-Input
+- Optionales Datum-Picker
+- Optionale Dauer-Eingabe
 
 ### Schritt 3: Admin Dashboard erweitern
 
 Datei: `src/pages/Admin.tsx`
 
-- Neuen Button "Ansicht anzeigen" (👁️) in der Aktionen-Spalte hinzufügen
-- Button ruft `startImpersonating(userId, email)` auf
-- Navigiert zu `/` (Dashboard) nach dem Start
+Änderungen:
+- Button "+ Meeting anlegen" im Header neben der Zurück-Taste
+- Integration des `AdminCreateMeetingDialog`
+- State für Dialog-Steuerung
 
-### Schritt 4: Hooks anpassen für Impersonation-Support
+### Schritt 4: Supabase Config aktualisieren
 
-Die folgenden Hooks müssen angepasst werden, um `getEffectiveUserId()` statt `auth.uid()` zu verwenden:
+Datei: `supabase/config.toml`
 
-| Datei | Änderung |
-|-------|----------|
-| `src/hooks/useUserQuota.ts` | Impersonation Context importieren, `getEffectiveUserId()` nutzen |
-| `src/components/recordings/RecordingsList.tsx` | Query mit impersonierter User-ID filtern (nur für Admins) |
-| `src/pages/Settings.tsx` | Bot-Settings und Backups für impersonierten User laden |
-
-### Schritt 5: Edge Function für Admin-Datenabfrage
-
-Da RLS die Daten auf den aktuellen Benutzer beschränkt, muss für Admin-Impersonation eine Edge Function verwendet werden:
-
-Neue Datei: `supabase/functions/admin-view-user-data/index.ts`
-
-- Verifiziert Admin-Berechtigung
-- Lädt Daten für den angegebenen Benutzer:
-  - Recordings
-  - Bot-Settings (recall_calendar_users)
-  - Transcript-Backups
-  - Quota-Informationen
-
-### Schritt 6: App.tsx Provider hinzufügen
-
-Datei: `src/App.tsx`
-
-- `ImpersonationProvider` um die App-Komponenten wrappen
-- Zwischen `TourProvider` und `TooltipProvider` einfügen
-
-### Schritt 7: AppLayout Banner einbinden
-
-Datei: `src/components/layout/AppLayout.tsx`
-
-- `ImpersonationBanner` oberhalb der Navigation einfügen
-- Wird nur angezeigt, wenn `isImpersonating === true`
-
-## Sicherheit
-
-- **Nur Admins** können die Impersonation starten (Admin-Check via `useAdminCheck`)
-- Impersonation ist **read-only** – es können keine Daten im Namen des Benutzers geändert werden
-- Die Edge Function validiert Admin-Berechtigung via `has_role()`
-- Kein Zugriff auf Auth-Credentials des impersonierten Benutzers
+Neue Edge Function registrieren:
+```toml
+[functions.admin-create-meeting]
+verify_jwt = false
+```
 
 ## Betroffene Dateien
 
 | Datei | Aktion |
 |-------|--------|
-| `src/contexts/ImpersonationContext.tsx` | Neu erstellen |
-| `src/components/admin/ImpersonationBanner.tsx` | Neu erstellen |
-| `supabase/functions/admin-view-user-data/index.ts` | Neu erstellen |
-| `src/pages/Admin.tsx` | Button hinzufügen |
-| `src/App.tsx` | Provider einfügen |
-| `src/components/layout/AppLayout.tsx` | Banner einfügen |
-| `src/hooks/useUserQuota.ts` | Impersonation-Support |
-| `src/components/recordings/RecordingsList.tsx` | Impersonation-Support |
-| `src/pages/Settings.tsx` | Impersonation-Support |
+| `supabase/functions/admin-create-meeting/index.ts` | Neu erstellen |
+| `src/components/admin/AdminCreateMeetingDialog.tsx` | Neu erstellen |
+| `src/pages/Admin.tsx` | Button und Dialog hinzufügen |
+| `supabase/config.toml` | Edge Function registrieren |
+
+## Technische Details
+
+### Edge Function: admin-create-meeting
+
+```typescript
+// Hauptlogik
+1. Auth-Header validieren
+2. Admin-Rolle prüfen via has_role()
+3. Validierung: target_user_id und transcript_text erforderlich
+4. Recording erstellen:
+   - meeting_id: crypto.randomUUID()
+   - user_id: target_user_id
+   - status: 'processing'
+   - transcript_text: transcript_text
+   - title: title || null (wird von Analyse gesetzt)
+   - source: 'admin_upload'
+   - created_at: meeting_date || now()
+5. analyze-transcript aufrufen mit recording_id
+6. Status auf 'done' setzen
+7. Erfolg zurückmelden mit recording.id
+```
+
+### Dialog-Komponente
+
+```typescript
+// States
+- selectedUserId: string
+- title: string
+- transcriptText: string
+- transcriptFile: File | null
+- meetingDate: Date
+- duration: number
+- isLoading: boolean
+
+// Funktionen
+- handleFileUpload: Datei lesen und Text extrahieren
+- handleSubmit: Edge Function aufrufen
+- resetForm: Formular zurücksetzen
+```
+
+### Validierung
+
+- Transkript muss mindestens 100 Zeichen haben
+- Benutzer muss ausgewählt sein
+- Maximal 500.000 Zeichen für Transkript (Performance)
+
+## Sicherheit
+
+- Nur Admins können diese Funktion nutzen
+- Admin-Check erfolgt serverseitig via `has_role()`
+- Transkript wird sanitized (keine Script-Injection)
+- Rate-Limiting durch Supabase Functions
+
+## Benutzeroberfläche
+
+Der Button wird rechts neben dem Header platziert:
+
+```
+[←] Admin Dashboard                    [+ Meeting anlegen]
+    Benutzerübersicht und Statistiken
+```
+
+Nach erfolgreichem Anlegen:
+- Toast-Nachricht "Meeting erfolgreich angelegt"
+- Optional: Direkt zum Meeting navigieren oder Dialog schließen
+- Benutzer-Liste wird aktualisiert (Recordings-Count erhöht sich)
 
 ## Nach der Implementierung
 
-1. Im Admin Dashboard einen Benutzer auswählen und "Ansicht anzeigen" klicken
-2. Der Banner erscheint und zeigt die E-Mail des impersonierten Benutzers
-3. Dashboard, Einstellungen und Transkripte zeigen die Daten dieses Benutzers
-4. "Zurück zum Admin" beendet die Impersonation
+1. Im Admin Dashboard auf "+ Meeting anlegen" klicken
+2. Benutzer aus der Liste auswählen
+3. Transkript einfügen oder Datei hochladen
+4. Optional: Titel und Datum setzen
+5. "Meeting anlegen" klicken
+6. KI analysiert das Transkript automatisch
+7. Meeting erscheint im Dashboard des gewählten Benutzers
