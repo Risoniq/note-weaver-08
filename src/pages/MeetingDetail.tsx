@@ -44,6 +44,8 @@ import { EmailEditModal } from "@/components/meeting/EmailEditModal";
 import { ReportDownloadModal } from "@/components/meeting/ReportDownloadModal";
 import { DeepDiveModal } from "@/components/meeting/DeepDiveModal";
 import { useAuth } from "@/hooks/useAuth";
+import { useImpersonation } from "@/contexts/ImpersonationContext";
+import { useAdminCheck } from "@/hooks/useAdminCheck";
 
 type TimeFilter = 'heute' | '7tage' | '30tage' | '90tage' | 'alle';
 
@@ -86,6 +88,8 @@ export default function MeetingDetail() {
   
   // Auth für User-Email
   const { user } = useAuth();
+  const { isAdmin } = useAdminCheck();
+  const { isImpersonating, impersonatedUserId } = useImpersonation();
   
   // Sprecher-Farben für Edit-Modus
   const speakerColorMap = useMemo(() => {
@@ -105,6 +109,25 @@ export default function MeetingDetail() {
     if (!id) return null;
     
     try {
+      // Wenn Admin impersoniert, Edge Function nutzen
+      if (isAdmin && isImpersonating && impersonatedUserId) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return null;
+
+        const { data, error } = await supabase.functions.invoke('admin-view-user-data', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          body: { 
+            target_user_id: impersonatedUserId, 
+            data_type: 'single_recording',
+            recording_id: id 
+          },
+        });
+
+        if (error) throw error;
+        return data?.recording as Recording | null;
+      }
+
+      // Normale Abfrage für eigene Recordings
       const { data, error } = await supabase
         .from('recordings')
         .select('*')
@@ -117,7 +140,7 @@ export default function MeetingDetail() {
       console.error('Error fetching recording:', error);
       return null;
     }
-  }, [id]);
+  }, [id, isAdmin, isImpersonating, impersonatedUserId]);
 
   const syncRecordingStatus = useCallback(async (forceResync = false) => {
     if (!id || !recording) {

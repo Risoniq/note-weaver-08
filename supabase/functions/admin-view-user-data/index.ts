@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
     }
 
     // Parse request body
-    const { target_user_id, data_type } = await req.json();
+    const { target_user_id, data_type, recording_id } = await req.json();
 
     if (!target_user_id) {
       return new Response(JSON.stringify({ error: 'target_user_id erforderlich' }), {
@@ -152,6 +152,26 @@ Deno.serve(async (req) => {
             size: file.metadata?.size || 0,
           })),
         };
+        break;
+      }
+
+      case 'single_recording': {
+        if (!recording_id) {
+          return new Response(JSON.stringify({ error: 'recording_id erforderlich' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const { data: singleRecording, error } = await supabaseAdmin
+          .from('recordings')
+          .select('*')
+          .eq('id', recording_id)
+          .eq('user_id', target_user_id)
+          .maybeSingle();
+
+        if (error) throw error;
+        responseData = { recording: singleRecording };
         break;
       }
 
