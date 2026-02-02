@@ -61,37 +61,39 @@ const SpeakerPieChart = ({ data }: { data: SpeakerShare[] }) => {
   }));
 
   return (
-    <div className="h-64">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={chartData}
-            cx="50%"
-            cy="50%"
-            innerRadius={40}
-            outerRadius={80}
-            paddingAngle={2}
-            dataKey="value"
-            label={({ name, value }) => `${value}%`}
-            labelLine={false}
-          >
-            {chartData.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={entry.fill} />
-            ))}
-          </Pie>
-          <Tooltip content={<CustomTooltip />} />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="flex flex-wrap justify-center gap-2 mt-2">
+    <div className="flex flex-col">
+      <div className="h-52">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              innerRadius={35}
+              outerRadius={70}
+              paddingAngle={2}
+              dataKey="value"
+              label={({ value }) => `${value}%`}
+              labelLine={false}
+            >
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Pie>
+            <Tooltip content={<CustomTooltip />} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1.5 mt-2 px-1">
         {data.map((speaker, index) => (
-          <div key={index} className="flex items-center gap-1.5 text-xs">
+          <div key={index} className="flex items-center gap-1.5 min-w-0">
             <div 
-              className="w-3 h-3 rounded-full" 
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0" 
               style={{ backgroundColor: speaker.color }}
             />
-        <span className="text-muted-foreground">
-          {speaker.name}
-        </span>
+            <span className="text-[11px] text-muted-foreground truncate">
+              {speaker.name}
+            </span>
           </div>
         ))}
       </div>
