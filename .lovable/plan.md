@@ -1,105 +1,146 @@
 
-# Plan: CORS-Fehler in Kalender Edge Functions beheben
+# Plan: Admin "Als Benutzer anzeigen"-Funktion
 
-## Problem-Analyse
+## Übersicht
 
-Die Fehlermeldung "Failed to send a request to the Edge Function" für beide Kalender (Google und Microsoft) wird durch **unvollständige CORS-Header** in drei Edge Functions verursacht:
+Als Admin möchtest du in die Einstellungen anderer Benutzer wechseln können, um deren Ansicht einzusehen. Dies wird durch eine **Impersonation-Funktion** umgesetzt, die es Admins ermöglicht, die App temporär "durch die Brille" eines anderen Benutzers zu sehen.
 
-1. `google-recall-auth/index.ts`
-2. `microsoft-recall-auth/index.ts` 
-3. `recall-calendar-meetings/index.ts`
-
-### Zwei Hauptprobleme:
-
-**Problem 1: Fehlende Supabase-Client-Header**
-Die Header-Liste ist unvollständig und blockiert Browser-Anfragen:
-```text
-Aktuell:    authorization, x-client-info, apikey, content-type
-Erforderlich: authorization, x-client-info, apikey, content-type, 
-              x-supabase-client-platform, x-supabase-client-platform-version, 
-              x-supabase-client-runtime, x-supabase-client-runtime-version
-```
-
-**Problem 2: Custom Domain wird nicht erkannt**
-Die Domain `notetaker2pro.com` wird von der Origin-Prüfung nicht akzeptiert. Nur `.lovableproject.com` und `.lovable.app` werden automatisch erkannt.
-
----
-
-## Lösung
-
-### Schritt 1: CORS-Funktion in allen drei Edge Functions aktualisieren
-
-Die `getCorsHeaders`-Funktion wird in allen drei Dateien durch eine standardkonforme Version ersetzt:
+## Architektur
 
 ```text
-supabase/functions/google-recall-auth/index.ts (Zeile 4-24)
-supabase/functions/microsoft-recall-auth/index.ts (Zeile 4-24)
-supabase/functions/recall-calendar-meetings/index.ts (Zeile 4-25)
+┌─────────────────────────────────────────────────────────────┐
+│                     Admin Dashboard                          │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Benutzer-Tabelle                                   │    │
+│  │  ┌────────────────────────────────────────────────┐ │    │
+│  │  │ user@example.com  │ ... │ [👁️ Ansicht anzeigen] │ │    │
+│  │  └────────────────────────────────────────────────┘ │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Impersonation Context (React Context)                       │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ impersonatedUserId: "abc-123"                           ││
+│  │ impersonatedUserEmail: "user@example.com"               ││
+│  │ isImpersonating: true                                   ││
+│  │ stopImpersonating: () => void                           ││
+│  └─────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Benutzer-Ansicht (Dashboard/Settings/etc.)                 │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ ⚠️ Banner: "Du siehst die Ansicht von user@example.com" ││
+│  │                                    [Zurück zum Admin]   ││
+│  └─────────────────────────────────────────────────────────┘│
+│                                                              │
+│  • Recordings werden für impersonatedUserId geladen          │
+│  • Settings werden für impersonatedUserId angezeigt          │
+│  • Quota wird für impersonatedUserId berechnet               │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Neue CORS-Funktion:
+## Umsetzungsschritte
+
+### Schritt 1: Impersonation Context erstellen
+
+Neue Datei: `src/contexts/ImpersonationContext.tsx`
 
 ```typescript
-function getCorsHeaders(req: Request) {
-  const origin = req.headers.get('origin') || '';
-  const allowedOrigins = [
-    Deno.env.get('APP_URL') || '',
-    'https://notetaker2pro.com',
-    'https://www.notetaker2pro.com',
-    'http://localhost:5173',
-    'http://localhost:8080',
-    'http://localhost:3000',
-  ].filter(Boolean);
-  
-  const isLovablePreview = origin.endsWith('.lovableproject.com') || origin.endsWith('.lovable.app');
-  const allowOrigin = allowedOrigins.includes(origin) || isLovablePreview 
-    ? origin 
-    : '*';
-  
-  return {
-    'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-    'Access-Control-Allow-Credentials': 'true',
-  };
+interface ImpersonationContextType {
+  impersonatedUserId: string | null;
+  impersonatedUserEmail: string | null;
+  isImpersonating: boolean;
+  startImpersonating: (userId: string, email: string) => void;
+  stopImpersonating: () => void;
+  getEffectiveUserId: () => string | null;
 }
 ```
 
-### Änderungen im Detail:
+- Speichert temporär die ID des impersonierten Benutzers
+- Stellt `getEffectiveUserId()` bereit, die entweder die impersonierte ID oder die echte User-ID zurückgibt
+- Bietet Funktionen zum Starten und Beenden der Impersonation
 
-| Änderung | Grund |
-|----------|-------|
-| `notetaker2pro.com` hinzugefügt | Custom Domain explizit erlauben |
-| Header-Liste erweitert | Supabase JS Client sendet diese Header |
-| Fallback auf `*` statt erste Origin | Verhindert Fehler bei unbekannten Origins |
+### Schritt 2: Impersonation Banner-Komponente
 
----
+Neue Datei: `src/components/admin/ImpersonationBanner.tsx`
+
+- Zeigt einen auffälligen Banner oben in der App, wenn Impersonation aktiv ist
+- Enthält "Zurück zum Admin"-Button
+- Zeigt E-Mail des impersonierten Benutzers an
+
+### Schritt 3: Admin Dashboard erweitern
+
+Datei: `src/pages/Admin.tsx`
+
+- Neuen Button "Ansicht anzeigen" (👁️) in der Aktionen-Spalte hinzufügen
+- Button ruft `startImpersonating(userId, email)` auf
+- Navigiert zu `/` (Dashboard) nach dem Start
+
+### Schritt 4: Hooks anpassen für Impersonation-Support
+
+Die folgenden Hooks müssen angepasst werden, um `getEffectiveUserId()` statt `auth.uid()` zu verwenden:
+
+| Datei | Änderung |
+|-------|----------|
+| `src/hooks/useUserQuota.ts` | Impersonation Context importieren, `getEffectiveUserId()` nutzen |
+| `src/components/recordings/RecordingsList.tsx` | Query mit impersonierter User-ID filtern (nur für Admins) |
+| `src/pages/Settings.tsx` | Bot-Settings und Backups für impersonierten User laden |
+
+### Schritt 5: Edge Function für Admin-Datenabfrage
+
+Da RLS die Daten auf den aktuellen Benutzer beschränkt, muss für Admin-Impersonation eine Edge Function verwendet werden:
+
+Neue Datei: `supabase/functions/admin-view-user-data/index.ts`
+
+- Verifiziert Admin-Berechtigung
+- Lädt Daten für den angegebenen Benutzer:
+  - Recordings
+  - Bot-Settings (recall_calendar_users)
+  - Transcript-Backups
+  - Quota-Informationen
+
+### Schritt 6: App.tsx Provider hinzufügen
+
+Datei: `src/App.tsx`
+
+- `ImpersonationProvider` um die App-Komponenten wrappen
+- Zwischen `TourProvider` und `TooltipProvider` einfügen
+
+### Schritt 7: AppLayout Banner einbinden
+
+Datei: `src/components/layout/AppLayout.tsx`
+
+- `ImpersonationBanner` oberhalb der Navigation einfügen
+- Wird nur angezeigt, wenn `isImpersonating === true`
+
+## Sicherheit
+
+- **Nur Admins** können die Impersonation starten (Admin-Check via `useAdminCheck`)
+- Impersonation ist **read-only** – es können keine Daten im Namen des Benutzers geändert werden
+- Die Edge Function validiert Admin-Berechtigung via `has_role()`
+- Kein Zugriff auf Auth-Credentials des impersonierten Benutzers
 
 ## Betroffene Dateien
 
-| Datei | Zeilen | Änderung |
-|-------|--------|----------|
-| `supabase/functions/google-recall-auth/index.ts` | 4-24 | CORS-Funktion aktualisieren |
-| `supabase/functions/microsoft-recall-auth/index.ts` | 4-24 | CORS-Funktion aktualisieren |
-| `supabase/functions/recall-calendar-meetings/index.ts` | 4-25 | CORS-Funktion aktualisieren |
+| Datei | Aktion |
+|-------|--------|
+| `src/contexts/ImpersonationContext.tsx` | Neu erstellen |
+| `src/components/admin/ImpersonationBanner.tsx` | Neu erstellen |
+| `supabase/functions/admin-view-user-data/index.ts` | Neu erstellen |
+| `src/pages/Admin.tsx` | Button hinzufügen |
+| `src/App.tsx` | Provider einfügen |
+| `src/components/layout/AppLayout.tsx` | Banner einfügen |
+| `src/hooks/useUserQuota.ts` | Impersonation-Support |
+| `src/components/recordings/RecordingsList.tsx` | Impersonation-Support |
+| `src/pages/Settings.tsx` | Impersonation-Support |
 
----
+## Nach der Implementierung
 
-## Nach der Änderung
-
-Die Edge Functions werden automatisch deployed. Danach:
-
-1. Lade die Seite auf `notetaker2pro.com` neu
-2. Versuche erneut, Google oder Microsoft Kalender zu verbinden
-3. Die CORS-Fehler sollten behoben sein
-
----
-
-## Technische Details
-
-Die Supabase JS Client Bibliothek (Version 2.87.1) sendet folgende Header bei jedem Request:
-- `x-supabase-client-platform`: Browser-Plattform
-- `x-supabase-client-platform-version`: Version
-- `x-supabase-client-runtime`: Runtime-Info
-- `x-supabase-client-runtime-version`: Runtime-Version
-
-Wenn diese Header nicht in `Access-Control-Allow-Headers` aufgeführt sind, blockiert der Browser den Request mit einem CORS-Fehler.
+1. Im Admin Dashboard einen Benutzer auswählen und "Ansicht anzeigen" klicken
+2. Der Banner erscheint und zeigt die E-Mail des impersonierten Benutzers
+3. Dashboard, Einstellungen und Transkripte zeigen die Daten dieses Benutzers
+4. "Zurück zum Admin" beendet die Impersonation
