@@ -1,75 +1,181 @@
 
-# Plan: Dauerhafte Titel-Speicherung beheben
+# Plan: Vollständige Titel-Persistenz und Synchronisierung
 
 ## Problem-Analyse
 
-Die Titel-Änderungen werden zwar in die Datenbank gespeichert, aber folgende Faktoren können dazu führen, dass die Änderung "verloren geht":
+Die aktuelle Implementierung hat mehrere Lücken:
 
-1. **Race Condition mit Auto-Sync**: Der `useEffect` in `MeetingDetail.tsx` führt alle 30 Sekunden einen Sync durch (Zeile 206-227), der `fetchRecording()` aufruft und das lokale State überschreibt
-2. **Kein React Query Cache**: Die Komponente nutzt direkten `useState` statt React Query, wodurch es keinen automatischen Cache-Invalidierung gibt
-3. **Timing-Problem**: Wenn `fetchRecording()` parallel zum Title-Update läuft, überschreibt der Fetch-Response den gerade gesetzten Titel
+| Problem | Ort | Ursache |
+|---------|-----|---------|
+| Titel wird nicht dauerhaft angezeigt | MeetingDetail.tsx | Auto-Sync überschreibt lokalen State trotz Flag |
+| Titel nicht im Transkript | transcript_text in DB | Keine Aktualisierung bei Titeländerung |
+| Follow-Up E-Mail behält alten Titel | customEmail State | Wird nicht zurückgesetzt bei Titeländerung |
+| Meeting-Übersicht zeigt alten Titel | RecordingCard.tsx | Realtime-Subscription aktualisiert, aber keine Cache-Invalidierung |
 
-## Lösung
+## Lösungsansatz
 
-Die `EditableTitle` Komponente muss sicherstellen, dass nach einem erfolgreichen Update **alle Query-Caches invalidiert werden**, sodass nachfolgende Fetches den aktuellen Wert bekommen.
+### 1. EditableTitle.tsx - Optimistisches Update + Callback-Timing
 
-### Änderung 1: Optimistisches Update mit Rollback in EditableTitle
+Das Hauptproblem: Der `onTitleChange` Callback wird erst nach dem DB-Update aufgerufen. Der lokale State in MeetingDetail wird erst dann aktualisiert. Zwischenzeitlich kann der Auto-Sync den alten Wert laden.
 
-Die Komponente wird erweitert, um:
-- Den lokalen State sofort zu aktualisieren (optimistisch)
-- Bei Fehler automatisch auf den alten Wert zurückzusetzen
-- Den `onTitleChange` Callback mit dem neuen Wert aufzurufen
+**Lösung:** 
+- Callback **vor** dem DB-Update aufrufen (optimistisch)
+- Bei Fehler: Rollback durch erneuten Callback mit altem Wert
+
+### 2. MeetingDetail.tsx - Titel-Synchronisierung verbessern
 
 ```text
-┌─────────────────────────────────────────────────┐
-│ 1. User ändert Titel                            │
-│    ↓                                            │
-│ 2. Lokaler State sofort aktualisiert           │
-│    ↓                                            │
-│ 3. Supabase Update im Hintergrund              │
-│    ↓                                            │
-│ 4a. Erfolg → onTitleChange aufrufen            │
-│ 4b. Fehler → Rollback auf alten Wert           │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│ Nutzer ändert Titel                                      │
+│   ↓                                                      │
+│ onTitleChange wird SOFORT aufgerufen (optimistisch)     │
+│   ↓                                                      │
+│ titleJustUpdatedRef = true                              │
+│   ↓                                                      │
+│ setRecording mit neuem Titel                            │
+│   ↓                                                      │
+│ customEmail wird auf null gesetzt (E-Mail zurücksetzen) │
+│   ↓                                                      │
+│ Optional: Transkript-Header in DB aktualisieren         │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### Änderung 2: MeetingDetail.tsx - Sync nach Title-Change überspringen
+**Änderungen:**
+- `customEmail` bei Titeländerung auf `null` setzen → E-Mail wird neu generiert
+- Flag-Timeout auf 10 Sekunden erhöhen (mehr Sicherheit)
+- Transkript-Text in DB mit neuem Titel-Header aktualisieren
 
-Im `onTitleChange` Callback wird ein Flag gesetzt, das verhindert, dass der nächste Auto-Sync den Titel überschreibt:
+### 3. Transkript-Header in Datenbank schreiben
 
-| Problem | Lösung |
-|---------|--------|
-| Auto-Sync überschreibt Titel | Flag `titleJustUpdated` setzen |
-| Race Condition bei Fetch | `fetchRecording` prüft Flag |
+Der Titel wird als Header am Anfang des `transcript_text` eingefügt:
 
-### Änderung 3: React Query Integration (optional aber empfohlen)
+```
+[Meeting: Neuer Titel]
+---
+Speaker 1: Hallo zusammen...
+```
 
-Da das Projekt React Query bereits nutzt (`@tanstack/react-query`), wäre die sauberste Lösung, den Recording-Fetch als Query zu implementieren und `queryClient.invalidateQueries()` nach dem Title-Update aufzurufen.
+**Logik:**
+- Prüfen ob bereits ein `[Meeting: ...]` Header existiert
+- Falls ja: Header ersetzen
+- Falls nein: Header am Anfang einfügen
 
-## Technische Implementierung
+### 4. RecordingDetailSheet.tsx - Callback hinzufügen
+
+Die Sheet-Komponente hat keinen `onTitleChange` Callback für die `EditableTitle`. Dadurch wird der Parent-State nicht aktualisiert.
+
+**Lösung:** Optional callback prop hinzufügen, der den Parent informiert
+
+## Dateien und Änderungen
+
+| Datei | Änderung |
+|-------|----------|
+| `src/components/recordings/EditableTitle.tsx` | Optimistisches Update: Callback VOR DB-Update |
+| `src/pages/MeetingDetail.tsx` | 1. customEmail nullen bei Titeländerung 2. Transkript-Header in DB updaten 3. Flag-Timeout erhöhen |
+
+## Technische Details
 
 ### EditableTitle.tsx
 
-- `handleSave()` aufrufen von `onTitleChange` direkt nach lokaler State-Änderung (optimistisch)
-- Bei Supabase-Fehler: Rollback mit `setEditedTitle(title || '')`
-- Bei Erfolg: Query Cache invalidieren (falls React Query verfügbar)
+```typescript
+// Bisheriger Flow:
+// 1. DB Update
+// 2. onTitleChange aufrufen
 
-### MeetingDetail.tsx
+// Neuer Flow (optimistisch):
+const handleSave = async () => {
+  const trimmedTitle = editedTitle.trim();
+  const oldTitle = title || '';
+  
+  if (trimmedTitle === oldTitle) {
+    setIsEditing(false);
+    return;
+  }
 
-- Statt lokalem `setRecording`, die `queryClient.setQueryData()` nutzen
-- Alternativ: `refetchRef` Flag, das nach Title-Update kurzzeitig true ist und verhindert, dass der Auto-Sync den Titel überschreibt
+  // SOFORT lokalen State aktualisieren (optimistisch)
+  onTitleChange?.(trimmedTitle);
+  setIsEditing(false);
+  
+  // Dann DB-Update im Hintergrund
+  setIsSaving(true);
+  const { error } = await supabase
+    .from('recordings')
+    .update({ title: trimmedTitle || null })
+    .eq('id', recordingId);
+  setIsSaving(false);
 
-## Dateien
+  if (error) {
+    // Rollback bei Fehler
+    onTitleChange?.(oldTitle);
+    toast({ title: "Fehler", variant: "destructive" });
+    return;
+  }
 
-| Datei | Aktion |
-|-------|--------|
-| `src/components/recordings/EditableTitle.tsx` | Optimistisches Update + Rollback |
-| `src/pages/MeetingDetail.tsx` | Race Condition mit Auto-Sync beheben |
+  toast({ title: "Titel aktualisiert" });
+};
+```
+
+### MeetingDetail.tsx - onTitleChange Handler
+
+```typescript
+onTitleChange={(newTitle) => {
+  // 1. Flag setzen
+  titleJustUpdatedRef.current = true;
+  
+  // 2. Lokalen State sofort aktualisieren
+  setRecording(prev => prev ? { ...prev, title: newTitle } : null);
+  
+  // 3. customEmail zurücksetzen → Follow-Up wird neu generiert
+  setCustomEmail(null);
+  
+  // 4. Transkript-Header in DB aktualisieren (async)
+  if (recording?.transcript_text) {
+    updateTranscriptHeader(newTitle, recording.id, recording.transcript_text);
+  }
+  
+  // 5. Flag nach 10s zurücksetzen
+  setTimeout(() => {
+    titleJustUpdatedRef.current = false;
+  }, 10000);
+}}
+```
+
+### Neue Hilfsfunktion: updateTranscriptHeader
+
+```typescript
+const updateTranscriptHeader = async (
+  newTitle: string, 
+  recordingId: string, 
+  currentTranscript: string
+) => {
+  // Header-Pattern: [Meeting: ...]---
+  const headerPattern = /^\[Meeting:.*?\]\n---\n/;
+  const newHeader = `[Meeting: ${newTitle}]\n---\n`;
+  
+  let updatedTranscript: string;
+  if (headerPattern.test(currentTranscript)) {
+    // Ersetze bestehenden Header
+    updatedTranscript = currentTranscript.replace(headerPattern, newHeader);
+  } else {
+    // Füge neuen Header am Anfang ein
+    updatedTranscript = newHeader + currentTranscript;
+  }
+  
+  await supabase
+    .from('recordings')
+    .update({ transcript_text: updatedTranscript })
+    .eq('id', recordingId);
+};
+```
 
 ## Erwartetes Ergebnis
 
-Nach der Änderung:
-1. Titel wird sofort in der UI aktualisiert
-2. Bei Fehler wird der alte Titel wiederhergestellt
-3. Auto-Sync überschreibt den manuell gesetzten Titel nicht mehr
-4. Reload der Seite zeigt den korrekten Titel aus der Datenbank
+Nach der Implementierung:
+
+| Funktion | Verhalten |
+|----------|-----------|
+| Überschrift | Titel wird sofort und dauerhaft angezeigt |
+| Transkript | Header mit aktuellem Titel wird in DB geschrieben |
+| Follow-Up E-Mail | Wird automatisch neu generiert mit neuem Titel |
+| Meeting-Übersicht | Realtime-Subscription zeigt neuen Titel |
+| Seitenneulade | Zeigt korrekten Titel aus Datenbank |
