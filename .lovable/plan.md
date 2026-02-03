@@ -1,112 +1,87 @@
 
-# Plan: Race Condition bei Transkript-Analyse beheben
+
+# Plan: CORS-Konfiguration für alle Edge Functions vereinheitlichen
 
 ## Problem identifiziert
 
-Die Logs zeigen eindeutig das Problem:
+Die Nutzer sehen "Synchronisierung fehlgeschlagen" auf der Production-URL `notetaker2pro.com`, weil die CORS-Konfiguration in mehreren Edge Functions inkonsistent ist.
 
-```
-12:51:21Z INFO No transcript available for analysis
-12:51:21Z INFO No transcript available for analysis
-12:51:21Z INFO No transcript available for analysis
-12:51:37Z INFO Transcript length: 41724 characters  ← Erst später funktioniert es
-12:51:40Z INFO Analysis saved successfully
-```
+### Aktueller Zustand
 
-**Ursache**: In `sync-recording/index.ts` wird die Analyse-Funktion (Zeile 625-647) aufgerufen, **bevor** das Transkript in der Datenbank gespeichert wird (Zeile 724-728).
+| Edge Function | notetaker2pro.com | Lovable Preview | Status |
+|--------------|-------------------|-----------------|--------|
+| sync-recording | **FEHLT** | ✓ | **BLOCKIERT** |
+| analyze-transcript | **FEHLT** | ✓ | **BLOCKIERT** |
+| meeting-bot-webhook | **FEHLT** | ✓ | **BLOCKIERT** |
+| repair-all-recordings | **FEHLT** | ✓ | **BLOCKIERT** |
+| create-bot | ✓ | ✓ | OK |
+| admin-view-user-data | ✓ | ✓ | OK |
+| google-recall-auth | ✓ | ✓ | OK |
+| microsoft-recall-auth | ✓ | ✓ | OK |
 
-Die `analyze-transcript` Funktion liest das Transkript aus der Datenbank:
-```typescript
-const { data: recording } = await supabase
-  .from('recordings')
-  .select('transcript_text, ...')
-  .eq('id', recording_id)
-  .single();
-```
-
-Aber `transcript_text` steht noch in `updates` und wurde noch nicht mit `.update(updates)` gespeichert!
-
-## Ablauf aktuell (fehlerhaft)
-
-```text
-1. sync-recording lädt Transkript von Recall.ai
-2. Transkript wird in 'updates.transcript_text' gespeichert (nur im Speicher!)
-3. → analyze-transcript wird aufgerufen
-4. → analyze-transcript liest DB → transcript_text ist NULL → FEHLER!
-5. Erst danach: DB wird aktualisiert mit updates
-```
+Die betroffenen Functions nutzen eine dynamische CORS-Konfiguration, aber ohne die Production-Domain `notetaker2pro.com`.
 
 ## Lösung
 
-Die Datenbank muss **vor** dem Analyse-Aufruf aktualisiert werden.
+Die CORS-Konfiguration in allen betroffenen Edge Functions auf ein einheitliches Schema aktualisieren:
 
-### Datei: `supabase/functions/sync-recording/index.ts`
-
-**Änderung**: Den Datenbank-Update-Block (Zeilen 724-736) **vor** den Analyse-Aufruf (Zeilen 625-647) verschieben.
-
-Neuer Ablauf:
-```text
-1. sync-recording lädt Transkript von Recall.ai
-2. Transkript wird in 'updates.transcript_text' gespeichert
-3. → DB wird aktualisiert mit updates (transcript_text ist jetzt in DB!)
-4. → analyze-transcript wird aufgerufen
-5. → analyze-transcript liest DB → transcript_text ist vorhanden → ERFOLG!
-```
-
-## Konkrete Änderungen
-
-Aktueller Code-Ablauf (vereinfacht):
 ```typescript
-// Zeile 625-647: Analyse starten (ZU FRÜH!)
-if (status === 'done' && hasTranscript && ...) {
-  await fetch('analyze-transcript', { recording_id: id })
-}
-
-// Zeile 649-722: Export an externe API
-
-// Zeile 724-736: DB aktualisieren (ZU SPÄT!)
-await supabase.from('recordings').update(updates).eq('id', id)
-```
-
-Neuer Code-Ablauf:
-```typescript
-// ZUERST: DB aktualisieren
-const { error: updateError } = await supabase
-  .from('recordings')
-  .update(updates)
-  .eq('id', id)
-
-if (updateError) { ... return error ... }
-
-// DANN: Analyse starten (jetzt ist transcript_text in der DB!)
-if (status === 'done' && hasTranscript && (updates.transcript_text || force_resync)) {
-  await fetch('analyze-transcript', { recording_id: id })
-}
-
-// DANN: Export an externe API
-if (status === 'done' && ...) {
-  // Export-Logik
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedOrigins = [
+    Deno.env.get('APP_URL') || '',
+    'https://notetaker2pro.com',
+    'https://www.notetaker2pro.com',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
+  ].filter(Boolean);
+  
+  const isLovablePreview = origin.endsWith('.lovableproject.com') || origin.endsWith('.lovable.app');
+  const allowOrigin = allowedOrigins.includes(origin) || isLovablePreview 
+    ? origin 
+    : '*';
+  
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
 }
 ```
 
-## Betroffene Datei
+## Betroffene Dateien
 
-| Datei | Aktion |
-|-------|--------|
-| `supabase/functions/sync-recording/index.ts` | Reihenfolge: DB-Update vor Analyse-Aufruf |
+| Datei | Änderung |
+|-------|----------|
+| `supabase/functions/sync-recording/index.ts` | `notetaker2pro.com` hinzufügen |
+| `supabase/functions/analyze-transcript/index.ts` | `notetaker2pro.com` hinzufügen |
+| `supabase/functions/meeting-bot-webhook/index.ts` | `notetaker2pro.com` hinzufügen |
+| `supabase/functions/repair-all-recordings/index.ts` | `notetaker2pro.com` hinzufügen |
+| `supabase/functions/google-calendar-events/index.ts` | `notetaker2pro.com` hinzufügen |
 
-## Warum das Admin-Neuladen funktioniert
+## Technische Details
 
-Wenn du als Admin manuell "Transkript neu laden" klickst:
-1. Das erste Sync speichert `transcript_text` in der DB (aber Analyse schlägt fehl)
-2. Beim zweiten Sync (`force_resync=true`) ist `transcript_text` bereits in `recording.transcript_text` (aus der DB)
-3. Die Analyse findet das Transkript und funktioniert
+### Warum tritt das Problem auf?
 
-Das erklärt, warum es beim zweiten Mal klappt!
+Der Browser sendet bei Cross-Origin-Requests (z.B. von `notetaker2pro.com` zu `supabase.co`) einen Preflight-Request (OPTIONS). Die Antwort muss den korrekten `Access-Control-Allow-Origin`-Header enthalten.
+
+Aktuell:
+1. Request kommt von `https://notetaker2pro.com`
+2. `sync-recording` prüft: Ist `notetaker2pro.com` in `allowedOrigins`? **NEIN**
+3. Ist es eine Lovable-Preview-Domain (`.lovable.app`)? **NEIN** 
+4. Fallback: Erstes Element aus `allowedOrigins` oder `*`
+5. Wenn `APP_URL` nicht gesetzt ist, wird nur `localhost` zurückgegeben
+6. Browser blockiert Request wegen Origin-Mismatch
+
+### Warum funktioniert es für Admins?
+
+Admins nutzen möglicherweise die Lovable-Preview-URL (`*.lovable.app`), die bereits unterstützt wird, oder haben `APP_URL` korrekt konfiguriert.
 
 ## Ergebnis nach der Änderung
 
-- Transkripte werden beim ersten Sync korrekt analysiert
-- Keine manuellen Admin-Eingriffe mehr nötig
-- Die Analyse-Ergebnisse erscheinen sofort im Dashboard
-- Der bestehende "Transkript neu laden" Button funktioniert weiterhin als Backup
+- Alle Nutzer können Transkripte auf beiden URLs synchronisieren
+- CORS-Fehler auf `notetaker2pro.com` werden behoben
+- Konsistente Konfiguration über alle Edge Functions
+- Backward-kompatibel mit localhost und Lovable-Preview
+
