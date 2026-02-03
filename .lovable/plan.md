@@ -1,181 +1,132 @@
 
-# Plan: Vollständige Titel-Persistenz und Synchronisierung
+## Ziel
+Titeländerungen sollen **dauerhaft** gespeichert werden und sich **überall** konsistent widerspiegeln:
+- Meeting-Detail Überschrift
+- Transkript (in der gespeicherten `transcript_text`)
+- Follow-Up Mail (neu generiert, wenn Titel geändert wurde)
+- Meeting-Übersicht/Listen (Dashboard RecordingsList, RecentActivity, Transcripts)
 
-## Problem-Analyse
+## Was ich im Code/Backend gefunden habe (Ursachen)
+1. **MeetingDetail Auto-Sync kann den Titel wieder “zurückdrehen”**
+   - In `MeetingDetail.tsx` läuft ein Auto-Sync (`syncRecordingStatus`) bei pending/processing Status.
+   - Die “Preserve local title”-Logik nutzt `recording.title` aus einer Closure. Wenn ein Sync kurz vor/ während der Titelbearbeitung gestartet hat, kann er danach den **alten** Titel zurückschreiben, obwohl du lokal schon den neuen gesetzt hast.
 
-Die aktuelle Implementierung hat mehrere Lücken:
+2. **Transkript wird serverseitig regelmäßig überschrieben**
+   - Die Backend-Funktion `sync-recording` lädt/aktualisiert `transcript_text` (inkl. `[Meeting-Info]` Header).
+   - Wenn du im Frontend einen Titel-Header in `transcript_text` schreibst, kann der beim nächsten Sync wieder verschwinden, weil `sync-recording` das Feld neu setzt.
 
-| Problem | Ort | Ursache |
-|---------|-----|---------|
-| Titel wird nicht dauerhaft angezeigt | MeetingDetail.tsx | Auto-Sync überschreibt lokalen State trotz Flag |
-| Titel nicht im Transkript | transcript_text in DB | Keine Aktualisierung bei Titeländerung |
-| Follow-Up E-Mail behält alten Titel | customEmail State | Wird nicht zurückgesetzt bei Titeländerung |
-| Meeting-Übersicht zeigt alten Titel | RecordingCard.tsx | Realtime-Subscription aktualisiert, aber keine Cache-Invalidierung |
+3. **Meeting-Übersichten “Realtime”**
+   - Mehrere Listen (z.B. `RecordingsList`, `RecentActivityList`, `Transcripts`) abonnieren `postgres_changes`.
+   - Damit das zuverlässig live aktualisiert, muss die Tabelle `recordings` in der Realtime-Publikation sein. Wenn nicht, passiert oft “nichts”, bis man neu lädt.
 
-## Lösungsansatz
+## Lösung (robust & dauerhaft, für alle User)
+Wir machen die Synchronisierung an die richtige Stelle:
+- **Titel speichern** bleibt clientseitig (EditableTitle update der `recordings.title`).
+- **Transkript-Header** wird **datenbankseitig automatisch** auf Basis von `recordings.title` gepflegt, sodass:
+  - egal ob der Text vom Bot neu geschrieben wird oder ein User den Titel ändert,
+  - der Titel-Header im Transkript danach immer korrekt ist.
+- **MeetingDetail Auto-Sync** wird so angepasst, dass er nach einer Titeländerung **niemals** den Titel zurück überschreiben kann.
+- **Listen/Übersichten** werden per Realtime/Mini-Refetch zuverlässig aktualisiert.
 
-### 1. EditableTitle.tsx - Optimistisches Update + Callback-Timing
-
-Das Hauptproblem: Der `onTitleChange` Callback wird erst nach dem DB-Update aufgerufen. Der lokale State in MeetingDetail wird erst dann aktualisiert. Zwischenzeitlich kann der Auto-Sync den alten Wert laden.
-
-**Lösung:** 
-- Callback **vor** dem DB-Update aufrufen (optimistisch)
-- Bei Fehler: Rollback durch erneuten Callback mit altem Wert
-
-### 2. MeetingDetail.tsx - Titel-Synchronisierung verbessern
-
-```text
-┌─────────────────────────────────────────────────────────┐
-│ Nutzer ändert Titel                                      │
-│   ↓                                                      │
-│ onTitleChange wird SOFORT aufgerufen (optimistisch)     │
-│   ↓                                                      │
-│ titleJustUpdatedRef = true                              │
-│   ↓                                                      │
-│ setRecording mit neuem Titel                            │
-│   ↓                                                      │
-│ customEmail wird auf null gesetzt (E-Mail zurücksetzen) │
-│   ↓                                                      │
-│ Optional: Transkript-Header in DB aktualisieren         │
-└─────────────────────────────────────────────────────────┘
-```
-
-**Änderungen:**
-- `customEmail` bei Titeländerung auf `null` setzen → E-Mail wird neu generiert
-- Flag-Timeout auf 10 Sekunden erhöhen (mehr Sicherheit)
-- Transkript-Text in DB mit neuem Titel-Header aktualisieren
-
-### 3. Transkript-Header in Datenbank schreiben
-
-Der Titel wird als Header am Anfang des `transcript_text` eingefügt:
-
-```
-[Meeting: Neuer Titel]
 ---
-Speaker 1: Hallo zusammen...
-```
 
-**Logik:**
-- Prüfen ob bereits ein `[Meeting: ...]` Header existiert
-- Falls ja: Header ersetzen
-- Falls nein: Header am Anfang einfügen
+## Umsetzungsschritte (konkret)
 
-### 4. RecordingDetailSheet.tsx - Callback hinzufügen
+### A) Datenbank: Trigger, der den Titel in `transcript_text` schreibt (dauerhaft)
+**Warum:** Damit der Titel im Transkript immer stimmt – auch nach Bot-Syncs, Re-Sync, späteren Analysen.
 
-Die Sheet-Komponente hat keinen `onTitleChange` Callback für die `EditableTitle`. Dadurch wird der Parent-State nicht aktualisiert.
+1. Neue DB-Funktion (plpgsql), z.B. `apply_meeting_title_header(title, transcript_text)`:
+   - Wenn `title` oder `transcript_text` null/leer ist: macht nichts oder fügt nur Header ein, wenn Transcript existiert.
+   - Setzt/ersetzt einen Header ganz oben:
+     - Format: `[Meeting: <Titel>]\n---\n`
+   - Wichtig: Der bestehende `[Meeting-Info]` Block bleibt erhalten; wir setzen den Meeting-Header darüber oder ersetzen einen vorhandenen `[Meeting: ...]` Header.
 
-**Lösung:** Optional callback prop hinzufügen, der den Parent informiert
+2. Trigger auf `public.recordings`:
+   - **BEFORE INSERT OR UPDATE OF title, transcript_text**
+   - Setzt `NEW.transcript_text = apply_meeting_title_header(NEW.title, NEW.transcript_text)`
 
-## Dateien und Änderungen
+Ergebnis:
+- Titeländerung -> Transkript wird automatisch angepasst.
+- Bot schreibt neues Transkript -> Trigger sorgt dafür, dass oben wieder der aktuelle Titel steht.
 
-| Datei | Änderung |
-|-------|----------|
-| `src/components/recordings/EditableTitle.tsx` | Optimistisches Update: Callback VOR DB-Update |
-| `src/pages/MeetingDetail.tsx` | 1. customEmail nullen bei Titeländerung 2. Transkript-Header in DB updaten 3. Flag-Timeout erhöhen |
+### B) MeetingDetail.tsx: Race-Condition sauber beheben
+**Warum:** Damit die Überschrift garantiert den neuen Titel zeigt und nicht durch Sync wieder zurückgesetzt wird.
 
-## Technische Details
+1. Zusätzliche Refs:
+   - `lastUserEditedTitleRef` (string | null)
+   - `titleJustUpdatedRef` bleibt, wird aber konsequent zusammen mit `lastUserEditedTitleRef` genutzt.
 
-### EditableTitle.tsx
+2. Beim `onTitleChange(newTitle)`:
+   - `titleJustUpdatedRef.current = true`
+   - `lastUserEditedTitleRef.current = newTitle`
+   - `setRecording(prev => ({...prev, title: newTitle}))`
+   - `setCustomEmail(null)` (damit Follow-Up Mail neu generiert wird)
+   - Timeout (10s) setzt `titleJustUpdatedRef.current=false` (und optional `lastUserEditedTitleRef.current=null`)
 
-```typescript
-// Bisheriger Flow:
-// 1. DB Update
-// 2. onTitleChange aufrufen
+3. In `syncRecordingStatus` nach `fetchRecording()`:
+   - Wenn `titleJustUpdatedRef.current` und `lastUserEditedTitleRef.current` gesetzt ist:
+     - `updatedRecording.title = lastUserEditedTitleRef.current`
+   - Damit kann ein alter Sync-Response den Titel nicht mehr zurückdrehen.
 
-// Neuer Flow (optimistisch):
-const handleSave = async () => {
-  const trimmedTitle = editedTitle.trim();
-  const oldTitle = title || '';
-  
-  if (trimmedTitle === oldTitle) {
-    setIsEditing(false);
-    return;
-  }
+4. Entfernen/Reduzieren des Frontend-Workarounds, der `transcript_text` direkt beim Title-Change updated:
+   - Sobald DB-Trigger aktiv ist, sollte das Frontend **nicht mehr** zusätzlich am `transcript_text` rumschreiben (sonst doppelte Header / Konflikte).
+   - Das sorgt für eine Single Source of Truth.
 
-  // SOFORT lokalen State aktualisieren (optimistisch)
-  onTitleChange?.(trimmedTitle);
-  setIsEditing(false);
-  
-  // Dann DB-Update im Hintergrund
-  setIsSaving(true);
-  const { error } = await supabase
-    .from('recordings')
-    .update({ title: trimmedTitle || null })
-    .eq('id', recordingId);
-  setIsSaving(false);
+### C) EditableTitle.tsx: Speichern bleibt optimistisch, aber Fehler sichtbar
+Ihr aktueller Diff ist grundsätzlich richtig (optimistischer Callback + Rollback).
+Zusätzlich plane ich:
+- Beim DB-Update `update({ title: trimmedTitle || null })` ist ok.
+- Falls `trimmedTitle` leer: setzen wir `null` -> Trigger kann dann optional Header entfernen oder belassen. (Entscheidung: ich würde den `[Meeting: ...]` Header entfernen, wenn title null wird.)
 
-  if (error) {
-    // Rollback bei Fehler
-    onTitleChange?.(oldTitle);
-    toast({ title: "Fehler", variant: "destructive" });
-    return;
-  }
+### D) Listen/Meeting-Übersicht: Live-Updates zuverlässig
+1. DB-Migration: Realtime aktivieren
+   - `ALTER PUBLICATION supabase_realtime ADD TABLE public.recordings;`
+   - Dann funktionieren eure bestehenden `postgres_changes` Subscriptions in:
+     - `RecordingsList.tsx`
+     - `RecentActivityList.tsx`
+     - `Transcripts.tsx`
 
-  toast({ title: "Titel aktualisiert" });
-};
-```
+2. Optional (zusätzliche Robustheit):
+   - Nach erfolgreichem Titel-Speichern in `EditableTitle` kann man lokal betroffene Listen-States aktualisieren oder React Query invalidieren (falls ihr später mehr auf React Query umstellt).
+   - Ist aber nicht zwingend, wenn Realtime korrekt läuft.
 
-### MeetingDetail.tsx - onTitleChange Handler
+---
 
-```typescript
-onTitleChange={(newTitle) => {
-  // 1. Flag setzen
-  titleJustUpdatedRef.current = true;
-  
-  // 2. Lokalen State sofort aktualisieren
-  setRecording(prev => prev ? { ...prev, title: newTitle } : null);
-  
-  // 3. customEmail zurücksetzen → Follow-Up wird neu generiert
-  setCustomEmail(null);
-  
-  // 4. Transkript-Header in DB aktualisieren (async)
-  if (recording?.transcript_text) {
-    updateTranscriptHeader(newTitle, recording.id, recording.transcript_text);
-  }
-  
-  // 5. Flag nach 10s zurücksetzen
-  setTimeout(() => {
-    titleJustUpdatedRef.current = false;
-  }, 10000);
-}}
-```
+## Betroffene Dateien / Änderungen
+### Backend (Migration)
+- `supabase/migrations/...`
+  - plpgsql Funktion `apply_meeting_title_header`
+  - Trigger-Funktion + Trigger auf `recordings`
+  - Realtime publication update für `recordings`
 
-### Neue Hilfsfunktion: updateTranscriptHeader
+### Frontend
+- `src/pages/MeetingDetail.tsx`
+  - Race-condition fix mit `lastUserEditedTitleRef`
+  - `customEmail` Reset bleibt
+  - Frontend-Transkript-Update beim Title-Change entfernen (Trigger übernimmt)
 
-```typescript
-const updateTranscriptHeader = async (
-  newTitle: string, 
-  recordingId: string, 
-  currentTranscript: string
-) => {
-  // Header-Pattern: [Meeting: ...]---
-  const headerPattern = /^\[Meeting:.*?\]\n---\n/;
-  const newHeader = `[Meeting: ${newTitle}]\n---\n`;
-  
-  let updatedTranscript: string;
-  if (headerPattern.test(currentTranscript)) {
-    // Ersetze bestehenden Header
-    updatedTranscript = currentTranscript.replace(headerPattern, newHeader);
-  } else {
-    // Füge neuen Header am Anfang ein
-    updatedTranscript = newHeader + currentTranscript;
-  }
-  
-  await supabase
-    .from('recordings')
-    .update({ transcript_text: updatedTranscript })
-    .eq('id', recordingId);
-};
-```
+- `src/components/recordings/EditableTitle.tsx`
+  - bleibt wie im Diff (optimistisch + rollback); ggf. kleine Edge-Case-Politur (leerer Titel)
 
-## Erwartetes Ergebnis
+---
 
-Nach der Implementierung:
+## Testplan (End-to-End)
+1. Öffne ein Meeting `/meeting/:id`, ändere den Titel.
+   - Erwartung: Überschrift aktualisiert sich sofort und bleibt nach 30s/Auto-Sync stabil.
+2. Seite neu laden.
+   - Erwartung: Titel ist dauerhaft gespeichert.
+3. Prüfen Transkript:
+   - Erwartung: `transcript_text` beginnt mit `[Meeting: Neuer Titel]` und bleibt auch nach erneutem Sync/Resync erhalten.
+4. Follow-Up Mail:
+   - Erwartung: Nach Titeländerung wird die Follow-Up Mail wieder aus dem neuen Titel generiert (da `customEmail` zurückgesetzt wird).
+5. Meeting-Übersicht (Dashboard/Transcripts):
+   - Erwartung: Titel wird nach Änderung ohne Hard-Reload aktualisiert (Realtime), spätestens nach kurzer Zeit.
 
-| Funktion | Verhalten |
-|----------|-----------|
-| Überschrift | Titel wird sofort und dauerhaft angezeigt |
-| Transkript | Header mit aktuellem Titel wird in DB geschrieben |
-| Follow-Up E-Mail | Wird automatisch neu generiert mit neuem Titel |
-| Meeting-Übersicht | Realtime-Subscription zeigt neuen Titel |
-| Seitenneulade | Zeigt korrekten Titel aus Datenbank |
+---
+
+## Risiken / Edge Cases
+- Wenn ein User den Titel auf leer setzt:
+  - Entscheidung im Trigger: Header entfernen oder beibehalten. Ich würde entfernen, damit kein “falscher” Titel stehen bleibt.
+- Wenn `sync-recording` sehr häufig `transcript_text` überschreibt:
+  - Trigger fängt das ab und setzt den Header zuverlässig nach.
+
