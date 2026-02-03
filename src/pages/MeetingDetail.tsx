@@ -47,6 +47,16 @@ import { useAuth } from "@/hooks/useAuth";
 import { useImpersonation } from "@/contexts/ImpersonationContext";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { EditableTitle } from "@/components/recordings/EditableTitle";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type TimeFilter = 'heute' | '7tage' | '30tage' | '90tage' | 'alle';
 
@@ -88,6 +98,9 @@ export default function MeetingDetail() {
   
   // Deep Dive Modal States
   const [showDeepDiveModal, setShowDeepDiveModal] = useState(false);
+  
+  // Resync Warning Dialog State
+  const [showResyncWarning, setShowResyncWarning] = useState(false);
   
   // Auth für User-Email
   const { user } = useAuth();
@@ -652,7 +665,7 @@ export default function MeetingDetail() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => syncRecordingStatus(true)}
+                onClick={() => setShowResyncWarning(true)}
                 disabled={isSyncing}
                 className="rounded-xl hover:bg-primary/10 transition-all"
               >
@@ -1389,6 +1402,30 @@ export default function MeetingDetail() {
         keyPoints={recording.key_points || undefined}
         actionItems={recording.action_items || undefined}
       />
+      
+      {/* Resync Warning Dialog */}
+      <AlertDialog open={showResyncWarning} onOpenChange={setShowResyncWarning}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Transkript neu laden?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Das Transkript wird von der Aufnahmequelle neu abgerufen. 
+              Manuelle Änderungen an Sprechernamen gehen dabei verloren.
+              <br /><br />
+              <strong>Der Meeting-Titel bleibt erhalten.</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              setShowResyncWarning(false);
+              syncRecordingStatus(true);
+            }}>
+              Neu laden
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
