@@ -619,14 +619,47 @@ export default function MeetingDetail() {
               title={recording.title}
               meetingId={recording.meeting_id}
               size="large"
-              onTitleChange={(newTitle) => {
-                // Set flag to prevent auto-sync from overwriting the title
+              onTitleChange={async (newTitle) => {
+                // 1. Flag setzen um Auto-Sync zu blockieren
                 titleJustUpdatedRef.current = true;
+                
+                // 2. Lokalen State sofort aktualisieren
                 setRecording(prev => prev ? { ...prev, title: newTitle } : null);
-                // Reset flag after 5 seconds (enough time for any pending sync)
+                
+                // 3. customEmail zurücksetzen → Follow-Up wird neu generiert mit neuem Titel
+                setCustomEmail(null);
+                
+                // 4. Transkript-Header in DB aktualisieren (async)
+                if (recording?.transcript_text && recording?.id) {
+                  const headerPattern = /^\[Meeting:.*?\]\n---\n/;
+                  const newHeader = `[Meeting: ${newTitle}]\n---\n`;
+                  
+                  let updatedTranscript: string;
+                  if (headerPattern.test(recording.transcript_text)) {
+                    updatedTranscript = recording.transcript_text.replace(headerPattern, newHeader);
+                  } else {
+                    updatedTranscript = newHeader + recording.transcript_text;
+                  }
+                  
+                  // DB-Update im Hintergrund (kein await um UI nicht zu blockieren)
+                  supabase
+                    .from('recordings')
+                    .update({ transcript_text: updatedTranscript })
+                    .eq('id', recording.id)
+                    .then(({ error }) => {
+                      if (error) {
+                        console.error('Failed to update transcript header:', error);
+                      } else {
+                        // Lokalen Transkript-State aktualisieren
+                        setRecording(prev => prev ? { ...prev, transcript_text: updatedTranscript } : null);
+                      }
+                    });
+                }
+                
+                // 5. Flag nach 10s zurücksetzen (mehr Sicherheit)
                 setTimeout(() => {
                   titleJustUpdatedRef.current = false;
-                }, 5000);
+                }, 10000);
               }}
             />
             <p className="text-muted-foreground mt-1">

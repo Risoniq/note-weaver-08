@@ -36,12 +36,18 @@ export const EditableTitle = ({
 
   const handleSave = async () => {
     const trimmedTitle = editedTitle.trim();
+    const oldTitle = title || '';
     
-    if (trimmedTitle === (title || '')) {
+    if (trimmedTitle === oldTitle) {
       setIsEditing(false);
       return;
     }
 
+    // OPTIMISTISCH: Callback SOFORT aufrufen, UI aktualisieren
+    onTitleChange?.(trimmedTitle);
+    setIsEditing(false);
+    
+    // Dann DB-Update im Hintergrund
     setIsSaving(true);
     
     const { error } = await supabase
@@ -53,6 +59,8 @@ export const EditableTitle = ({
 
     if (error) {
       console.error('Failed to update title:', error);
+      // ROLLBACK bei Fehler
+      onTitleChange?.(oldTitle);
       toast({
         title: "Fehler",
         description: "Titel konnte nicht gespeichert werden",
@@ -65,9 +73,6 @@ export const EditableTitle = ({
       title: "Titel aktualisiert",
       description: "Der Meeting-Titel wurde gespeichert",
     });
-    
-    setIsEditing(false);
-    onTitleChange?.(trimmedTitle);
   };
 
   const handleCancel = () => {
