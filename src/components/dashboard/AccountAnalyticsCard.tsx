@@ -7,55 +7,45 @@ import { calculateAccountAnalytics, formatDuration, type Recording, type Account
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { AccountAnalyticsModal } from "./AccountAnalyticsModal";
 import { Skeleton } from "@/components/ui/skeleton";
-
 export const AccountAnalyticsCard = () => {
-  const { user } = useAuth();
+  const {
+    user
+  } = useAuth();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-
   useEffect(() => {
     const fetchRecordings = async () => {
       if (!user) return;
-      
-      const { data, error } = await supabase
-        .from("recordings")
-        .select("id, created_at, duration, transcript_text, action_items, key_points, participants, status, title")
-        .eq("user_id", user.id)
-        .eq("status", "done")
-        .order("created_at", { ascending: false })
-        .limit(50);
-
+      const {
+        data,
+        error
+      } = await supabase.from("recordings").select("id, created_at, duration, transcript_text, action_items, key_points, participants, status, title").eq("user_id", user.id).eq("status", "done").order("created_at", {
+        ascending: false
+      }).limit(50);
       if (!error && data) {
         setRecordings(data as Recording[]);
       }
       setLoading(false);
     };
-
     fetchRecordings();
   }, [user]);
-
   const analytics = useMemo<AccountAnalytics | null>(() => {
     if (recordings.length === 0) return null;
     return calculateAccountAnalytics(recordings, user?.email || null);
   }, [recordings, user?.email]);
-
   if (loading) {
-    return (
-      <div className="space-y-4">
+    return <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <Skeleton className="h-24 rounded-xl" />
           <Skeleton className="h-24 rounded-xl" />
         </div>
         <Skeleton className="h-12" />
         <Skeleton className="h-10" />
-      </div>
-    );
+      </div>;
   }
-
   if (!analytics || analytics.totalMeetings === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-8 text-center">
+    return <div className="flex flex-col items-center justify-center py-8 text-center">
         <TrendingUp className="h-12 w-12 text-muted-foreground/40 mb-3" />
         <p className="text-muted-foreground">
           Noch keine abgeschlossenen Meetings
@@ -63,24 +53,25 @@ export const AccountAnalyticsCard = () => {
         <p className="text-sm text-muted-foreground/70">
           Nach deinem ersten Meeting erscheinen hier Analysen
         </p>
-      </div>
-    );
+      </div>;
   }
 
   // Pie Chart Daten
   const speakerChartData = analytics.aggregatedSpeakerShares.slice(0, 5).map(s => ({
     name: s.name,
     value: s.percentage,
-    color: s.color,
+    color: s.color
   }));
-
-  const contentChartData = [
-    { name: "Business", value: analytics.aggregatedContentBreakdown.business, color: "hsl(210, 80%, 55%)" },
-    { name: "Small Talk", value: analytics.aggregatedContentBreakdown.smallTalk, color: "hsl(45, 80%, 55%)" },
-  ];
-
-  return (
-    <>
+  const contentChartData = [{
+    name: "Business",
+    value: analytics.aggregatedContentBreakdown.business,
+    color: "hsl(210, 80%, 55%)"
+  }, {
+    name: "Small Talk",
+    value: analytics.aggregatedContentBreakdown.smallTalk,
+    color: "hsl(45, 80%, 55%)"
+  }];
+  return <>
       <div className="space-y-4">
         {/* Mini Pie Charts */}
         <div className="grid grid-cols-2 gap-4">
@@ -90,18 +81,8 @@ export const AccountAnalyticsCard = () => {
             <div className="h-16">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={speakerChartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={15}
-                    outerRadius={30}
-                    paddingAngle={2}
-                    dataKey="value"
-                  >
-                    {speakerChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
+                  <Pie data={speakerChartData} cx="50%" cy="50%" innerRadius={15} outerRadius={30} paddingAngle={2} dataKey="value">
+                    {speakerChartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
@@ -114,18 +95,8 @@ export const AccountAnalyticsCard = () => {
             <div className="h-16">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={contentChartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={15}
-                    outerRadius={30}
-                    paddingAngle={2}
-                    dataKey="value"
-                  >
-                    {contentChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
+                  <Pie data={contentChartData} cx="50%" cy="50%" innerRadius={15} outerRadius={30} paddingAngle={2} dataKey="value">
+                    {contentChartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
@@ -157,24 +128,15 @@ export const AccountAnalyticsCard = () => {
         </div>
 
         {/* CTA Button */}
-        <Button 
-          variant="outline" 
-          className="w-full justify-between group"
-          onClick={() => setModalOpen(true)}
-        >
+        <Button variant="outline" className="w-full justify-between group" onClick={() => setModalOpen(true)}>
           <span className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4" />
-            Deep Dive Analyse öffnen
+            Account Analyse öffnen
           </span>
           <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
         </Button>
       </div>
 
-      <AccountAnalyticsModal 
-        open={modalOpen} 
-        onClose={() => setModalOpen(false)}
-        analytics={analytics}
-      />
-    </>
-  );
+      <AccountAnalyticsModal open={modalOpen} onClose={() => setModalOpen(false)} analytics={analytics} />
+    </>;
 };
