@@ -46,6 +46,7 @@ import { DeepDiveModal } from "@/components/meeting/DeepDiveModal";
 import { useAuth } from "@/hooks/useAuth";
 import { useImpersonation } from "@/contexts/ImpersonationContext";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
+import { EditableTitle } from "@/components/recordings/EditableTitle";
 
 type TimeFilter = 'heute' | '7tage' | '30tage' | '90tage' | 'alle';
 
@@ -608,9 +609,13 @@ export default function MeetingDetail() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-3xl font-bold text-foreground">
-              {recording.title || `Meeting ${recording.meeting_id.slice(0, 8)}`}
-            </h1>
+            <EditableTitle
+              recordingId={recording.id}
+              title={recording.title}
+              meetingId={recording.meeting_id}
+              size="large"
+              onTitleChange={(newTitle) => setRecording(prev => prev ? { ...prev, title: newTitle } : null)}
+            />
             <p className="text-muted-foreground mt-1">
               {format(new Date(recording.created_at), "EEEE, dd. MMMM yyyy 'um' HH:mm 'Uhr'", { locale: de })}
             </p>

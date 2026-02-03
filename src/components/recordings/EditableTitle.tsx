@@ -10,13 +10,15 @@ interface EditableTitleProps {
   title: string | null;
   meetingId: string;
   onTitleChange?: (newTitle: string) => void;
+  size?: "default" | "large";
 }
 
 export const EditableTitle = ({ 
   recordingId, 
   title, 
   meetingId,
-  onTitleChange 
+  onTitleChange,
+  size = "default"
 }: EditableTitleProps) => {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
@@ -82,6 +84,23 @@ export const EditableTitle = ({
     }
   };
 
+  const sizeClasses = {
+    default: {
+      text: "text-xl",
+      input: "text-xl",
+      icon: "h-4 w-4",
+      button: "h-8 w-8"
+    },
+    large: {
+      text: "text-3xl",
+      input: "text-2xl",
+      icon: "h-5 w-5",
+      button: "h-9 w-9"
+    }
+  };
+
+  const styles = sizeClasses[size];
+
   if (isEditing) {
     return (
       <div className="flex items-center gap-2 flex-1">
@@ -90,7 +109,7 @@ export const EditableTitle = ({
           onChange={(e) => setEditedTitle(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Meeting-Titel eingeben..."
-          className="text-xl font-semibold h-auto py-1"
+          className={`${styles.input} font-semibold h-auto py-1`}
           autoFocus
           disabled={isSaving}
         />
@@ -99,18 +118,18 @@ export const EditableTitle = ({
           size="icon" 
           onClick={handleSave}
           disabled={isSaving}
-          className="shrink-0 h-8 w-8"
+          className={`shrink-0 ${styles.button}`}
         >
-          <Check className="h-4 w-4 text-primary" />
+          <Check className={`${styles.icon} text-primary`} />
         </Button>
         <Button 
           variant="ghost" 
           size="icon" 
           onClick={handleCancel}
           disabled={isSaving}
-          className="shrink-0 h-8 w-8"
+          className={`shrink-0 ${styles.button}`}
         >
-          <X className="h-4 w-4 text-muted-foreground" />
+          <X className={`${styles.icon} text-muted-foreground`} />
         </Button>
       </div>
     );
@@ -119,7 +138,7 @@ export const EditableTitle = ({
   return (
     <div className="flex items-center gap-2 group flex-1 min-w-0">
       <h2 
-        className="text-xl font-semibold truncate cursor-pointer hover:text-primary transition-colors"
+        className={`${styles.text} font-bold truncate cursor-pointer hover:text-primary transition-colors`}
         onClick={() => setIsEditing(true)}
         title={displayTitle}
       >
@@ -129,9 +148,9 @@ export const EditableTitle = ({
         variant="ghost" 
         size="icon" 
         onClick={() => setIsEditing(true)}
-        className="shrink-0 h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+        className={`shrink-0 ${styles.button} opacity-0 group-hover:opacity-100 transition-opacity`}
       >
-        <Pencil className="h-4 w-4 text-muted-foreground" />
+        <Pencil className={`${styles.icon} text-muted-foreground`} />
       </Button>
     </div>
   );
