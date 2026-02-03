@@ -3,6 +3,7 @@ import { Send, MessageCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { VoiceInputButton } from "@/components/ui/VoiceInputButton";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 interface Message {
@@ -170,6 +171,10 @@ export const MeetingChatWidget = () => {
       {/* Input Form */}
       <form onSubmit={handleSubmit} className="flex gap-2">
         <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Frag etwas über deine Meetings..." disabled={isLoading} className="flex-1 bg-background/50" />
+        <VoiceInputButton 
+          onTranscript={(text) => setInput(prev => prev ? `${prev} ${text}` : text)}
+          disabled={isLoading}
+        />
         <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
