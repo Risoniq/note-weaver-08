@@ -622,7 +622,24 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
       }
     }
 
-    // 8. Wenn fertig und Transkript vorhanden (oder force_resync), automatisch Analyse starten
+    // 8. ZUERST: Datenbank aktualisieren (damit transcript_text in DB ist!)
+    const { error: updateError } = await supabase
+      .from('recordings')
+      .update(updates)
+      .eq('id', id)
+
+    if (updateError) {
+      console.error('Update Fehler:', updateError)
+      return new Response(
+        JSON.stringify({ error: 'Failed to update recording' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('Datenbank aktualisiert:', updates)
+
+    // 9. DANN: Wenn fertig und Transkript vorhanden (oder force_resync), automatisch Analyse starten
+    // WICHTIG: Muss NACH dem DB-Update sein, da analyze-transcript das Transkript aus der DB liest!
     const hasTranscript = updates.transcript_text || recording.transcript_text;
     if (status === 'done' && hasTranscript && (updates.transcript_text || force_resync)) {
       console.log('Starte automatische Transkript-Analyse...')
@@ -646,7 +663,7 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
       }
     }
 
-    // 9. Export an externe Supabase-API senden (nach jedem abgeschlossenen Meeting)
+    // 10. Export an externe Supabase-API senden (nach jedem abgeschlossenen Meeting)
     // Sendet Transkript als Plain-Text mit Metadaten-Header
     if (status === 'done' && (updates.transcript_text || recording.transcript_text)) {
       const exportUrl = Deno.env.get('TRANSCRIPT_EXPORT_URL')
@@ -720,22 +737,6 @@ ${transcriptContent}`
         console.log('Export-Konfiguration nicht vollständig (TRANSCRIPT_EXPORT_URL oder TRANSCRIPT_EXPORT_SECRET fehlt)')
       }
     }
-
-    // 9. Datenbank aktualisieren
-    const { error: updateError } = await supabase
-      .from('recordings')
-      .update(updates)
-      .eq('id', id)
-
-    if (updateError) {
-      console.error('Update Fehler:', updateError)
-      return new Response(
-        JSON.stringify({ error: 'Failed to update recording' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log('Datenbank aktualisiert:', updates)
 
     return new Response(JSON.stringify({ status: status, data: botData }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
