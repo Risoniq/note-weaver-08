@@ -1,58 +1,75 @@
 
-# Plan: Analyse bei manuellem Neu-Laden automatisch starten
+# Plan: Onboarding-Tour Klick-Bug beheben
 
 ## Problem
 
-Aktuell wird die KI-Analyse nur gestartet, wenn ein **neues** Transkript von Recall.ai heruntergeladen wird (Zeile 626):
+Beim Klicken auf den "Weiter"-Button in der Onboarding-Tour passiert nichts. Das Problem liegt in der CSS-Struktur der Komponente:
 
-```typescript
-if (status === 'done' && updates.transcript_text) {
-  // Nur wenn neues Transkript vorhanden
-}
+1. Das Backdrop-Element mit `pointer-events-auto` blockiert alle Maus-Events
+2. Das Tooltip-Div liegt zwar visuell darüber (z-10), aber beide sind im gleichen Stacking-Kontext
+3. Das SVG-Element für das Spotlight-Mask hat ebenfalls keine explizite z-index-Trennung
+
+## Analyse der Struktur
+
+```text
+┌─ fixed inset-0 z-[9999] ─────────────────────────────────────┐
+│                                                               │
+│  ┌─ Backdrop (pointer-events-auto) ─────────────────────────┐│
+│  │  SVG mit Spotlight-Maske (keine pointer-events)          ││
+│  │  Spotlight-Glow (pointer-events-none)                    ││
+│  └──────────────────────────────────────────────────────────┘│
+│                                                               │
+│  ┌─ Tooltip (z-10, keine pointer-events Definition) ────────┐│
+│  │  GlassCard mit Buttons                                   ││
+│  └──────────────────────────────────────────────────────────┘│
+│                                                               │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-Bei einem manuellen "Transkript neu laden" (`force_resync = true`) ohne neues Transkript wird die Analyse **nicht** erneut gestartet. Das bedeutet, Benutzer können Analysefehler nicht selbst beheben.
+Das Problem: Das Backdrop hat `pointer-events-auto` und bedeckt die gesamte Fläche. Das Tooltip hat zwar `z-10`, aber **keinen expliziten `pointer-events-auto`**, während das Backdrop-Element die Events abfängt.
 
 ## Lösung
 
-Die Bedingung für den Analyse-Start in `sync-recording` erweitern, sodass die Analyse auch bei `force_resync` ausgeführt wird - unabhängig davon, ob ein neues Transkript heruntergeladen wurde.
+Das Tooltip-Container-Div benötigt `pointer-events-auto`, damit Klicks auf die Buttons funktionieren:
 
-## Änderung
+### Datei: `src/components/onboarding/OnboardingTour.tsx`
 
-### Datei: `supabase/functions/sync-recording/index.ts`
+**Zeile 192-198** - Tooltip-Container anpassen:
 
-**Zeile 625-626 (ca.)** - Aktuelle Bedingung:
-
-```typescript
-// 8. Wenn fertig und Transkript vorhanden, automatisch Analyse starten
-if (status === 'done' && updates.transcript_text) {
+Aktuell:
+```tsx
+<div
+  ref={tooltipRef}
+  className="absolute z-10 w-[360px] max-w-[calc(100vw-40px)] transition-all duration-300 ease-out"
+  style={{...}}
+>
 ```
 
-**Neue Bedingung:**
-
-```typescript
-// 8. Wenn fertig und Transkript vorhanden (oder force_resync), automatisch Analyse starten
-const hasTranscript = updates.transcript_text || recording.transcript_text;
-if (status === 'done' && hasTranscript && (updates.transcript_text || force_resync)) {
+Änderung:
+```tsx
+<div
+  ref={tooltipRef}
+  className="absolute z-10 w-[360px] max-w-[calc(100vw-40px)] transition-all duration-300 ease-out pointer-events-auto"
+  style={{...}}
+>
 ```
-
-### Logik erklärt
-
-| Szenario | Analyse starten? |
-|----------|------------------|
-| Erstes Sync mit neuem Transkript | Ja (wie bisher) |
-| Normales Auto-Sync ohne Änderung | Nein (wie bisher) |
-| `force_resync` mit vorhandenem Transkript | **Ja (NEU!)** |
 
 ## Betroffene Datei
 
 | Datei | Aktion |
 |-------|--------|
-| `supabase/functions/sync-recording/index.ts` | Bedingung für Analyse-Start erweitern |
+| `src/components/onboarding/OnboardingTour.tsx` | `pointer-events-auto` zum Tooltip-Container hinzufügen |
+
+## Technische Details
+
+Die CSS-Eigenschaft `pointer-events` steuert, ob ein Element Maus-Events empfangen kann:
+- `pointer-events-auto`: Element empfängt Maus-Events (Standard für die meisten Elemente, aber nicht in Overlay-Situationen)
+- `pointer-events-none`: Element ignoriert Maus-Events (Events gehen an das Element darunter)
+
+In einem Overlay wie diesem mit `position: fixed` und überlappenden Elementen muss das interaktive Element explizit `pointer-events-auto` haben, um sicherzustellen, dass es Klicks erhält.
 
 ## Ergebnis
 
-- Der bestehende "Transkript neu laden" Button startet jetzt auch die Analyse neu
-- Kein neuer Button nötig
-- Benutzer können Analysefehler selbst beheben durch Klick auf "Transkript neu laden"
-- Bei normalen Auto-Syncs bleibt das Verhalten unverändert (keine unnötigen Analyse-Aufrufe)
+- Klicks auf "Weiter", "Zurück", "Überspringen" und "X" funktionieren wieder
+- Das Backdrop blockiert weiterhin Klicks auf die Seite dahinter
+- Der Spotlight-Bereich bleibt weiterhin klickbar (falls gewünscht)
