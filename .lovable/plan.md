@@ -1,87 +1,118 @@
 
+# Plan: Speech-to-Text für Chat-Widgets
 
-# Plan: CORS-Konfiguration für alle Edge Functions vereinheitlichen
+## Übersicht
 
-## Problem identifiziert
+Eine Mikrofon-Taste wird zu beiden Chat-Widgets (Meeting-Chat und Account-Chat) hinzugefügt, mit der Nutzer per Sprache Fragen stellen können. Die Transkription erfolgt über die **Browser Web Speech API**, die bereits im Projekt implementiert ist.
 
-Die Nutzer sehen "Synchronisierung fehlgeschlagen" auf der Production-URL `notetaker2pro.com`, weil die CORS-Konfiguration in mehreren Edge Functions inkonsistent ist.
+## Warum nicht Recall.ai?
 
-### Aktueller Zustand
+Recall.ai ist für Meeting-Recordings konzipiert und bietet keine API für kurze Audio-Uploads. Für Chat-Eingaben ist die Browser-native Lösung ideal:
+- Kostenlos und ohne zusätzliche API-Keys
+- Niedrige Latenz (Echtzeit)
+- Funktioniert in Chrome, Edge und Safari
 
-| Edge Function | notetaker2pro.com | Lovable Preview | Status |
-|--------------|-------------------|-----------------|--------|
-| sync-recording | **FEHLT** | ✓ | **BLOCKIERT** |
-| analyze-transcript | **FEHLT** | ✓ | **BLOCKIERT** |
-| meeting-bot-webhook | **FEHLT** | ✓ | **BLOCKIERT** |
-| repair-all-recordings | **FEHLT** | ✓ | **BLOCKIERT** |
-| create-bot | ✓ | ✓ | OK |
-| admin-view-user-data | ✓ | ✓ | OK |
-| google-recall-auth | ✓ | ✓ | OK |
-| microsoft-recall-auth | ✓ | ✓ | OK |
+## Funktionsweise
 
-Die betroffenen Functions nutzen eine dynamische CORS-Konfiguration, aber ohne die Production-Domain `notetaker2pro.com`.
+1. Nutzer klickt auf Mikrofon-Symbol neben dem Eingabefeld
+2. Browser fragt nach Mikrofon-Berechtigung (einmalig)
+3. Sprache wird in Echtzeit transkribiert
+4. Text erscheint im Eingabefeld
+5. Nutzer kann Text vor dem Absenden bearbeiten oder direkt senden
 
-## Lösung
+## Änderungen
 
-Die CORS-Konfiguration in allen betroffenen Edge Functions auf ein einheitliches Schema aktualisieren:
+### 1. VoiceInputButton Komponente
 
-```typescript
-function getCorsHeaders(req: Request) {
-  const origin = req.headers.get('origin') || '';
-  const allowedOrigins = [
-    Deno.env.get('APP_URL') || '',
-    'https://notetaker2pro.com',
-    'https://www.notetaker2pro.com',
-    'http://localhost:5173',
-    'http://localhost:8080',
-    'http://localhost:3000',
-  ].filter(Boolean);
-  
-  const isLovablePreview = origin.endsWith('.lovableproject.com') || origin.endsWith('.lovable.app');
-  const allowOrigin = allowedOrigins.includes(origin) || isLovablePreview 
-    ? origin 
-    : '*';
-  
-  return {
-    'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Credentials': 'true',
-  };
-}
+Neue wiederverwendbare Komponente für Spracheingabe:
+
+| Feature | Beschreibung |
+|---------|--------------|
+| Mikrofon-Toggle | Klick startet/stoppt Aufnahme |
+| Visuelles Feedback | Pulsierende Animation während Aufnahme |
+| Auto-Stop | Automatischer Stop nach 30 Sekunden |
+| Fehler-Handling | Toast bei fehlender Browser-Unterstützung |
+
+```text
+┌─────────────────────────────────────────────┐
+│ Frag etwas über dieses Meeting...    🎤  ➤ │
+└─────────────────────────────────────────────┘
+                                       ↑
+                              Mikrofon-Button
 ```
 
-## Betroffene Dateien
+### 2. Anpassung MeetingChatWidget (Meeting-Ebene)
 
-| Datei | Änderung |
-|-------|----------|
-| `supabase/functions/sync-recording/index.ts` | `notetaker2pro.com` hinzufügen |
-| `supabase/functions/analyze-transcript/index.ts` | `notetaker2pro.com` hinzufügen |
-| `supabase/functions/meeting-bot-webhook/index.ts` | `notetaker2pro.com` hinzufügen |
-| `supabase/functions/repair-all-recordings/index.ts` | `notetaker2pro.com` hinzufügen |
-| `supabase/functions/google-calendar-events/index.ts` | `notetaker2pro.com` hinzufügen |
+Datei: `src/components/meeting/MeetingChatWidget.tsx`
+
+- Import VoiceInputButton
+- State für Spracheingabe
+- Integration in Formular neben Send-Button
+- Transkribierter Text wird in Input-Feld eingefügt
+
+### 3. Anpassung MeetingChatWidget (Dashboard-Ebene)
+
+Datei: `src/components/dashboard/MeetingChatWidget.tsx`
+
+- Gleiche Änderungen wie Meeting-Chat
+- Konsistente UX über beide Chat-Interfaces
+
+## Benutzeroberfläche
+
+```text
+Vorher:
+┌────────────────────────────────┬───┐
+│ Eingabefeld                    │ ➤ │
+└────────────────────────────────┴───┘
+
+Nachher:
+┌────────────────────────────────┬───┬───┐
+│ Eingabefeld                    │🎤 │ ➤ │
+└────────────────────────────────┴───┴───┘
+                                  │
+                                  └── Rot pulsierend wenn aktiv
+```
 
 ## Technische Details
 
-### Warum tritt das Problem auf?
+### VoiceInputButton Props
 
-Der Browser sendet bei Cross-Origin-Requests (z.B. von `notetaker2pro.com` zu `supabase.co`) einen Preflight-Request (OPTIONS). Die Antwort muss den korrekten `Access-Control-Allow-Origin`-Header enthalten.
+| Prop | Typ | Beschreibung |
+|------|-----|--------------|
+| onTranscript | (text: string) => void | Callback mit erkanntem Text |
+| disabled | boolean | Deaktiviert während Chat lädt |
+| className | string | Optionale CSS-Klassen |
 
-Aktuell:
-1. Request kommt von `https://notetaker2pro.com`
-2. `sync-recording` prüft: Ist `notetaker2pro.com` in `allowedOrigins`? **NEIN**
-3. Ist es eine Lovable-Preview-Domain (`.lovable.app`)? **NEIN** 
-4. Fallback: Erstes Element aus `allowedOrigins` oder `*`
-5. Wenn `APP_URL` nicht gesetzt ist, wird nur `localhost` zurückgegeben
-6. Browser blockiert Request wegen Origin-Mismatch
+### Verwendeter Hook
 
-### Warum funktioniert es für Admins?
+Der existierende `useSpeechRecognition` Hook wird genutzt:
+- `isSupported`: Browser-Check
+- `startRecognition()`: Aufnahme starten
+- `stopRecognition()`: Aufnahme stoppen
+- `setOnResult(callback)`: Text-Callback setzen
 
-Admins nutzen möglicherweise die Lovable-Preview-URL (`*.lovable.app`), die bereits unterstützt wird, oder haben `APP_URL` korrekt konfiguriert.
+### Browser-Unterstützung
 
-## Ergebnis nach der Änderung
+| Browser | Unterstützt |
+|---------|-------------|
+| Chrome | ✅ Ja |
+| Edge | ✅ Ja |
+| Safari | ✅ Ja (ab 14.1) |
+| Firefox | ❌ Nein |
 
-- Alle Nutzer können Transkripte auf beiden URLs synchronisieren
-- CORS-Fehler auf `notetaker2pro.com` werden behoben
-- Konsistente Konfiguration über alle Edge Functions
-- Backward-kompatibel mit localhost und Lovable-Preview
+Bei nicht unterstützten Browsern wird der Button ausgeblendet.
 
+## Dateien
+
+| Datei | Aktion |
+|-------|--------|
+| `src/components/ui/VoiceInputButton.tsx` | Neu erstellen |
+| `src/components/meeting/MeetingChatWidget.tsx` | Erweitern |
+| `src/components/dashboard/MeetingChatWidget.tsx` | Erweitern |
+
+## Ergebnis
+
+- Beide Chat-Widgets bekommen Spracheingabe-Funktion
+- Nutzer können per Sprache Fragen stellen
+- Kostenlose Lösung ohne zusätzliche API-Keys
+- Konsistente UX in der gesamten App
