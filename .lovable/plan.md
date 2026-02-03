@@ -1,175 +1,97 @@
 
-# Plan: Titel-Persistenz & Schutz manueller Transkript-Änderungen
+
+# Plan: Admin-Berechtigung zum Bearbeiten aller Meeting-Titel
 
 ## Problem-Analyse
 
-Nach der Diagnose wurden folgende Probleme identifiziert:
+Aktuell kann ein Admin zwar alle Meetings **sehen** (dank RLS SELECT Policy + Edge Functions), aber nicht **bearbeiten**:
 
-### Problem 1: Bestehende Recordings ohne Header
-Der DB-Trigger wurde kürzlich erstellt, aber nur **1 von 5** Recordings hat den `[Meeting: ...]` Header. Das liegt daran, dass der Trigger nur bei INSERT oder UPDATE von `title` oder `transcript_text` ausgelöst wird - bestehende Daten werden nicht nachträglich aktualisiert.
+| Aktion | Normale User | Admin |
+|--------|-------------|-------|
+| Eigene Recordings lesen | ✅ (RLS) | ✅ (RLS) |
+| Alle Recordings lesen | ❌ | ✅ (RLS Policy) |
+| Eigene Recordings bearbeiten | ✅ (RLS) | ✅ (RLS) |
+| **Fremde Recordings bearbeiten** | ❌ | ❌ ← **Problem** |
 
-### Problem 2: "Transkript neu laden" überschreibt manuelle Änderungen
-Wenn `sync-recording(force_resync=true)` aufgerufen wird:
-1. Das **originale Transkript von Recall.ai** wird heruntergeladen
-2. Alle manuellen Sprecher-Änderungen (z.B. "Sprecher 1" → "Max Mustermann") gehen verloren
-3. Das ist das eigentliche Problem: Der User ändert Namen, klickt "neu laden", und alles ist weg
+## Lösungsansatz
 
-### Problem 3: Titel-Schutz im Backend fehlt
-Die `sync-recording` Edge Function schützt den manuell geänderten Titel nicht explizit - sie setzt ihn zwar nur wenn `recording.title` null ist, aber das genügt.
+Es gibt zwei Wege:
 
-## Lösungsstrategie
+**Option A: Neue RLS UPDATE Policy für Admins**
+- Einfach eine neue RLS Policy hinzufügen: `Admins can update all recordings`
+- Vorteil: Schnell, keine Code-Änderungen nötig
+- Nachteil: Gibt Admins volle Schreibrechte auf alle Felder
 
-### A) Einmaliges Update aller bestehenden Recordings (Migration)
-Ein einmaliges Update-Script, das für alle Recordings mit Titel den `[Meeting: ...]` Header in `transcript_text` einfügt.
+**Option B: Edge Function für Admin-Updates (sicherer)**
+- Neue Aktion `update_recording_title` in `admin-view-user-data` Edge Function
+- Frontend erkennt Admin-Modus und nutzt Edge Function statt direkte DB-Abfrage
+- Vorteil: Granulare Kontrolle (nur Titel änderbar), auditierbar
+- Nachteil: Mehr Code-Änderungen
 
-```sql
--- Einmaliges Update aller bestehenden Recordings
-UPDATE recordings
-SET transcript_text = '[Meeting: ' || title || ']' || E'\n---\n' || transcript_text
-WHERE title IS NOT NULL 
-  AND title != ''
-  AND transcript_text IS NOT NULL
-  AND transcript_text != ''
-  AND transcript_text NOT LIKE '[Meeting:%';
-```
-
-### B) Warnung bei "Transkript neu laden" im Frontend
-Da das Neuladen von Recall.ai **immer** das originale Transkript holt, sollten manuelle Änderungen gewarnt werden. Zwei Optionen:
-
-**Option 1: Warndialog anzeigen**
-- Vor dem Neuladen prüfen ob manuelle Änderungen vorliegen
-- Dialog: "Das Transkript wird von der Quelle neu geladen. Manuelle Änderungen an Sprechernamen gehen verloren. Fortfahren?"
-
-**Option 2: Manuelle Änderungen erhalten (komplex)**
-- Einen "Rename-Log" speichern (z.B. in einem JSONB-Feld `speaker_renames`)
-- Nach dem Neuladen die Renames wieder anwenden
-- Vorteil: Änderungen bleiben erhalten
-- Nachteil: Komplexer, kann zu Konflikten führen
-
-**Empfehlung: Option 1** - Warndialog ist transparent und verhindert Datenverlust
-
-### C) Titel-Schutz ist bereits implementiert
-Der DB-Trigger funktioniert korrekt:
-- Bei jedem Update von `transcript_text` wird der Header basierend auf `title` eingefügt
-- Der `title` selbst wird von `sync-recording` nicht überschrieben (nur wenn null)
+**Empfehlung: Option A** (einfach + effektiv, da Admins ohnehin Vertrauen genießen)
 
 ## Umsetzungsschritte
 
-### Schritt 1: Migration für bestehende Recordings
-Einmalige DB-Migration die alle Recordings mit Titel aktualisiert:
+### 1. Datenbank-Migration: RLS UPDATE Policy für Admins
+
 ```sql
-UPDATE recordings
-SET transcript_text = '[Meeting: ' || title || ']' || E'\n---\n' || transcript_text
-WHERE title IS NOT NULL 
-  AND title != ''
-  AND transcript_text IS NOT NULL
-  AND transcript_text != ''
-  AND NOT (transcript_text ~ '^\[Meeting:');
+CREATE POLICY "Admins can update all recordings"
+ON public.recordings
+FOR UPDATE
+TO authenticated
+USING (has_role(auth.uid(), 'admin'))
+WITH CHECK (has_role(auth.uid(), 'admin'));
 ```
 
-### Schritt 2: Warndialog im Frontend
-In `MeetingDetail.tsx` einen Bestätigungsdialog hinzufügen bevor `syncRecordingStatus(true)` aufgerufen wird:
+### 2. Frontend: EditableTitle Admin-Aware machen
 
-```typescript
-const handleResync = () => {
-  // Prüfen ob manuelle Änderungen vorliegen könnten
-  const hasCustomSpeakers = recording?.transcript_text?.includes('Sprecher ') === false;
-  
-  if (hasCustomSpeakers) {
-    // Dialog zeigen
-    setShowResyncWarningDialog(true);
-  } else {
-    syncRecordingStatus(true);
-  }
-};
-```
+Da Admins im Impersonation-Modus die Seite über `/meeting/:id` aufrufen und `isAdmin && isImpersonating` true ist, könnte RLS das Update dennoch blockieren. Der Admin-Client nutzt denselben Supabase-Client, aber mit seinem eigenen Token.
 
-Dialog-Text:
-> **Transkript neu laden?**
-> 
-> Das Transkript wird von der Aufnahmequelle neu abgerufen. 
-> Manuelle Änderungen an Sprechernamen gehen dabei verloren.
-> 
-> Der Meeting-Titel bleibt erhalten.
+**Lösung**: Die neue RLS Policy erlaubt Admins Updates auf alle Recordings direkt - keine Code-Änderung in `EditableTitle` nötig!
 
-### Schritt 3: Optional - Speaker-Rename-Speicherung
-Falls gewünscht, kann ein JSONB-Feld `speaker_renames` zur `recordings`-Tabelle hinzugefügt werden:
-```json
-{
-  "Sprecher 1": "Max Mustermann",
-  "Sprecher 2": "Anna Schmidt"
-}
-```
-Nach dem Resync werden die Renames wieder angewendet.
+**Optional (Robustheit)**: Falls es dennoch Probleme gibt, kann `EditableTitle` ein `isAdmin`-Prop bekommen und bei Bedarf eine Edge Function nutzen.
 
 ## Betroffene Dateien
 
 | Datei | Änderung |
 |-------|----------|
-| `supabase/migrations/xxx.sql` | Einmaliges Update bestehender Recordings |
-| `src/pages/MeetingDetail.tsx` | Warndialog vor Resync hinzufügen |
-| `src/components/ui/alert-dialog.tsx` | (bereits vorhanden) |
+| `supabase/migrations/...` | Neue RLS UPDATE Policy für Admins |
+| `src/components/recordings/EditableTitle.tsx` | Keine Änderung nötig (Policy reicht) |
 
 ## Technische Details
 
 ### Migration SQL
+
 ```sql
--- Alle bestehenden Recordings mit Titel aktualisieren
--- Der Trigger wird NICHT ausgelöst, da wir transcript_text direkt setzen
--- und der Trigger nur bei title ODER transcript_text UPDATE läuft
-UPDATE recordings
-SET transcript_text = '[Meeting: ' || title || ']' || E'\n---\n' || transcript_text,
-    updated_at = NOW()
-WHERE title IS NOT NULL 
-  AND title != ''
-  AND transcript_text IS NOT NULL
-  AND transcript_text != ''
-  AND NOT (transcript_text ~ '^\[Meeting:');
+-- Admins dürfen alle Recordings aktualisieren
+CREATE POLICY "Admins can update all recordings"
+ON public.recordings
+FOR UPDATE
+TO authenticated
+USING (has_role(auth.uid(), 'admin'))
+WITH CHECK (has_role(auth.uid(), 'admin'));
 ```
 
-### MeetingDetail.tsx - Warndialog
-```typescript
-// State für Dialog
-const [showResyncWarning, setShowResyncWarning] = useState(false);
+### Warum das funktioniert
 
-// Handler für Resync-Button
-const handleResyncClick = () => {
-  // Immer Warnung zeigen bei force_resync, da Änderungen verloren gehen
-  setShowResyncWarning(true);
-};
+1. Admin öffnet MeetingDetail im Impersonation-Modus
+2. Recording wird via Edge Function geladen (umgeht RLS für SELECT)
+3. Admin ändert den Titel via `EditableTitle`
+4. `EditableTitle` macht ein direktes `supabase.from('recordings').update(...)` 
+5. RLS prüft: `has_role(auth.uid(), 'admin')` → **true**
+6. Update wird durchgeführt
 
-// Bestätigter Resync
-const confirmResync = () => {
-  setShowResyncWarning(false);
-  syncRecordingStatus(true);
-};
+## Testplan
 
-// Dialog mit AlertDialog Komponente
-<AlertDialog open={showResyncWarning} onOpenChange={setShowResyncWarning}>
-  <AlertDialogContent>
-    <AlertDialogHeader>
-      <AlertDialogTitle>Transkript neu laden?</AlertDialogTitle>
-      <AlertDialogDescription>
-        Das Transkript wird von der Aufnahmequelle neu abgerufen. 
-        Manuelle Änderungen an Sprechernamen gehen dabei verloren.
-        Der Meeting-Titel bleibt erhalten.
-      </AlertDialogDescription>
-    </AlertDialogHeader>
-    <AlertDialogFooter>
-      <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-      <AlertDialogAction onClick={confirmResync}>
-        Neu laden
-      </AlertDialogAction>
-    </AlertDialogFooter>
-  </AlertDialogContent>
-</AlertDialog>
-```
+1. Als Admin einloggen und "Ansicht anzeigen" für einen User aktivieren
+2. Ein Meeting des Users öffnen
+3. Titel bearbeiten und speichern
+4. Seite neu laden → Titel sollte dauerhaft geändert sein
+5. Als der echte User einloggen und prüfen ob der Titel geändert wurde
 
-## Erwartetes Ergebnis
+## Risiko-Bewertung
 
-| Funktion | Verhalten nach Implementierung |
-|----------|-------------------------------|
-| Titel-Header | Alle bestehenden Recordings haben den `[Meeting: ...]` Header |
-| Titel-Änderung | Titel wird dauerhaft gespeichert, Header aktualisiert sich automatisch |
-| Transkript neu laden | Warndialog erscheint, User kann abbrechen oder bestätigen |
-| Sprechernamen-Änderungen | User wird gewarnt dass diese verloren gehen können |
+- **Niedrig**: Admins haben bereits Lese-Zugriff auf alle Daten
+- Die UPDATE Policy ist auf `has_role(..., 'admin')` beschränkt
+- Normale User können weiterhin nur eigene Recordings bearbeiten
+
