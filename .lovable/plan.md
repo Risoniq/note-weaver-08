@@ -1,118 +1,82 @@
 
-# Plan: Speech-to-Text für Chat-Widgets
+# Plan: Titel-Bearbeitung für alle Meeting-Ansichten
 
 ## Übersicht
 
-Eine Mikrofon-Taste wird zu beiden Chat-Widgets (Meeting-Chat und Account-Chat) hinzugefügt, mit der Nutzer per Sprache Fragen stellen können. Die Transkription erfolgt über die **Browser Web Speech API**, die bereits im Projekt implementiert ist.
+Der Meeting-Titel soll überall bearbeitbar sein, wo er prominent angezeigt wird. Die existierende `EditableTitle` Komponente wird wiederverwendet und für die MeetingDetail-Seite angepasst.
 
-## Warum nicht Recall.ai?
+## Aktueller Stand
 
-Recall.ai ist für Meeting-Recordings konzipiert und bietet keine API für kurze Audio-Uploads. Für Chat-Eingaben ist die Browser-native Lösung ideal:
-- Kostenlos und ohne zusätzliche API-Keys
-- Niedrige Latenz (Echtzeit)
-- Funktioniert in Chrome, Edge und Safari
-
-## Funktionsweise
-
-1. Nutzer klickt auf Mikrofon-Symbol neben dem Eingabefeld
-2. Browser fragt nach Mikrofon-Berechtigung (einmalig)
-3. Sprache wird in Echtzeit transkribiert
-4. Text erscheint im Eingabefeld
-5. Nutzer kann Text vor dem Absenden bearbeiten oder direkt senden
+| Ort | Bearbeitbar | Status |
+|-----|-------------|--------|
+| RecordingDetailSheet | ✅ Ja | Bereits implementiert |
+| MeetingDetail-Header | ❌ Nein | **Muss erweitert werden** |
+| RecordingCard (Liste) | ❌ Nein | Nicht nötig (Klick öffnet Detail) |
+| TranscriptCard | ❌ Nein | Nicht nötig (Klick öffnet Detail) |
 
 ## Änderungen
 
-### 1. VoiceInputButton Komponente
+### MeetingDetail.tsx - Header mit EditableTitle
 
-Neue wiederverwendbare Komponente für Spracheingabe:
+Die aktuelle statische Titel-Anzeige wird durch die EditableTitle-Komponente ersetzt:
 
-| Feature | Beschreibung |
-|---------|--------------|
-| Mikrofon-Toggle | Klick startet/stoppt Aufnahme |
-| Visuelles Feedback | Pulsierende Animation während Aufnahme |
-| Auto-Stop | Automatischer Stop nach 30 Sekunden |
-| Fehler-Handling | Toast bei fehlender Browser-Unterstützung |
-
+**Vorher:**
 ```text
-┌─────────────────────────────────────────────┐
-│ Frag etwas über dieses Meeting...    🎤  ➤ │
-└─────────────────────────────────────────────┘
-                                       ↑
-                              Mikrofon-Button
+┌────────────────────────────────────────────────┐
+│ ← Meeting Bot Test 2025-01-15              🟢 │
+│   Freitag, 15. Januar 2025 um 14:30 Uhr       │
+└────────────────────────────────────────────────┘
 ```
 
-### 2. Anpassung MeetingChatWidget (Meeting-Ebene)
-
-Datei: `src/components/meeting/MeetingChatWidget.tsx`
-
-- Import VoiceInputButton
-- State für Spracheingabe
-- Integration in Formular neben Send-Button
-- Transkribierter Text wird in Input-Feld eingefügt
-
-### 3. Anpassung MeetingChatWidget (Dashboard-Ebene)
-
-Datei: `src/components/dashboard/MeetingChatWidget.tsx`
-
-- Gleiche Änderungen wie Meeting-Chat
-- Konsistente UX über beide Chat-Interfaces
-
-## Benutzeroberfläche
-
+**Nachher:**
 ```text
-Vorher:
-┌────────────────────────────────┬───┐
-│ Eingabefeld                    │ ➤ │
-└────────────────────────────────┴───┘
-
-Nachher:
-┌────────────────────────────────┬───┬───┐
-│ Eingabefeld                    │🎤 │ ➤ │
-└────────────────────────────────┴───┴───┘
-                                  │
-                                  └── Rot pulsierend wenn aktiv
+┌────────────────────────────────────────────────────┐
+│ ← Meeting Bot Test 2025-01-15  ✏️           🟢    │
+│   Freitag, 15. Januar 2025 um 14:30 Uhr           │
+└────────────────────────────────────────────────────┘
+       ↑ Hover zeigt Bearbeiten-Symbol
 ```
 
-## Technische Details
+### Anpassung EditableTitle-Komponente
 
-### VoiceInputButton Props
+Die bestehende Komponente muss für verschiedene Größen erweitert werden:
 
 | Prop | Typ | Beschreibung |
 |------|-----|--------------|
-| onTranscript | (text: string) => void | Callback mit erkanntem Text |
-| disabled | boolean | Deaktiviert während Chat lädt |
-| className | string | Optionale CSS-Klassen |
+| size | "default" \| "large" | Steuert Schriftgröße |
+| onTitleChange | callback | Lokales State-Update |
 
-### Verwendeter Hook
+- `default`: Aktuelle Größe (text-xl) für Sheet
+- `large`: Größere Variante (text-3xl) für MeetingDetail-Header
 
-Der existierende `useSpeechRecognition` Hook wird genutzt:
-- `isSupported`: Browser-Check
-- `startRecognition()`: Aufnahme starten
-- `stopRecognition()`: Aufnahme stoppen
-- `setOnResult(callback)`: Text-Callback setzen
+### Lokales State-Update
 
-### Browser-Unterstützung
-
-| Browser | Unterstützt |
-|---------|-------------|
-| Chrome | ✅ Ja |
-| Edge | ✅ Ja |
-| Safari | ✅ Ja (ab 14.1) |
-| Firefox | ❌ Nein |
-
-Bei nicht unterstützten Browsern wird der Button ausgeblendet.
+Nach dem Speichern des Titels wird das lokale Recording-State aktualisiert, sodass die Änderung sofort sichtbar ist ohne Neuladen.
 
 ## Dateien
 
 | Datei | Aktion |
 |-------|--------|
-| `src/components/ui/VoiceInputButton.tsx` | Neu erstellen |
-| `src/components/meeting/MeetingChatWidget.tsx` | Erweitern |
-| `src/components/dashboard/MeetingChatWidget.tsx` | Erweitern |
+| `src/components/recordings/EditableTitle.tsx` | Erweitern um `size` Prop |
+| `src/pages/MeetingDetail.tsx` | EditableTitle im Header einbinden |
 
-## Ergebnis
+## Benutzer-Flow
 
-- Beide Chat-Widgets bekommen Spracheingabe-Funktion
-- Nutzer können per Sprache Fragen stellen
-- Kostenlose Lösung ohne zusätzliche API-Keys
-- Konsistente UX in der gesamten App
+1. Nutzer öffnet Meeting-Detailseite
+2. Hover über Titel zeigt kleines Stift-Symbol
+3. Klick auf Titel oder Symbol aktiviert Bearbeitungsmodus
+4. Eingabefeld erscheint mit aktuellem Titel
+5. Enter speichert, Escape bricht ab
+6. Toast-Nachricht bestätigt Speicherung
+7. Titel wird in Datenbank aktualisiert (RLS: `user_id = auth.uid()`)
+
+## Sicherheit
+
+Die Bearbeitung nutzt Supabase RLS-Policies, die sicherstellen, dass nur der Eigentümer eines Recordings dessen Titel ändern kann:
+
+```sql
+-- Existierende Policy
+Policy: Users can update own recordings
+Command: UPDATE
+Using Expression: (auth.uid() = user_id)
+```
