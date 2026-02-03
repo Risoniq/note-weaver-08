@@ -60,6 +60,7 @@ export default function MeetingDetail() {
   const [activeFilter, setActiveFilter] = useState<TimeFilter>('7tage');
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const titleJustUpdatedRef = useRef<boolean>(false);
+  const lastUserEditedTitleRef = useRef<string | null>(null);
   
   // Speaker-Suggestions Hook
   const { suggestions: speakerSuggestions, saveSpeakerName } = useSpeakerSuggestions();
@@ -172,8 +173,9 @@ export default function MeetingDetail() {
       const updatedRecording = await fetchRecording();
       if (updatedRecording) {
         // Preserve local title if it was just updated by user (avoid race condition)
-        if (titleJustUpdatedRef.current && recording?.title !== undefined) {
-          updatedRecording.title = recording.title;
+        // Use lastUserEditedTitleRef as single source of truth for the user-edited title
+        if (titleJustUpdatedRef.current && lastUserEditedTitleRef.current !== null) {
+          updatedRecording.title = lastUserEditedTitleRef.current;
         }
         setRecording(updatedRecording);
         
@@ -619,9 +621,10 @@ export default function MeetingDetail() {
               title={recording.title}
               meetingId={recording.meeting_id}
               size="large"
-              onTitleChange={async (newTitle) => {
-                // 1. Flag setzen um Auto-Sync zu blockieren
+              onTitleChange={(newTitle) => {
+                // 1. Flags setzen um Auto-Sync zu blockieren
                 titleJustUpdatedRef.current = true;
+                lastUserEditedTitleRef.current = newTitle;
                 
                 // 2. Lokalen State sofort aktualisieren
                 setRecording(prev => prev ? { ...prev, title: newTitle } : null);
@@ -629,36 +632,13 @@ export default function MeetingDetail() {
                 // 3. customEmail zurücksetzen → Follow-Up wird neu generiert mit neuem Titel
                 setCustomEmail(null);
                 
-                // 4. Transkript-Header in DB aktualisieren (async)
-                if (recording?.transcript_text && recording?.id) {
-                  const headerPattern = /^\[Meeting:.*?\]\n---\n/;
-                  const newHeader = `[Meeting: ${newTitle}]\n---\n`;
-                  
-                  let updatedTranscript: string;
-                  if (headerPattern.test(recording.transcript_text)) {
-                    updatedTranscript = recording.transcript_text.replace(headerPattern, newHeader);
-                  } else {
-                    updatedTranscript = newHeader + recording.transcript_text;
-                  }
-                  
-                  // DB-Update im Hintergrund (kein await um UI nicht zu blockieren)
-                  supabase
-                    .from('recordings')
-                    .update({ transcript_text: updatedTranscript })
-                    .eq('id', recording.id)
-                    .then(({ error }) => {
-                      if (error) {
-                        console.error('Failed to update transcript header:', error);
-                      } else {
-                        // Lokalen Transkript-State aktualisieren
-                        setRecording(prev => prev ? { ...prev, transcript_text: updatedTranscript } : null);
-                      }
-                    });
-                }
+                // 4. Transkript-Header wird automatisch durch DB-Trigger aktualisiert
+                // Kein Frontend-Update nötig - Single Source of Truth in der Datenbank
                 
-                // 5. Flag nach 10s zurücksetzen (mehr Sicherheit)
+                // 5. Flags nach 10s zurücksetzen (genug Zeit für Auto-Sync)
                 setTimeout(() => {
                   titleJustUpdatedRef.current = false;
+                  lastUserEditedTitleRef.current = null;
                 }, 10000);
               }}
             />
