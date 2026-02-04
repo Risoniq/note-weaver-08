@@ -9,6 +9,8 @@ export interface UserQuota {
   remaining_minutes: number;
   percentage_used: number;
   is_exhausted: boolean;
+  is_team_quota: boolean;
+  team_name?: string;
 }
 
 export function useUserQuota() {
@@ -53,32 +55,79 @@ export function useUserQuota() {
       }
 
       // Normal flow for current user
-      // Quota-Einstellungen abrufen
-      const { data: quotaData } = await supabase
-        .from('user_quotas')
-        .select('max_minutes')
+      // 1. Check if user is in a team
+      const { data: teamMembership } = await supabase
+        .from('team_members')
+        .select('team_id')
         .eq('user_id', user.id)
         .maybeSingle();
 
-      const maxMinutes = quotaData?.max_minutes ?? 120; // Default 2h
+      if (teamMembership?.team_id) {
+        // User is in a team - use team quota
+        const { data: teamData } = await supabase
+          .from('teams')
+          .select('name, max_minutes')
+          .eq('id', teamMembership.team_id)
+          .single();
 
-      // Verbrauchte Minuten berechnen (aus recordings)
-      const { data: recordings } = await supabase
-        .from('recordings')
-        .select('duration')
-        .eq('user_id', user.id)
-        .eq('status', 'done');
+        const teamMaxMinutes = teamData?.max_minutes ?? 600; // Default 10h
+        const teamName = teamData?.name ?? 'Team';
 
-      const usedSeconds = recordings?.reduce((sum, r) => sum + (r.duration || 0), 0) || 0;
-      const usedMinutes = Math.round(usedSeconds / 60);
+        // Get all team members
+        const { data: teamMembers } = await supabase
+          .from('team_members')
+          .select('user_id')
+          .eq('team_id', teamMembership.team_id);
 
-      setQuota({
-        max_minutes: maxMinutes,
-        used_minutes: usedMinutes,
-        remaining_minutes: Math.max(0, maxMinutes - usedMinutes),
-        percentage_used: Math.min(100, (usedMinutes / maxMinutes) * 100),
-        is_exhausted: usedMinutes >= maxMinutes
-      });
+        const memberIds = teamMembers?.map(m => m.user_id) || [];
+
+        // Sum recordings of all team members
+        const { data: teamRecordings } = await supabase
+          .from('recordings')
+          .select('duration')
+          .in('user_id', memberIds)
+          .eq('status', 'done');
+
+        const usedSeconds = teamRecordings?.reduce((sum, r) => sum + (r.duration || 0), 0) || 0;
+        const usedMinutes = Math.round(usedSeconds / 60);
+
+        setQuota({
+          max_minutes: teamMaxMinutes,
+          used_minutes: usedMinutes,
+          remaining_minutes: Math.max(0, teamMaxMinutes - usedMinutes),
+          percentage_used: Math.min(100, (usedMinutes / teamMaxMinutes) * 100),
+          is_exhausted: usedMinutes >= teamMaxMinutes,
+          is_team_quota: true,
+          team_name: teamName,
+        });
+      } else {
+        // Individual quota (as before)
+        const { data: quotaData } = await supabase
+          .from('user_quotas')
+          .select('max_minutes')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        const maxMinutes = quotaData?.max_minutes ?? 120; // Default 2h
+
+        const { data: recordings } = await supabase
+          .from('recordings')
+          .select('duration')
+          .eq('user_id', user.id)
+          .eq('status', 'done');
+
+        const usedSeconds = recordings?.reduce((sum, r) => sum + (r.duration || 0), 0) || 0;
+        const usedMinutes = Math.round(usedSeconds / 60);
+
+        setQuota({
+          max_minutes: maxMinutes,
+          used_minutes: usedMinutes,
+          remaining_minutes: Math.max(0, maxMinutes - usedMinutes),
+          percentage_used: Math.min(100, (usedMinutes / maxMinutes) * 100),
+          is_exhausted: usedMinutes >= maxMinutes,
+          is_team_quota: false,
+        });
+      }
     } catch (error) {
       console.error('Error fetching quota:', error);
     } finally {

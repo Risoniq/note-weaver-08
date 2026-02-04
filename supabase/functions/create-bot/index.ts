@@ -264,35 +264,89 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // 5.1. Quota-Check: Prüfen ob User noch Kontingent hat
-    const { data: quotaData } = await supabase
-      .from('user_quotas')
-      .select('max_minutes')
+    // Zuerst prüfen: Ist User in einem Team?
+    const { data: teamMembership } = await supabase
+      .from('team_members')
+      .select('team_id')
       .eq('user_id', user.id)
       .maybeSingle();
 
-    const maxMinutes = quotaData?.max_minutes ?? 120; // Default 2h
+    let maxMinutes: number;
+    let usedMinutes: number;
+    let quotaType: 'team' | 'individual';
 
-    const { data: doneRecordings } = await supabase
-      .from('recordings')
-      .select('duration')
-      .eq('user_id', user.id)
-      .eq('status', 'done');
+    if (teamMembership?.team_id) {
+      // User ist in einem Team - Team-Kontingent verwenden
+      quotaType = 'team';
+      
+      // Team-Kontingent laden
+      const { data: teamData } = await supabase
+        .from('teams')
+        .select('max_minutes')
+        .eq('id', teamMembership.team_id)
+        .single();
+      
+      maxMinutes = teamData?.max_minutes ?? 600; // Default 10h für Teams
 
-    const usedSeconds = doneRecordings?.reduce((sum: number, r: { duration: number | null }) => sum + (r.duration || 0), 0) || 0;
-    const usedMinutes = Math.round(usedSeconds / 60);
+      // Alle Team-Mitglieder holen
+      const { data: teamMembers } = await supabase
+        .from('team_members')
+        .select('user_id')
+        .eq('team_id', teamMembership.team_id);
+      
+      const memberIds = teamMembers?.map(m => m.user_id) || [];
+
+      // Verbrauch aller Team-Mitglieder summieren
+      const { data: teamRecordings } = await supabase
+        .from('recordings')
+        .select('duration')
+        .in('user_id', memberIds)
+        .eq('status', 'done');
+
+      const usedSeconds = teamRecordings?.reduce((sum: number, r: { duration: number | null }) => sum + (r.duration || 0), 0) || 0;
+      usedMinutes = Math.round(usedSeconds / 60);
+
+      console.log(`[Quota] Team-Kontingent für User ${user.id}: ${usedMinutes}/${maxMinutes} Minuten (Team: ${teamMembership.team_id})`);
+    } else {
+      // Individuelles Kontingent (wie bisher)
+      quotaType = 'individual';
+      
+      const { data: quotaData } = await supabase
+        .from('user_quotas')
+        .select('max_minutes')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      maxMinutes = quotaData?.max_minutes ?? 120; // Default 2h
+
+      const { data: doneRecordings } = await supabase
+        .from('recordings')
+        .select('duration')
+        .eq('user_id', user.id)
+        .eq('status', 'done');
+
+      const usedSeconds = doneRecordings?.reduce((sum: number, r: { duration: number | null }) => sum + (r.duration || 0), 0) || 0;
+      usedMinutes = Math.round(usedSeconds / 60);
+
+      console.log(`[Quota] Individuelles Kontingent für User ${user.id}: ${usedMinutes}/${maxMinutes} Minuten`);
+    }
 
     if (usedMinutes >= maxMinutes) {
-      console.log(`[Quota] User ${user.id} hat Kontingent erschöpft: ${usedMinutes}/${maxMinutes} Minuten`);
+      const message = quotaType === 'team' 
+        ? 'Das Team-Kontingent ist erschöpft. Kontaktiere deinen Admin für mehr Meeting-Stunden.'
+        : 'Dein Meeting-Kontingent ist erschöpft. Upgrade auf die Vollversion für unbegrenzte Meetings.';
+      
+      console.log(`[Quota] User ${user.id} hat ${quotaType}-Kontingent erschöpft: ${usedMinutes}/${maxMinutes} Minuten`);
       return new Response(
         JSON.stringify({ 
           error: 'Quota exhausted',
-          message: 'Dein Meeting-Kontingent ist erschöpft. Upgrade auf die Vollversion für unbegrenzte Meetings.'
+          message
         }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`[Quota] User ${user.id} hat noch Kontingent: ${usedMinutes}/${maxMinutes} Minuten`);
+    console.log(`[Quota] User ${user.id} hat noch ${quotaType}-Kontingent: ${usedMinutes}/${maxMinutes} Minuten`);
 
     // 6. Recall API Konfiguration laden
     const recallApiKey = Deno.env.get("RECALL_API_KEY");

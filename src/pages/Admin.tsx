@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, FileText, Clock, Activity, Calendar, CheckCircle, XCircle, Trash2, Shield, Settings, Eye, Plus } from 'lucide-react';
+import { ArrowLeft, Users, FileText, Clock, Activity, Calendar, CheckCircle, XCircle, Trash2, Shield, Settings, Eye, Plus, UsersRound } from 'lucide-react';
 import { withTokenRefresh } from '@/lib/retryWithTokenRefresh';
 import { useImpersonation } from '@/contexts/ImpersonationContext';
 import { AdminCreateMeetingDialog } from '@/components/admin/AdminCreateMeetingDialog';
+import { TeamCard, type TeamData } from '@/components/admin/TeamCard';
+import { TeamDialog } from '@/components/admin/TeamDialog';
+import { TeamMembersDialog } from '@/components/admin/TeamMembersDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -19,6 +22,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,6 +67,17 @@ interface UserData {
   is_admin: boolean;
   max_minutes: number;
   used_minutes: number;
+  team_id: string | null;
+  team_name: string | null;
+}
+
+interface Summary {
+  total_users: number;
+  active_users: number;
+  total_recordings: number;
+  total_minutes: number;
+  online_now: number;
+  recording_now: number;
 }
 
 interface Summary {
@@ -72,9 +94,11 @@ const Admin = () => {
   const { toast } = useToast();
   const { startImpersonating } = useImpersonation();
   const [users, setUsers] = useState<UserData[]>([]);
+  const [teams, setTeams] = useState<TeamData[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('users');
   
   // Quota Edit Dialog
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false);
@@ -83,6 +107,12 @@ const Admin = () => {
   
   // Create Meeting Dialog
   const [createMeetingOpen, setCreateMeetingOpen] = useState(false);
+
+  // Team Dialogs
+  const [teamDialogOpen, setTeamDialogOpen] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<TeamData | null>(null);
+  const [teamMembersDialogOpen, setTeamMembersDialogOpen] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState<TeamData | null>(null);
 
   const handleViewAsUser = (user: UserData) => {
     startImpersonating(user.id, user.email);
@@ -110,6 +140,7 @@ const Admin = () => {
       }
 
       setUsers(response.data.users || []);
+      setTeams(response.data.teams || []);
       setSummary(response.data.summary || null);
     } catch (err: any) {
       console.error('Admin dashboard error:', err);
@@ -249,6 +280,191 @@ const Admin = () => {
     }
   };
 
+  // Team Handlers
+  const handleCreateTeam = async (data: { name: string; max_minutes: number }) => {
+    setActionLoading('create-team');
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      const response = await withTokenRefresh(
+        () => supabase.functions.invoke('admin-create-team', {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+          body: data,
+        })
+      );
+
+      if (response.error) throw new Error(response.error.message);
+
+      toast({
+        title: 'Team erstellt',
+        description: `${data.name} wurde erfolgreich erstellt.`,
+      });
+
+      setTeamDialogOpen(false);
+      await fetchData();
+    } catch (err: any) {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Team konnte nicht erstellt werden',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUpdateTeam = async (data: { name: string; max_minutes: number }) => {
+    if (!editingTeam) return;
+    setActionLoading(editingTeam.id);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      const response = await withTokenRefresh(
+        () => supabase.functions.invoke('admin-update-team', {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+          body: { team_id: editingTeam.id, ...data },
+        })
+      );
+
+      if (response.error) throw new Error(response.error.message);
+
+      toast({
+        title: 'Team aktualisiert',
+        description: `${data.name} wurde erfolgreich aktualisiert.`,
+      });
+
+      setTeamDialogOpen(false);
+      setEditingTeam(null);
+      await fetchData();
+    } catch (err: any) {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Team konnte nicht aktualisiert werden',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteTeam = async (teamId: string) => {
+    setActionLoading(teamId);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      const response = await withTokenRefresh(
+        () => supabase.functions.invoke('admin-delete-team', {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+          body: { team_id: teamId },
+        })
+      );
+
+      if (response.error) throw new Error(response.error.message);
+
+      toast({
+        title: 'Team gelöscht',
+        description: 'Das Team wurde erfolgreich gelöscht.',
+      });
+
+      await fetchData();
+    } catch (err: any) {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Team konnte nicht gelöscht werden',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleAssignTeamMember = async (userId: string, teamId: string) => {
+    setActionLoading(userId);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      const response = await withTokenRefresh(
+        () => supabase.functions.invoke('admin-assign-team-member', {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+          body: { user_id: userId, team_id: teamId, action: 'assign' },
+        })
+      );
+
+      if (response.error) throw new Error(response.error.message);
+
+      toast({
+        title: 'Mitglied zugeordnet',
+        description: 'Der Benutzer wurde dem Team zugeordnet.',
+      });
+
+      await fetchData();
+    } catch (err: any) {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Zuordnung fehlgeschlagen',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRemoveTeamMember = async (userId: string) => {
+    setActionLoading(userId);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      const response = await withTokenRefresh(
+        () => supabase.functions.invoke('admin-assign-team-member', {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+          body: { user_id: userId, action: 'remove' },
+        })
+      );
+
+      if (response.error) throw new Error(response.error.message);
+
+      toast({
+        title: 'Mitglied entfernt',
+        description: 'Der Benutzer wurde aus dem Team entfernt.',
+      });
+
+      await fetchData();
+    } catch (err: any) {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Entfernen fehlgeschlagen',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const openEditTeam = (team: TeamData) => {
+    setEditingTeam(team);
+    setTeamDialogOpen(true);
+  };
+
+  const openManageMembers = (team: TeamData) => {
+    setSelectedTeam(team);
+    setTeamMembersDialogOpen(true);
+  };
+
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '–';
     return new Date(dateString).toLocaleDateString('de-DE', {
@@ -384,177 +600,265 @@ const Admin = () => {
           </Card>
         </div>
 
-        {/* Users Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Alle Benutzer</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Benutzer</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Kontingent</TableHead>
-                      <TableHead>Registriert</TableHead>
-                      <TableHead className="text-right">Aufnahmen</TableHead>
-                      <TableHead>Kalender</TableHead>
-                      <TableHead>Aktionen</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {users.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            {user.email}
-                            {user.online_status === 'online' && (
-                              <span 
-                                className="inline-block w-2 h-2 rounded-full bg-green-500" 
-                                title="Online"
-                              />
-                            )}
-                            {user.online_status === 'recording' && (
-                              <span 
-                                className="inline-block w-2 h-2 rounded-full bg-orange-500" 
-                                title="Bot aktiv"
-                              />
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>{getStatusBadge(user)}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2 min-w-[160px]">
-                            <Progress 
-                              value={getQuotaPercentage(user)} 
-                              className="w-16 h-2"
-                              indicatorClassName={getQuotaColor(user)}
-                            />
-                            <span className="text-sm text-muted-foreground whitespace-nowrap">
-                              {Math.round(user.used_minutes / 60 * 10) / 10}h / {Math.round(user.max_minutes / 60)}h
-                            </span>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-6 w-6"
-                              onClick={() => openQuotaEdit(user)}
-                            >
-                              <Settings className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                        <TableCell>{formatDate(user.created_at)}</TableCell>
-                        <TableCell className="text-right">{user.recordings_count}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            {user.google_connected && (
-                              <Badge variant="secondary" className="text-xs">
-                                <Calendar className="h-3 w-3 mr-1" />
-                                Google
-                              </Badge>
-                            )}
-                            {user.microsoft_connected && (
-                              <Badge variant="secondary" className="text-xs">
-                                <Calendar className="h-3 w-3 mr-1" />
-                                Microsoft
-                              </Badge>
-                            )}
-                            {!user.google_connected && !user.microsoft_connected && (
-                              <span className="text-muted-foreground text-sm">–</span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            {/* View as user button - available for all users */}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleViewAsUser(user)}
-                              title="Als Benutzer anzeigen"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            
-                            {!user.is_admin && (
-                              <>
-                                {user.is_approved ? (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleApprove(user.id, 'revoke')}
-                                    disabled={actionLoading === user.id}
+        {/* Tabs for Users and Teams */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <div className="flex items-center justify-between mb-4">
+            <TabsList>
+              <TabsTrigger value="users" className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Benutzer
+              </TabsTrigger>
+              <TabsTrigger value="teams" className="flex items-center gap-2">
+                <UsersRound className="h-4 w-4" />
+                Teams
+              </TabsTrigger>
+            </TabsList>
+            {activeTab === 'teams' && (
+              <Button onClick={() => { setEditingTeam(null); setTeamDialogOpen(true); }}>
+                <Plus className="h-4 w-4 mr-2" />
+                Team erstellen
+              </Button>
+            )}
+          </div>
+
+          {/* Users Tab */}
+          <TabsContent value="users">
+            <Card>
+              <CardHeader>
+                <CardTitle>Alle Benutzer</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                      <Skeleton key={i} className="h-12 w-full" />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Benutzer</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Team</TableHead>
+                          <TableHead>Kontingent</TableHead>
+                          <TableHead>Registriert</TableHead>
+                          <TableHead className="text-right">Aufnahmen</TableHead>
+                          <TableHead>Kalender</TableHead>
+                          <TableHead>Aktionen</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {users.map((user) => (
+                          <TableRow key={user.id}>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                {user.email}
+                                {user.online_status === 'online' && (
+                                  <span 
+                                    className="inline-block w-2 h-2 rounded-full bg-green-500" 
+                                    title="Online"
+                                  />
+                                )}
+                                {user.online_status === 'recording' && (
+                                  <span 
+                                    className="inline-block w-2 h-2 rounded-full bg-orange-500" 
+                                    title="Bot aktiv"
+                                  />
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{getStatusBadge(user)}</TableCell>
+                            <TableCell>
+                              <Select
+                                value={user.team_id || 'none'}
+                                onValueChange={(value) => {
+                                  if (value === 'none') {
+                                    handleRemoveTeamMember(user.id);
+                                  } else {
+                                    handleAssignTeamMember(user.id, value);
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="w-32 h-8">
+                                  <SelectValue placeholder="Kein Team" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Kein Team</SelectItem>
+                                  {teams.map((team) => (
+                                    <SelectItem key={team.id} value={team.id}>
+                                      {team.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2 min-w-[160px]">
+                                <Progress 
+                                  value={getQuotaPercentage(user)} 
+                                  className="w-16 h-2"
+                                  indicatorClassName={getQuotaColor(user)}
+                                />
+                                <span className="text-sm text-muted-foreground whitespace-nowrap">
+                                  {Math.round(user.used_minutes / 60 * 10) / 10}h / {Math.round(user.max_minutes / 60)}h
+                                  {user.team_name && <span className="text-xs ml-1">(Team)</span>}
+                                </span>
+                                {!user.team_id && (
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-6 w-6"
+                                    onClick={() => openQuotaEdit(user)}
                                   >
-                                    <XCircle className="h-4 w-4 mr-1" />
-                                    Sperren
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    variant="default"
-                                    size="sm"
-                                    onClick={() => handleApprove(user.id, 'approve')}
-                                    disabled={actionLoading === user.id}
-                                  >
-                                    <CheckCircle className="h-4 w-4 mr-1" />
-                                    Freischalten
+                                    <Settings className="h-3 w-3" />
                                   </Button>
                                 )}
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button
-                                      variant="destructive"
-                                      size="sm"
-                                      disabled={actionLoading === user.id}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Benutzer löschen?</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Möchtest du den Benutzer <strong>{user.email}</strong> wirklich löschen? 
-                                        Alle Aufnahmen, Transkripte und Daten werden unwiderruflich gelöscht.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-                                      <AlertDialogAction
-                                        onClick={() => handleDelete(user.id)}
-                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              </div>
+                            </TableCell>
+                            <TableCell>{formatDate(user.created_at)}</TableCell>
+                            <TableCell className="text-right">{user.recordings_count}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                {user.google_connected && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    <Calendar className="h-3 w-3 mr-1" />
+                                    Google
+                                  </Badge>
+                                )}
+                                {user.microsoft_connected && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    <Calendar className="h-3 w-3 mr-1" />
+                                    Microsoft
+                                  </Badge>
+                                )}
+                                {!user.google_connected && !user.microsoft_connected && (
+                                  <span className="text-muted-foreground text-sm">–</span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                {/* View as user button - available for all users */}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleViewAsUser(user)}
+                                  title="Als Benutzer anzeigen"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                
+                                {!user.is_admin && (
+                                  <>
+                                    {user.is_approved ? (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleApprove(user.id, 'revoke')}
+                                        disabled={actionLoading === user.id}
                                       >
-                                        Endgültig löschen
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              </>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {users.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                          Keine Benutzer gefunden
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                                        <XCircle className="h-4 w-4 mr-1" />
+                                        Sperren
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        variant="default"
+                                        size="sm"
+                                        onClick={() => handleApprove(user.id, 'approve')}
+                                        disabled={actionLoading === user.id}
+                                      >
+                                        <CheckCircle className="h-4 w-4 mr-1" />
+                                        Freischalten
+                                      </Button>
+                                    )}
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button
+                                          variant="destructive"
+                                          size="sm"
+                                          disabled={actionLoading === user.id}
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Benutzer löschen?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            Möchtest du den Benutzer <strong>{user.email}</strong> wirklich löschen? 
+                                            Alle Aufnahmen, Transkripte und Daten werden unwiderruflich gelöscht.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => handleDelete(user.id)}
+                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          >
+                                            Endgültig löschen
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {users.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                              Keine Benutzer gefunden
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Teams Tab */}
+          <TabsContent value="teams">
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-40 w-full" />
+                ))}
+              </div>
+            ) : teams.length === 0 ? (
+              <Card className="p-8 text-center">
+                <UsersRound className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-semibold mb-2">Noch keine Teams</h3>
+                <p className="text-muted-foreground mb-4">
+                  Erstelle ein Team, um Benutzern ein gemeinsames Meeting-Kontingent zuzuweisen.
+                </p>
+                <Button onClick={() => { setEditingTeam(null); setTeamDialogOpen(true); }}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Erstes Team erstellen
+                </Button>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {teams.map((team) => (
+                  <TeamCard
+                    key={team.id}
+                    team={team}
+                    onEdit={openEditTeam}
+                    onDelete={handleDeleteTeam}
+                    onManageMembers={openManageMembers}
+                    isLoading={actionLoading === team.id}
+                  />
+                ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </TabsContent>
+        </Tabs>
 
         {/* Quota Edit Dialog */}
         <Dialog open={quotaDialogOpen} onOpenChange={setQuotaDialogOpen}>
@@ -600,6 +904,32 @@ const Admin = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Team Create/Edit Dialog */}
+        <TeamDialog
+          open={teamDialogOpen}
+          onOpenChange={(open) => {
+            setTeamDialogOpen(open);
+            if (!open) setEditingTeam(null);
+          }}
+          team={editingTeam}
+          onSave={editingTeam ? handleUpdateTeam : handleCreateTeam}
+          isLoading={actionLoading === 'create-team' || actionLoading === editingTeam?.id}
+        />
+
+        {/* Team Members Dialog */}
+        <TeamMembersDialog
+          open={teamMembersDialogOpen}
+          onOpenChange={(open) => {
+            setTeamMembersDialogOpen(open);
+            if (!open) setSelectedTeam(null);
+          }}
+          team={selectedTeam}
+          users={users}
+          onAssign={handleAssignTeamMember}
+          onRemove={handleRemoveTeamMember}
+          isLoading={!!actionLoading}
+        />
 
         {/* Create Meeting Dialog */}
         <AdminCreateMeetingDialog

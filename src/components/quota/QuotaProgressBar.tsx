@@ -1,5 +1,5 @@
 import { Progress } from "@/components/ui/progress";
-import { Clock } from "lucide-react";
+import { Clock, Users } from "lucide-react";
 import type { UserQuota } from "@/hooks/useUserQuota";
 
 interface QuotaProgressBarProps {
@@ -31,8 +31,17 @@ export function QuotaProgressBar({ quota }: QuotaProgressBarProps) {
     <div className="w-full space-y-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Clock className="h-4 w-4" />
-          <span>Meeting-Kontingent</span>
+          {quota.is_team_quota ? (
+            <>
+              <Users className="h-4 w-4" />
+              <span>Team-Kontingent{quota.team_name ? `: ${quota.team_name}` : ''}</span>
+            </>
+          ) : (
+            <>
+              <Clock className="h-4 w-4" />
+              <span>Meeting-Kontingent</span>
+            </>
+          )}
         </div>
         <span className={`text-sm font-medium ${getTextColor()}`}>
           {formatTime(quota.used_minutes)} / {formatTime(quota.max_minutes)}
@@ -45,7 +54,9 @@ export function QuotaProgressBar({ quota }: QuotaProgressBarProps) {
       />
       {quota.is_exhausted && (
         <p className="text-xs text-destructive">
-          Dein Kontingent ist erschöpft. Upgrade auf die Vollversion für unbegrenzte Meetings.
+          {quota.is_team_quota 
+            ? 'Das Team-Kontingent ist erschöpft. Kontaktiere deinen Admin für mehr Meeting-Stunden.'
+            : 'Dein Kontingent ist erschöpft. Upgrade auf die Vollversion für unbegrenzte Meetings.'}
         </p>
       )}
     </div>

@@ -121,6 +121,24 @@ Deno.serve(async (req) => {
       console.error('Quotas fetch error:', quotasError);
     }
 
+    // Fetch teams
+    const { data: teams, error: teamsError } = await supabaseAdmin
+      .from('teams')
+      .select('id, name, max_minutes, created_at');
+
+    if (teamsError) {
+      console.error('Teams fetch error:', teamsError);
+    }
+
+    // Fetch team memberships
+    const { data: teamMembers, error: teamMembersError } = await supabaseAdmin
+      .from('team_members')
+      .select('team_id, user_id, role');
+
+    if (teamMembersError) {
+      console.error('Team members fetch error:', teamMembersError);
+    }
+
     // Active bot statuses
     const activeBotStatuses = ['joining', 'in_call_not_recording', 'in_call_recording', 'waiting_room'];
     
@@ -196,6 +214,45 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Build team membership map (user_id -> team info)
+    const teamMemberMap = new Map<string, { teamId: string; teamName: string; role: string }>();
+    const teamMemberCounts = new Map<string, number>();
+    if (teamMembers && teams) {
+      const teamsById = new Map(teams.map(t => [t.id, t]));
+      for (const tm of teamMembers) {
+        const team = teamsById.get(tm.team_id);
+        if (team) {
+          teamMemberMap.set(tm.user_id, {
+            teamId: tm.team_id,
+            teamName: team.name,
+            role: tm.role,
+          });
+          teamMemberCounts.set(tm.team_id, (teamMemberCounts.get(tm.team_id) || 0) + 1);
+        }
+      }
+    }
+
+    // Calculate team used minutes
+    const teamUsedMinutesMap = new Map<string, number>();
+    if (teamMembers && recordings) {
+      // Group team members by team
+      const teamUserIds = new Map<string, string[]>();
+      for (const tm of teamMembers) {
+        const ids = teamUserIds.get(tm.team_id) || [];
+        ids.push(tm.user_id);
+        teamUserIds.set(tm.team_id, ids);
+      }
+      
+      // Calculate used minutes per team
+      for (const [teamId, userIds] of teamUserIds) {
+        const teamRecordings = recordings.filter(r => 
+          r.status === 'done' && userIds.includes(r.user_id)
+        );
+        const usedSeconds = teamRecordings.reduce((sum, r) => sum + (r.duration || 0), 0);
+        teamUsedMinutesMap.set(teamId, Math.round(usedSeconds / 60));
+      }
+    }
+
     // Determine online status (online if heartbeat within last 60 seconds)
     const ONLINE_TIMEOUT = 60000; // 60 seconds
     const now = Date.now();
@@ -226,8 +283,20 @@ Deno.serve(async (req) => {
       const calendar = calendarMap.get(user.id) || { google: false, microsoft: false };
       const onlineStatus = getUserOnlineStatus(user.id);
       const roles = rolesMap.get(user.id) || { isApproved: false, isAdmin: false };
-      const maxMinutes = quotaMap.get(user.id) ?? 120; // Default 2h
-      const usedMinutes = Math.round(stats.duration / 60);
+      const teamInfo = teamMemberMap.get(user.id);
+      
+      // If user is in a team, show team quota, otherwise individual quota
+      let maxMinutes: number;
+      let usedMinutes: number;
+      
+      if (teamInfo) {
+        const team = teams?.find(t => t.id === teamInfo.teamId);
+        maxMinutes = team?.max_minutes ?? 600;
+        usedMinutes = teamUsedMinutesMap.get(teamInfo.teamId) ?? 0;
+      } else {
+        maxMinutes = quotaMap.get(user.id) ?? 120; // Default 2h
+        usedMinutes = Math.round(stats.duration / 60);
+      }
 
       return {
         id: user.id,
@@ -244,8 +313,20 @@ Deno.serve(async (req) => {
         is_admin: roles.isAdmin,
         max_minutes: maxMinutes,
         used_minutes: usedMinutes,
+        team_id: teamInfo?.teamId || null,
+        team_name: teamInfo?.teamName || null,
       };
     });
+
+    // Build teams list with stats
+    const teamsWithStats = (teams || []).map(team => ({
+      id: team.id,
+      name: team.name,
+      max_minutes: team.max_minutes,
+      used_minutes: teamUsedMinutesMap.get(team.id) ?? 0,
+      member_count: teamMemberCounts.get(team.id) ?? 0,
+      created_at: team.created_at,
+    }));
 
     // Calculate summary stats
     const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
@@ -266,7 +347,7 @@ Deno.serve(async (req) => {
       recording_now: recordingNow,
     };
 
-    return new Response(JSON.stringify({ users, summary }), {
+    return new Response(JSON.stringify({ users, teams: teamsWithStats, summary }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
