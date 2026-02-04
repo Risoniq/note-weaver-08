@@ -300,6 +300,11 @@ const Settings = () => {
         
         const tryCompress = () => {
           ctx?.clearRect(0, 0, canvas.width, canvas.height);
+          // White background for transparent PNGs
+          if (ctx) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
           
           canvas.toBlob(
@@ -310,6 +315,7 @@ const Settings = () => {
               }
               
               if (blob.size <= maxSizeBytes || quality <= 0.1) {
+                URL.revokeObjectURL(img.src);
                 resolve(blob);
               } else {
                 // Reduce quality or dimensions
@@ -330,7 +336,50 @@ const Settings = () => {
         tryCompress();
       };
       
-      img.onerror = () => reject(new Error('Bild konnte nicht geladen werden'));
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        reject(new Error('Bild konnte nicht geladen werden'));
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  };
+  
+  // Convert any image to JPEG format (Recall.ai only accepts JPEG)
+  const convertToJpeg = (file: File, quality: number = 0.92): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        
+        // White background (important for PNGs with transparency)
+        if (ctx) {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+        }
+        
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              URL.revokeObjectURL(img.src);
+              resolve(blob);
+            } else {
+              reject(new Error('JPEG-Konvertierung fehlgeschlagen'));
+            }
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        reject(new Error('Bild konnte nicht geladen werden'));
+      };
       img.src = URL.createObjectURL(file);
     });
   };
@@ -353,15 +402,18 @@ const Settings = () => {
     
     try {
       const maxSize = 2 * 1024 * 1024; // 2MB
-      let uploadFile: File | Blob = file;
+      let uploadFile: Blob;
       
-      // Compress if file is too large
+      // ALWAYS convert to JPEG (Recall.ai only accepts JPEG for bot avatars)
       if (file.size > maxSize) {
         toast({
           title: "Bild wird komprimiert...",
           description: "Das Bild wird auf unter 2MB verkleinert",
         });
         uploadFile = await compressImage(file, maxSize);
+      } else {
+        // Convert smaller images to JPEG as well
+        uploadFile = await convertToJpeg(file);
       }
       
       // Get user for folder path
@@ -375,9 +427,8 @@ const Settings = () => {
         return;
       }
       
-      // Generate unique filename with user folder (always use jpg for compressed images)
-      const fileExt = file.size > maxSize ? 'jpg' : file.name.split('.').pop();
-      const filePath = `${user.id}/bot-avatar-${Date.now()}.${fileExt}`;
+      // Always use .jpg extension (Recall.ai requires JPEG)
+      const filePath = `${user.id}/bot-avatar-${Date.now()}.jpg`;
       
       // Upload to Supabase storage
       const { data, error: uploadError } = await supabase.storage
