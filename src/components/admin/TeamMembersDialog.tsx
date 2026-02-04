@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { X, UserPlus, Search } from 'lucide-react';
+import { X, UserPlus, Search, Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { TeamData } from './TeamCard';
 
 interface UserData {
@@ -18,6 +25,7 @@ interface UserData {
   email: string;
   team_id: string | null;
   team_name: string | null;
+  team_role: string | null;
 }
 
 interface TeamMembersDialogProps {
@@ -25,8 +33,9 @@ interface TeamMembersDialogProps {
   onOpenChange: (open: boolean) => void;
   team: TeamData | null;
   users: UserData[];
-  onAssign: (userId: string, teamId: string) => Promise<void>;
+  onAssign: (userId: string, teamId: string, role?: string) => Promise<void>;
   onRemove: (userId: string) => Promise<void>;
+  onSetRole: (userId: string, role: string) => Promise<void>;
   isLoading?: boolean;
 }
 
@@ -37,6 +46,7 @@ export function TeamMembersDialog({
   users,
   onAssign,
   onRemove,
+  onSetRole,
   isLoading 
 }: TeamMembersDialogProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,6 +65,10 @@ export function TeamMembersDialog({
 
   if (!team) return null;
 
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    await onSetRole(userId, newRole);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -62,6 +76,7 @@ export function TeamMembersDialog({
           <DialogTitle>Mitglieder: {team.name}</DialogTitle>
           <DialogDescription>
             Verwalte die Mitglieder dieses Teams. Alle Mitglieder teilen sich das Team-Kontingent.
+            Teamleads können die Meetings aller Mitglieder einsehen.
           </DialogDescription>
         </DialogHeader>
 
@@ -74,19 +89,39 @@ export function TeamMembersDialog({
                 Noch keine Mitglieder zugeordnet.
               </p>
             ) : (
-              <ScrollArea className="h-32 rounded-lg border p-2">
+              <ScrollArea className="h-40 rounded-lg border p-2">
                 <div className="space-y-2">
                   {teamMembers.map(member => (
                     <div key={member.id} className="flex items-center justify-between p-2 bg-muted rounded">
-                      <span className="text-sm">{member.email}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onRemove(member.id)}
-                        disabled={isLoading}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {member.team_role === 'lead' && (
+                          <Crown className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                        )}
+                        <span className="text-sm truncate">{member.email}</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Select
+                          value={member.team_role || 'member'}
+                          onValueChange={(value) => handleRoleChange(member.id, value)}
+                          disabled={isLoading}
+                        >
+                          <SelectTrigger className="w-28 h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="member">Mitglied</SelectItem>
+                            <SelectItem value="lead">Teamlead</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onRemove(member.id)}
+                          disabled={isLoading}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -215,8 +215,9 @@ Deno.serve(async (req) => {
     }
 
     // Build team membership map (user_id -> team info)
-    const teamMemberMap = new Map<string, { teamId: string; teamName: string; role: string }>();
+    const teamMemberMap = new Map<string, { teamId: string; teamName: string; teamRole: string }>();
     const teamMemberCounts = new Map<string, number>();
+    const teamLeadsMap = new Map<string, string[]>(); // team_id -> lead emails
     if (teamMembers && teams) {
       const teamsById = new Map(teams.map(t => [t.id, t]));
       for (const tm of teamMembers) {
@@ -225,9 +226,19 @@ Deno.serve(async (req) => {
           teamMemberMap.set(tm.user_id, {
             teamId: tm.team_id,
             teamName: team.name,
-            role: tm.role,
+            teamRole: tm.role, // 'member' or 'lead'
           });
           teamMemberCounts.set(tm.team_id, (teamMemberCounts.get(tm.team_id) || 0) + 1);
+          
+          // Track team leads
+          if (tm.role === 'lead') {
+            const leadUser = authUsers.users.find(u => u.id === tm.user_id);
+            if (leadUser) {
+              const leads = teamLeadsMap.get(tm.team_id) || [];
+              leads.push(leadUser.email || 'Unknown');
+              teamLeadsMap.set(tm.team_id, leads);
+            }
+          }
         }
       }
     }
@@ -315,6 +326,7 @@ Deno.serve(async (req) => {
         used_minutes: usedMinutes,
         team_id: teamInfo?.teamId || null,
         team_name: teamInfo?.teamName || null,
+        team_role: teamInfo?.teamRole || null, // 'member', 'lead', or null
       };
     });
 
@@ -326,6 +338,7 @@ Deno.serve(async (req) => {
       used_minutes: teamUsedMinutesMap.get(team.id) ?? 0,
       member_count: teamMemberCounts.get(team.id) ?? 0,
       created_at: team.created_at,
+      leads: teamLeadsMap.get(team.id) || [],
     }));
 
     // Calculate summary stats

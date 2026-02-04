@@ -2,14 +2,23 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useTeamleadCheck } from "@/hooks/useTeamleadCheck";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TranscriptCard } from "@/components/transcripts/TranscriptCard";
 import { TranscriptSearch, TranscriptFilters } from "@/components/transcripts/TranscriptSearch";
 import { Recording, RecordingParticipant } from "@/types/recording";
-import { ArrowLeft, FileText, Download, FolderOpen } from "lucide-react";
+import { ArrowLeft, FileText, Download, FolderOpen, Users } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import {
   Pagination,
   PaginationContent,
@@ -22,12 +31,21 @@ import {
 
 const ITEMS_PER_PAGE = 10;
 
+interface RecordingWithOwner extends Recording {
+  owner_email?: string;
+  is_own?: boolean;
+}
+
 const Transcripts = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [recordings, setRecordings] = useState<Recording[]>([]);
+  const { isTeamlead, teamId, teamName, teamMembers } = useTeamleadCheck();
+  const [recordings, setRecordings] = useState<RecordingWithOwner[]>([]);
+  const [memberEmails, setMemberEmails] = useState<Map<string, string>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [viewMode, setViewMode] = useState<'personal' | 'team'>('personal');
+  const [selectedMember, setSelectedMember] = useState<string>('all');
   const [filters, setFilters] = useState<TranscriptFilters>({
     searchQuery: "",
     dateRange: undefined,
@@ -41,21 +59,54 @@ const Transcripts = () => {
     const fetchRecordings = async () => {
       setIsLoading(true);
       try {
-        const { data, error } = await supabase
-          .from("recordings")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false });
+        // If teamlead viewing team recordings
+        if (isTeamlead && viewMode === 'team') {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            setIsLoading(false);
+            return;
+          }
 
-        if (error) throw error;
+          const { data, error } = await supabase.functions.invoke('teamlead-recordings', {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          });
 
-        // Map database results to Recording type
-        const mappedRecordings: Recording[] = (data || []).map((r) => ({
-          ...r,
-          participants: (r.participants as unknown as RecordingParticipant[] | null) ?? null,
-        }));
+          if (error) {
+            console.error('Error fetching team recordings:', error);
+            toast.error("Fehler beim Laden der Team-Transkripte");
+          } else {
+            const mappedRecordings: RecordingWithOwner[] = (data?.recordings || []).map((r: any) => ({
+              ...r,
+              participants: (r.participants as unknown as RecordingParticipant[] | null) ?? null,
+            }));
+            setRecordings(mappedRecordings);
 
-        setRecordings(mappedRecordings);
+            // Build email map
+            const emailMap = new Map<string, string>();
+            for (const member of data?.members || []) {
+              emailMap.set(member.user_id, member.email);
+            }
+            setMemberEmails(emailMap);
+          }
+        } else {
+          // Normal personal recordings
+          const { data, error } = await supabase
+            .from("recordings")
+            .select("*")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false });
+
+          if (error) throw error;
+
+          const mappedRecordings: RecordingWithOwner[] = (data || []).map((r) => ({
+            ...r,
+            participants: (r.participants as unknown as RecordingParticipant[] | null) ?? null,
+          }));
+
+          setRecordings(mappedRecordings);
+        }
       } catch (error) {
         console.error("Error fetching recordings:", error);
         toast.error("Fehler beim Laden der Transkripte");
@@ -66,31 +117,38 @@ const Transcripts = () => {
 
     fetchRecordings();
 
-    // Set up realtime subscription
-    const channel = supabase
-      .channel("transcripts-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "recordings",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          fetchRecordings();
-        }
-      )
-      .subscribe();
+    // Set up realtime subscription (only for personal view)
+    if (viewMode === 'personal') {
+      const channel = supabase
+        .channel("transcripts-changes")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "recordings",
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => {
+            fetchRecordings();
+          }
+        )
+        .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user]);
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [user, isTeamlead, viewMode]);
 
   // Filter and sort recordings
   const filteredRecordings = useMemo(() => {
     let result = [...recordings];
+
+    // Filter by selected member (team view only)
+    if (viewMode === 'team' && selectedMember !== 'all') {
+      result = result.filter((r) => (r as any).user_id === selectedMember);
+    }
 
     // Filter by transcript presence
     if (filters.hasTranscript === "yes") {
@@ -151,7 +209,7 @@ const Transcripts = () => {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters]);
+  }, [filters, viewMode, selectedMember]);
 
   const handleExportAll = () => {
     const recordingsWithTranscripts = recordings.filter((r) => r.transcript_text);
@@ -257,11 +315,48 @@ const Transcripts = () => {
               </p>
             </div>
           </div>
-          <Button variant="outline" onClick={handleExportAll}>
-            <Download className="h-4 w-4 mr-2" />
-            Alle exportieren
-          </Button>
+          <div className="flex items-center gap-3">
+            {/* Team View Toggle for Teamleads */}
+            {isTeamlead && (
+              <Select value={viewMode} onValueChange={(v) => setViewMode(v as 'personal' | 'team')}>
+                <SelectTrigger className="w-40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="personal">Meine Transkripte</SelectItem>
+                  <SelectItem value="team">
+                    <span className="flex items-center gap-1">
+                      <Users className="h-4 w-4" />
+                      Team: {teamName}
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            <Button variant="outline" onClick={handleExportAll}>
+              <Download className="h-4 w-4 mr-2" />
+              Alle exportieren
+            </Button>
+          </div>
         </div>
+
+        {/* Team Member Filter (only in team view) */}
+        {isTeamlead && viewMode === 'team' && (
+          <div className="mb-4 flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">Filtern nach Mitglied:</span>
+            <Select value={selectedMember} onValueChange={setSelectedMember}>
+              <SelectTrigger className="w-52">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Alle Mitglieder</SelectItem>
+                {Array.from(memberEmails.entries()).map(([userId, email]) => (
+                  <SelectItem key={userId} value={userId}>{email}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Search and Filters */}
         <div className="mb-6">
@@ -313,11 +408,21 @@ const Transcripts = () => {
           <>
             <div className="space-y-4">
               {paginatedRecordings.map((recording) => (
-                <TranscriptCard
-                  key={recording.id}
-                  recording={recording}
-                  searchQuery={filters.searchQuery}
-                />
+                <div key={recording.id} className="relative">
+                  {viewMode === 'team' && recording.owner_email && !recording.is_own && (
+                    <Badge 
+                      variant="secondary" 
+                      className="absolute top-4 right-4 z-10 text-xs"
+                    >
+                      <Users className="h-3 w-3 mr-1" />
+                      {recording.owner_email.split('@')[0]}
+                    </Badge>
+                  )}
+                  <TranscriptCard
+                    recording={recording}
+                    searchQuery={filters.searchQuery}
+                  />
+                </div>
               ))}
             </div>
             {renderPagination()}

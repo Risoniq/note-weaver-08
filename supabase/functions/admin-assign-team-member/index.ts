@@ -52,11 +52,40 @@ Deno.serve(async (req) => {
     }
 
     // Parse request body
-    const { team_id, user_id, action } = await req.json();
+    const { team_id, user_id, action, role = 'member' } = await req.json();
 
     if (!user_id) {
       return new Response(JSON.stringify({ error: 'User ID is required' }), {
         status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Validate role value
+    if (role !== 'member' && role !== 'lead') {
+      return new Response(JSON.stringify({ error: 'Role must be "member" or "lead"' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Action: set-role - Update role of existing team member
+    if (action === 'set-role') {
+      const { error: updateError } = await supabaseAdmin
+        .from('team_members')
+        .update({ role })
+        .eq('user_id', user_id);
+
+      if (updateError) {
+        console.error('Update role error:', updateError);
+        return new Response(JSON.stringify({ error: 'Failed to update role' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true, action: 'role-updated', role }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -96,13 +125,13 @@ Deno.serve(async (req) => {
         .delete()
         .eq('user_id', user_id);
 
-      // Then add to the new team
+      // Then add to the new team with specified role
       const { data: membership, error: assignError } = await supabaseAdmin
         .from('team_members')
         .insert({
           team_id,
           user_id,
-          role: 'member',
+          role,
         })
         .select()
         .single();
@@ -121,7 +150,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ error: 'Invalid action. Use "assign" or "remove"' }), {
+    return new Response(JSON.stringify({ error: 'Invalid action. Use "assign", "remove", or "set-role"' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -1,7 +1,8 @@
-import { Edit2, Trash2, Users } from 'lucide-react';
+import { Edit2, Trash2, Users, Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +22,7 @@ export interface TeamData {
   used_minutes: number;
   member_count: number;
   created_at: string;
+  leads?: string[]; // Teamlead emails
 }
 
 interface TeamCardProps {
@@ -60,6 +62,14 @@ export function TeamCard({ team, onEdit, onDelete, onManageMembers, isLoading }:
               <Users className="h-3 w-3" />
               <span>{team.member_count} {team.member_count === 1 ? 'Mitglied' : 'Mitglieder'}</span>
             </div>
+            {team.leads && team.leads.length > 0 && (
+              <div className="flex items-center gap-1 mt-1">
+                <Crown className="h-3 w-3 text-amber-500" />
+                <span className="text-xs text-muted-foreground">
+                  {team.leads.join(', ')}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

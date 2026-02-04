@@ -69,6 +69,7 @@ interface UserData {
   used_minutes: number;
   team_id: string | null;
   team_name: string | null;
+  team_role: string | null; // 'member', 'lead', or null
 }
 
 interface Summary {
@@ -387,7 +388,7 @@ const Admin = () => {
     }
   };
 
-  const handleAssignTeamMember = async (userId: string, teamId: string) => {
+  const handleAssignTeamMember = async (userId: string, teamId: string, role: string = 'member') => {
     setActionLoading(userId);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -398,7 +399,7 @@ const Admin = () => {
           headers: {
             Authorization: `Bearer ${sessionData.session.access_token}`,
           },
-          body: { user_id: userId, team_id: teamId, action: 'assign' },
+          body: { user_id: userId, team_id: teamId, action: 'assign', role },
         })
       );
 
@@ -448,6 +449,40 @@ const Admin = () => {
       toast({
         title: 'Fehler',
         description: err.message || 'Entfernen fehlgeschlagen',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSetTeamRole = async (userId: string, role: string) => {
+    setActionLoading(userId);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      const response = await withTokenRefresh(
+        () => supabase.functions.invoke('admin-assign-team-member', {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+          body: { user_id: userId, action: 'set-role', role },
+        })
+      );
+
+      if (response.error) throw new Error(response.error.message);
+
+      toast({
+        title: 'Rolle aktualisiert',
+        description: role === 'lead' ? 'Benutzer ist jetzt Teamlead.' : 'Benutzer ist jetzt Mitglied.',
+      });
+
+      await fetchData();
+    } catch (err: any) {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Rolle konnte nicht geändert werden',
         variant: 'destructive',
       });
     } finally {
@@ -928,6 +963,7 @@ const Admin = () => {
           users={users}
           onAssign={handleAssignTeamMember}
           onRemove={handleRemoveTeamMember}
+          onSetRole={handleSetTeamRole}
           isLoading={!!actionLoading}
         />
 
