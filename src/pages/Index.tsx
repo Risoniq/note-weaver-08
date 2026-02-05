@@ -4,6 +4,7 @@ import { RecordingsList } from "@/components/recordings/RecordingsList";
 import { QuickMeetingJoin } from "@/components/calendar/QuickMeetingJoin";
 import { AccountAnalyticsCard } from "@/components/dashboard/AccountAnalyticsCard";
 import { TeamAnalyticsCard } from "@/components/dashboard/TeamAnalyticsCard";
+import { AudioUploadCard } from "@/components/dashboard/AudioUploadCard";
 import { Toaster } from "@/components/ui/toaster";
 import { RefreshCw, AlertTriangle, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -87,9 +88,13 @@ const Index = () => {
         {/* Bot-Steuerung und Account-Analyse - nur wenn Kontingent verfügbar */}
         {!quota?.is_exhausted && (
           <div className="space-y-5">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               <GlassCard title="Bot zu Meeting senden">
                 <QuickMeetingJoin onBotStarted={setActiveRecordingId} />
+              </GlassCard>
+              
+              <GlassCard title="Audio/Video hochladen">
+                <AudioUploadCard onUploadComplete={setActiveRecordingId} />
               </GlassCard>
               
               <GlassCard title={viewMode === 'team' ? `Team-Analyse: ${teamName}` : 'Account-Analyse'}>
