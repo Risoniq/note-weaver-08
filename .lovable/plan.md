@@ -1,50 +1,30 @@
 
-## Audio-Upload als eigenständiges Meeting kennzeichnen
 
-### Status Quo
-Die aktuelle Implementierung ist bereits größtenteils korrekt:
-- Die Edge Function `transcribe-audio` setzt `source: 'manual'` beim Erstellen des Recordings
-- Es wird **kein Bot** gestartet - die Datei wird direkt zu ElevenLabs geschickt und transkribiert
-- Die AI-Analyse wird automatisch nach der Transkription ausgelöst
+## Bug-Fix: Analyse wird nicht ausgelöst
 
-### Was fehlt
-Das `source`-Feld wird in der UI nicht angezeigt. Uploads sind nicht visuell von Bot-Meetings unterscheidbar.
+### Problem gefunden
+Die `transcribe-audio` Edge Function ruft `analyze-transcript` auf, aber der Parameter-Name stimmt nicht überein:
+
+| Gesendet (transcribe-audio) | Erwartet (analyze-transcript) |
+|----------------------------|-------------------------------|
+| `recordingId` | `recording_id` |
+
+Dadurch schlägt die Analyse fehl mit "recording_id is required".
 
 ---
 
 ## Änderungen
 
-### 1. Recording-Type erweitern
-**Datei:** `src/types/recording.ts`
+### 1. Parameter-Name korrigieren
+**Datei:** `supabase/functions/transcribe-audio/index.ts`
 
-Das `source`-Feld zum Interface hinzufügen:
+Zeile 200 ändern von:
 ```typescript
-export interface Recording {
-  // ... bestehende Felder ...
-  source: 'bot' | 'desktop_sdk' | 'manual' | null;
-}
+body: JSON.stringify({ recordingId: recording.id }),
 ```
-
-### 2. RecordingCard mit Upload-Icon versehen
-**Datei:** `src/components/recordings/RecordingCard.tsx`
-
-Ein Upload-Icon (📤 oder `Upload` von Lucide) neben dem Titel anzeigen, wenn `source === 'manual'`:
-
+zu:
 ```typescript
-import { Upload } from 'lucide-react';
-
-// Im Header-Bereich:
-{recording.source === 'manual' && (
-  <Upload className="h-4 w-4 text-muted-foreground shrink-0" title="Hochgeladene Datei" />
-)}
-```
-
-### 3. Status "transcribing" hinzufügen
-**Datei:** `src/types/recording.ts`
-
-Den neuen Status für manuelle Uploads in die Labels aufnehmen:
-```typescript
-transcribing: 'Transkribiert...',
+body: JSON.stringify({ recording_id: recording.id }),
 ```
 
 ---
@@ -53,10 +33,8 @@ transcribing: 'Transkribiert...',
 
 | Komponente | Änderung |
 |------------|----------|
-| `Recording` Interface | + `source` Feld |
-| `RecordingCard` | + Upload-Icon bei `source === 'manual'` |
-| `getStatusLabel` | + Label für `transcribing` Status |
-| `getStatusColor` | + Farbe für `transcribing` Status |
+| `transcribe-audio/index.ts` | Parameter-Name von `recordingId` auf `recording_id` korrigieren |
 
-## Visuelles Ergebnis
-Hochgeladene Audio-Meetings zeigen ein 📤-Symbol neben dem Titel, sodass Benutzer sofort erkennen, dass es sich um eine manuell hochgeladene Datei handelt (im Gegensatz zu Bot-Aufnahmen).
+## Ergebnis
+Nach dieser Korrektur wird die KI-Analyse (Titel, Summary, Key Points, Action Items) automatisch nach der Transkription ausgelöst und die Ergebnisse werden in der Datenbank gespeichert.
+
