@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -33,6 +34,9 @@ export const CreateApiKeyDialog = ({ open, onOpenChange, onCreateKey, isCreating
   const [dashboardPermission, setDashboardPermission] = useState(true);
   const [transcriptsPermission, setTranscriptsPermission] = useState(true);
   const [teamStatsPermission, setTeamStatsPermission] = useState(true);
+  const [importPermission, setImportPermission] = useState(false);
+  const [updatePermission, setUpdatePermission] = useState(false);
+  const [webhookReceivePermission, setWebhookReceivePermission] = useState(false);
   const [expiresIn, setExpiresIn] = useState<string>('never');
   
   const [createdKey, setCreatedKey] = useState<string | null>(null);
@@ -43,6 +47,9 @@ export const CreateApiKeyDialog = ({ open, onOpenChange, onCreateKey, isCreating
     setDashboardPermission(true);
     setTranscriptsPermission(true);
     setTeamStatsPermission(true);
+    setImportPermission(false);
+    setUpdatePermission(false);
+    setWebhookReceivePermission(false);
     setExpiresIn('never');
     setCreatedKey(null);
     setCopied(false);
@@ -83,6 +90,9 @@ export const CreateApiKeyDialog = ({ open, onOpenChange, onCreateKey, isCreating
         dashboard: dashboardPermission,
         transcripts: transcriptsPermission,
         team_stats: teamStatsPermission,
+        import: importPermission,
+        update: updatePermission,
+        webhook_receive: webhookReceivePermission,
       },
       expires_at: expiresAt,
     });
@@ -155,38 +165,78 @@ export const CreateApiKeyDialog = ({ open, onOpenChange, onCreateKey, isCreating
               />
             </div>
 
-            <div className="space-y-3">
-              <Label>Berechtigungen</Label>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="perm-dashboard" 
-                    checked={dashboardPermission}
-                    onCheckedChange={(checked) => setDashboardPermission(checked === true)}
-                  />
-                  <label htmlFor="perm-dashboard" className="text-sm cursor-pointer">
-                    Dashboard-Daten (Benutzer, Statistiken)
-                  </label>
+            <div className="space-y-4">
+              <div className="space-y-3">
+                <Label className="text-muted-foreground text-xs uppercase tracking-wide">Lesen (Daten abrufen)</Label>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="perm-dashboard" 
+                      checked={dashboardPermission}
+                      onCheckedChange={(checked) => setDashboardPermission(checked === true)}
+                    />
+                    <label htmlFor="perm-dashboard" className="text-sm cursor-pointer">
+                      Dashboard-Daten (Benutzer, Statistiken)
+                    </label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="perm-transcripts" 
+                      checked={transcriptsPermission}
+                      onCheckedChange={(checked) => setTranscriptsPermission(checked === true)}
+                    />
+                    <label htmlFor="perm-transcripts" className="text-sm cursor-pointer">
+                      Transkripte (Inhalte, Analysen)
+                    </label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="perm-teamstats" 
+                      checked={teamStatsPermission}
+                      onCheckedChange={(checked) => setTeamStatsPermission(checked === true)}
+                    />
+                    <label htmlFor="perm-teamstats" className="text-sm cursor-pointer">
+                      Team-Statistiken
+                    </label>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="perm-transcripts" 
-                    checked={transcriptsPermission}
-                    onCheckedChange={(checked) => setTranscriptsPermission(checked === true)}
-                  />
-                  <label htmlFor="perm-transcripts" className="text-sm cursor-pointer">
-                    Transkripte (Inhalte, Analysen)
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="perm-teamstats" 
-                    checked={teamStatsPermission}
-                    onCheckedChange={(checked) => setTeamStatsPermission(checked === true)}
-                  />
-                  <label htmlFor="perm-teamstats" className="text-sm cursor-pointer">
-                    Team-Statistiken
-                  </label>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-3">
+                <Label className="text-muted-foreground text-xs uppercase tracking-wide">Schreiben (Daten empfangen)</Label>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="perm-import" 
+                      checked={importPermission}
+                      onCheckedChange={(checked) => setImportPermission(checked === true)}
+                    />
+                    <label htmlFor="perm-import" className="text-sm cursor-pointer">
+                      Transkripte importieren
+                    </label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="perm-update" 
+                      checked={updatePermission}
+                      onCheckedChange={(checked) => setUpdatePermission(checked === true)}
+                    />
+                    <label htmlFor="perm-update" className="text-sm cursor-pointer">
+                      Recordings aktualisieren
+                    </label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="perm-webhook-receive" 
+                      checked={webhookReceivePermission}
+                      onCheckedChange={(checked) => setWebhookReceivePermission(checked === true)}
+                    />
+                    <label htmlFor="perm-webhook-receive" className="text-sm cursor-pointer">
+                      Webhook-Callbacks empfangen
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
@@ -220,7 +270,7 @@ export const CreateApiKeyDialog = ({ open, onOpenChange, onCreateKey, isCreating
               </Button>
               <Button 
                 onClick={handleCreate} 
-                disabled={!name.trim() || isCreating || (!dashboardPermission && !transcriptsPermission && !teamStatsPermission)}
+              disabled={!name.trim() || isCreating || (!dashboardPermission && !transcriptsPermission && !teamStatsPermission && !importPermission && !updatePermission && !webhookReceivePermission)}
               >
                 {isCreating ? 'Erstelle...' : 'API-Key erstellen'}
               </Button>

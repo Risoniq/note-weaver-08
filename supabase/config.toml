@@ -92,3 +92,12 @@ verify_jwt = false
 
 [functions.api-team-stats]
 verify_jwt = false
+ 
+ [functions.api-import-transcript]
+ verify_jwt = false
+ 
+ [functions.api-update-recording]
+ verify_jwt = false
+ 
+ [functions.api-webhook-callback]
+ verify_jwt = false
