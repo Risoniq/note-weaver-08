@@ -174,7 +174,7 @@ export const MeetingChatWidget = ({
       </h3>
       
       {/* Messages Area */}
-      <ScrollArea className="h-48 mb-3 pr-2" ref={scrollRef}>
+      <ScrollArea className="h-80 mb-3 pr-2" ref={scrollRef}>
         {messages.length === 0 ? (
           <div className="text-center text-primary-foreground text-sm py-8">
             <p>Stelle Fragen zu diesem Meeting:</p>
