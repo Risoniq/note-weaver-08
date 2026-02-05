@@ -51,9 +51,59 @@ export interface TranscriptLine {
   speaker: string;
   text: string;
   color: typeof SPEAKER_COLORS[0];
+  isInterjection?: boolean; // Kurzer Einwurf (< 5 Wörter)
 }
 
-export const parseTranscriptWithColors = (transcript: string): TranscriptLine[] => {
+// Hilfsfunktion: Anzahl der Wörter zählen
+const countWords = (text: string): number => {
+  return text.trim().split(/\s+/).filter(w => w.length > 0).length;
+};
+
+// Hilfsfunktion: Prüft ob Text mit Satzzeichen endet
+const endsWithPunctuation = (text: string): boolean => {
+  return /[.!?]$/.test(text.trim());
+};
+
+// Zusammenführungslogik: Aufeinanderfolgende Segmente desselben Sprechers zusammenführen
+export const mergeConsecutiveSpeakerSegments = (lines: TranscriptLine[]): TranscriptLine[] => {
+  if (lines.length === 0) return [];
+  
+  const merged: TranscriptLine[] = [];
+  let current = { ...lines[0] };
+  
+  for (let i = 1; i < lines.length; i++) {
+    const next = lines[i];
+    const nextWordCount = countWords(next.text);
+    
+    // Zusammenführen wenn:
+    // 1. Gleicher Sprecher
+    // 2. Aktuelles Segment endet nicht mit Satzzeichen ODER nächstes ist sehr kurz
+    // 3. Nächstes Segment ist kurz (< 8 Wörter) - bei gleichem Sprecher großzügiger
+    const shouldMerge = 
+      next.speaker === current.speaker && 
+      (!endsWithPunctuation(current.text) || nextWordCount < 3);
+    
+    if (shouldMerge) {
+      // Text anhängen mit Leerzeichen
+      current.text = current.text.trim() + ' ' + next.text.trim();
+    } else {
+      // Altes Segment speichern, neues starten
+      merged.push(current);
+      current = { ...next };
+    }
+  }
+  
+  // Letztes Segment hinzufügen
+  merged.push(current);
+  
+  // Markiere kurze Einwürfe (< 5 Wörter) für optionale visuelle Unterscheidung
+  return merged.map(line => ({
+    ...line,
+    isInterjection: countWords(line.text) < 5,
+  }));
+};
+
+export const parseTranscriptWithColors = (transcript: string, enableMerging = true): TranscriptLine[] => {
   const speakers = extractSpeakersInOrder(transcript);
   const colorMap = createSpeakerColorMap(speakers);
   
@@ -96,5 +146,6 @@ export const parseTranscriptWithColors = (transcript: string): TranscriptLine[] 
     });
   }
   
-  return result;
+  // Optional: Aufeinanderfolgende Segmente desselben Sprechers zusammenführen
+  return enableMerging ? mergeConsecutiveSpeakerSegments(result) : result;
 };
