@@ -1,50 +1,62 @@
 
+## Audio-Upload als eigenständiges Meeting kennzeichnen
 
-## Analyse: Edge Function `admin-dashboard` nicht erreichbar
+### Status Quo
+Die aktuelle Implementierung ist bereits größtenteils korrekt:
+- Die Edge Function `transcribe-audio` setzt `source: 'manual'` beim Erstellen des Recordings
+- Es wird **kein Bot** gestartet - die Datei wird direkt zu ElevenLabs geschickt und transkribiert
+- Die AI-Analyse wird automatisch nach der Transkription ausgelöst
 
-### Problem
-Die Admin-Seite zeigt den Fehler "Failed to send a request to the Edge Function", weil die **`admin-dashboard`** Edge Function einen **404 Not Found** auf OPTIONS-Requests zurückgibt. Das bedeutet die Funktion ist **nicht deployed**.
-
-### Ursache
-Aus den Analytics-Logs:
-```
-OPTIONS | 404 | https://kltxpsrghuxzfbctkdnz.supabase.co/functions/v1/admin-dashboard
-```
-
-Die Funktion existiert im Code, aber ist nicht auf dem Supabase-Server aktiv.
+### Was fehlt
+Das `source`-Feld wird in der UI nicht angezeigt. Uploads sind nicht visuell von Bot-Meetings unterscheidbar.
 
 ---
 
-## Lösung
+## Änderungen
 
-### 1. Edge Function deployen
-Die `admin-dashboard` Edge Function muss deployed werden. Dies erfordert ein Re-Deployment.
+### 1. Recording-Type erweitern
+**Datei:** `src/types/recording.ts`
 
-### 2. CORS-Header prüfen
-Die aktuelle CORS-Konfiguration in der Funktion ist unvollständig:
+Das `source`-Feld zum Interface hinzufügen:
 ```typescript
-// Aktuell:
-'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+export interface Recording {
+  // ... bestehende Felder ...
+  source: 'bot' | 'desktop_sdk' | 'manual' | null;
+}
+```
 
-// Erforderlich:
-'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+### 2. RecordingCard mit Upload-Icon versehen
+**Datei:** `src/components/recordings/RecordingCard.tsx`
+
+Ein Upload-Icon (📤 oder `Upload` von Lucide) neben dem Titel anzeigen, wenn `source === 'manual'`:
+
+```typescript
+import { Upload } from 'lucide-react';
+
+// Im Header-Bereich:
+{recording.source === 'manual' && (
+  <Upload className="h-4 w-4 text-muted-foreground shrink-0" title="Hochgeladene Datei" />
+)}
+```
+
+### 3. Status "transcribing" hinzufügen
+**Datei:** `src/types/recording.ts`
+
+Den neuen Status für manuelle Uploads in die Labels aufnehmen:
+```typescript
+transcribing: 'Transkribiert...',
 ```
 
 ---
 
 ## Technische Details
 
-### Betroffene Datei
-`supabase/functions/admin-dashboard/index.ts` (Zeile 4-5)
+| Komponente | Änderung |
+|------------|----------|
+| `Recording` Interface | + `source` Feld |
+| `RecordingCard` | + Upload-Icon bei `source === 'manual'` |
+| `getStatusLabel` | + Label für `transcribing` Status |
+| `getStatusColor` | + Farbe für `transcribing` Status |
 
-### Änderung
-CORS-Header erweitern um alle vom Supabase-Client gesendeten Header.
-
-### Deployment
-Nach der Änderung wird die Funktion automatisch neu deployed.
-
----
-
-## Erwartetes Ergebnis
-Nach dem Fix wird die Admin-Seite erfolgreich laden und die Benutzer-/Team-Übersicht anzeigen.
-
+## Visuelles Ergebnis
+Hochgeladene Audio-Meetings zeigen ein 📤-Symbol neben dem Titel, sodass Benutzer sofort erkennen, dass es sich um eine manuell hochgeladene Datei handelt (im Gegensatz zu Bot-Aufnahmen).
