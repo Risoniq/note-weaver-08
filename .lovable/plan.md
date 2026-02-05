@@ -1,129 +1,160 @@
 
+# Plan: Verbesserung der Sprechererkennung und Teilnehmerzaehlung
 
-# Plan: Verbesserung der Sprecherzuordnung im Transkript
+## Analyse der Probleme
 
-## Problem-Analyse
+### Problem 1: Teilnehmer-Daten fehlen komplett
+Die Datenbank zeigt `participants: null` und `calendar_attendees: null`. Das bedeutet:
+- Recall.ai hat entweder keine Teilnehmerdaten geliefert
+- Oder die Speicherlogik hat nicht gegriffen
 
-Das Meeting "KI Training fuer Autohaeaendler" zeigt fragmentierte Sprecherabschnitte:
-- Kurze Einwuerfe wie `Fabian Becker: Ihnen` oder `Beier-Nies, Katja (K.): aus,` werden als separate Zeilen angezeigt
-- Diese Fragmente sind eigentlich Teile laengerer Aussagen, die durch kurze Zwischenrufe anderer Personen unterbrochen wurden
-- Das Problem entsteht durch die Art, wie Recall.ai die Audio-Segmente erkennt
+### Problem 2: Namen-Inkonsistenzen
+Im Transkript erscheinen:
+- `Goerge, Maren (M.)` - "oe" statt "ö" (Recall.ai Transkriptions-Artefakt)
+- `Beier-Nies, Katja (K.)` - korrekt aus Recall.ai, aber sie stellt sich als "Katja Bayer Nies" vor
 
-## Ursache
-
-Recall.ai nutzt Voice Activity Detection (VAD), die bei kurzen Sprechpausen oder Sprecherwechseln neue Segmente erstellt. Das fuehrt zu:
-- Sehr kurzen Einzel-Wort-Segmenten
-- Fragmentierten Saetzen
-- Schwer lesbaren Transkripten
+### Problem 3: Kurze Einwuerfe werden nicht zusammengefuehrt
+Die aktuelle Merge-Logik kann nur aufeinanderfolgende Segmente desselben Sprechers zusammenfuehren. Wenn Fabian mit "Ihnen" Katja unterbricht, sind das zwei verschiedene Sprecher - hier kann nicht automatisch zusammengefuehrt werden.
 
 ## Loesungsansatz
 
-### Option 1: Frontend-Zusammenfuehrung (empfohlen)
+### Schritt 1: Teilnehmer aus Transkript extrahieren (Frontend-Fix)
 
-Aufeinanderfolgende Segmente desselben Sprechers werden in der Darstellung zusammengefuehrt, waehrend die urspruenglichen Daten erhalten bleiben.
+Da `participants` null ist, muss das Frontend die Sprecher direkt aus dem Transkript-Text extrahieren. Die Funktion `extractSpeakersInOrder` in `speakerColors.ts` macht das bereits, aber sie wird nicht fuer die Teilnehmerzaehlung verwendet.
 
-**Vorteile:**
-- Keine Aenderung an den Originaldaten
-- Schnell umsetzbar
-- Rueckwaertskompatibel
+**Aenderung:** Fallback-Logik fuer Teilnehmerzaehlung, wenn `participants` null ist.
 
-### Option 2: Backend-Optimierung bei Sync
+### Schritt 2: Backend-Verbesserung fuer Teilnehmer-Extraktion
 
-Segmente werden bereits beim Import aus Recall.ai intelligent zusammengefuehrt, basierend auf Zeitluecken und Sprecheridentitaet.
+Die `sync-recording` Function soll:
+1. Wenn `meeting_participants` leer ist: Sprecher aus dem Transkript extrahieren
+2. Diese als `participants` speichern
+3. Bot-Filter anwenden (notetaker, bot, etc.)
 
-**Vorteile:**
-- Saubere Daten in der Datenbank
-- Einmalige Verarbeitung
+### Schritt 3: Namen-Normalisierung
+
+Einfuehrung einer Normalisierungsfunktion die:
+- "oe", "ae", "ue" zu "ö", "ä", "ü" konvertiert (optional/heuristisch)
+- Nachnamen-Vorname-Format erkennt: "Goerge, Maren (M.)" -> "Maren Görge"
+- Duplikate vermeidet (gleicher Sprecher mit leicht unterschiedlichem Namen)
+
+### Schritt 4: Intelligentere Einwurf-Behandlung (optional)
+
+Kurze Einwuerfe (unter 3 Woerter) von anderen Sprechern koennten:
+- Visuell anders dargestellt werden (kleinere Schrift, inline)
+- Oder als "Zwischenruf" markiert werden
 
 ## Technische Umsetzung
 
-### Aenderung 1: speakerColors.ts - Segment-Zusammenfuehrung
+### Datei 1: src/utils/participantUtils.ts
 
-Die Funktion `parseTranscriptWithColors` wird erweitert, um aufeinanderfolgende kurze Segmente desselben Sprechers zusammenzufuehren:
-
+Neue Funktionen:
 ```text
-VORHER:
-  Fabian Becker: Ihnen
-  Beier-Nies, Katja (K.): das schon in irgendeiner Form...
-  Fabian Becker: aber trotzdem
-  Beier-Nies, Katja (K.): solltest du noch gerne was sagen
+extractParticipantsFromTranscript(transcriptText: string): Participant[]
+  - Nutzt extractSpeakersInOrder aus speakerColors.ts
+  - Filtert Bots heraus
+  - Gibt echte Teilnehmer zurueck
 
-NACHHER (optional zusammengefuehrt bei gleichem Sprecher):
-  Fabian Becker: Ihnen ... aber trotzdem
-  Beier-Nies, Katja (K.): das schon in irgendeiner Form... solltest du noch gerne was sagen
+normalizeGermanName(name: string): string
+  - "Goerge" -> "Görge"
+  - "Baier" -> "Baier" (keine Aenderung, da korrekt)
+  - "Nachname, Vorname (X.)" -> "Vorname Nachname"
 ```
 
-### Aenderung 2: Neue Funktion "Kurze Einwuerfe hervorheben"
+### Datei 2: supabase/functions/sync-recording/index.ts
 
-Statt Zusammenfuehrung koennen kurze Einwuerfe (unter 5 Woerter) visuell anders dargestellt werden:
-- Kleinere Schrift
-- Graue/dezente Farbe
-- Inline-Darstellung statt Blockdarstellung
+Aenderungen:
+```text
+// Nach Transkript-Parsing:
+if (participantsList.length === 0) {
+  // Fallback: Extrahiere Sprecher aus dem formatierten Transkript
+  const speakers = new Set<string>()
+  mergedSegments.forEach(seg => {
+    if (!isBot(seg.speaker)) {
+      speakers.add(seg.speaker)
+    }
+  })
+  
+  participantsList = Array.from(speakers).map((name, idx) => ({
+    id: String(idx),
+    name: name
+  }))
+}
+```
 
-### Aenderung 3: sync-recording/index.ts - Optionale Segmentzusammenfuehrung
+### Datei 3: Frontend - MeetingDetail.tsx oder RecordingCard.tsx
 
-Beim Abrufen des Transkripts von Recall.ai werden aufeinanderfolgende Segmente desselben Sprechers zusammengefuehrt, wenn der Zeitabstand unter 2 Sekunden liegt.
+Fallback fuer Teilnehmerzaehlung:
+```text
+const getParticipantCount = () => {
+  // Prioritaet 1: participants aus DB
+  if (recording.participants?.length > 0) {
+    return countRealParticipants(recording.participants)
+  }
+  
+  // Prioritaet 2: Aus Transkript extrahieren
+  if (recording.transcript_text) {
+    const speakers = extractSpeakersInOrder(recording.transcript_text)
+    return speakers.filter(s => !isBot(s)).length
+  }
+  
+  return 0
+}
+```
 
 ## Betroffene Dateien
 
 | Datei | Aenderung |
 |-------|-----------|
-| `src/utils/speakerColors.ts` | Neue Funktion `mergeConsecutiveSpeakerSegments` |
-| `src/components/transcript/ColoredTranscript.tsx` | Option zur Zusammenfuehrung oder Inline-Darstellung kurzer Einwuerfe |
-| `supabase/functions/sync-recording/index.ts` | Optionale Zusammenfuehrung beim Import (mit Zeitstempel-Pruefung) |
+| `src/utils/participantUtils.ts` | Neue Funktionen: extractParticipantsFromTranscript, normalizeGermanName |
+| `supabase/functions/sync-recording/index.ts` | Fallback-Extraktion wenn participants leer |
+| `src/pages/MeetingDetail.tsx` | Fallback-Teilnehmerzaehlung aus Transkript |
+| `src/components/recordings/RecordingCard.tsx` | Gleiche Fallback-Logik |
 
-## Implementierungsoptionen
+## Erwartetes Ergebnis nach Re-Sync
 
-### Variante A: Nur Frontend (schnell)
+**Sprecher im Transkript (7 Personen):**
+1. Dominik Bauer
+2. Fabian Becker
+3. Jacqueline Gans
+4. Goerge, Maren (M.) -> wird als "Maren Görge" normalisiert
+5. Manske, Simone (S.) -> wird als "Simone Manske" normalisiert
+6. Beier-Nies, Katja (K.) -> wird als "Katja Beier-Nies" normalisiert
 
-Zusammenfuehrung nur in der Anzeige - Originaldaten bleiben unveraendert.
+**Gefiltert (keine Teilnehmer):**
+- Notetaker/Bot (bereits gefiltert)
 
-Vorteil: Schnell, rueckwaertskompatibel
-Nachteil: Jedes Mal bei Darstellung berechnet
+**Teilnehmerzahl:** 6 echte Personen
 
-### Variante B: Backend-Optimierung (nachhaltig)
+## Namens-Normalisierung Details
 
-Zusammenfuehrung bereits beim Speichern in die Datenbank.
-
-Vorteil: Saubere Daten, einmalige Berechnung
-Nachteil: Erfordert Re-Sync bestehender Meetings
-
-### Variante C: Beide kombiniert
-
-Backend optimiert neue Meetings, Frontend kann alte Daten verbessert darstellen.
-
-## Vorgeschlagene Loesung
-
-**Variante C** wird empfohlen:
-
-1. **Frontend**: `parseTranscriptWithColors` erweitern um optionale Zusammenfuehrung
-2. **Backend**: `sync-recording` um Zeitstempel-basierte Zusammenfuehrung ergaenzen
-3. **Bestehendes Meeting**: Kann per "Re-Sync" aktualisiert werden
-
-## Beispiel der Zusammenfuehrungslogik
-
+Die Namen kommen von Recall.ai im Format "Nachname, Vorname (Kuerzel)". 
+Beispiel-Transformation:
 ```text
-Regeln fuer die Zusammenfuehrung:
-1. Gleicher Sprecher wie vorheriges Segment
-2. Zeitabstand zum vorherigen Segment < 2 Sekunden (nur Backend)
-3. Vorheriges Segment endet nicht mit Satzzeichen (. ! ?)
-4. Segment hat weniger als 5 Woerter
+"Goerge, Maren (M.)" 
+  -> Split bei Komma: ["Goerge", "Maren (M.)"]
+  -> Vorname extrahieren: "Maren"
+  -> Nachname normalisieren: "Görge" (oe -> ö)
+  -> Ergebnis: "Maren Görge"
 
-Wenn alle Regeln erfuellt: Segment an vorheriges anhaengen
+"Beier-Nies, Katja (K.)"
+  -> Split bei Komma: ["Beier-Nies", "Katja (K.)"]
+  -> Vorname extrahieren: "Katja"
+  -> Nachname bleibt: "Beier-Nies"
+  -> Ergebnis: "Katja Beier-Nies"
 ```
 
-## Migration bestehender Daten
+## Implementierungsreihenfolge
 
-Fuer das spezifische Meeting "KI Training fuer Autohaendler":
-1. Im Admin-Bereich "Re-Sync" ausloesen
-2. Transkript wird neu von Recall.ai abgerufen
-3. Neue Zusammenfuehrungslogik wird angewendet
+1. **Backend-Fix:** sync-recording Fallback-Logik fuer Teilnehmer-Extraktion
+2. **Frontend-Fix:** Teilnehmerzaehlung aus Transkript wenn participants null
+3. **Namen-Normalisierung:** Neue Utility-Funktion
+4. **Re-Sync:** Meeting erneut synchronisieren um neue Logik anzuwenden
 
-## Risiken und Einschraenkungen
+## Risikobewertung
 
 | Risiko | Bewertung | Mitigation |
 |--------|-----------|------------|
-| Falsche Zusammenfuehrung | Niedrig | Konservative Regeln (nur bei gleichem Sprecher) |
-| Verlust von Einwuerfen | Niedrig | Einwuerfe werden angehaengt, nicht geloescht |
-| Performance | Sehr niedrig | Algorithmus ist O(n), keine DB-Abfragen |
-
+| Falsche Umlaut-Konvertierung | Niedrig | Nur bekannte Muster (oe->ö, ae->ä, ue->ü) |
+| Doppelte Sprecher | Niedrig | Case-insensitive Deduplizierung |
+| Performance | Sehr niedrig | Regex-basiert, O(n) |
