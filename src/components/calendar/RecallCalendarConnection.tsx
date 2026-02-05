@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { Link2Off, RefreshCw, AlertCircle, Chrome } from 'lucide-react';
+import { Link2Off, RefreshCw, AlertCircle, Chrome, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useImpersonation } from '@/contexts/ImpersonationContext';
 import type { GoogleCalendarStatus } from '@/hooks/useGoogleRecallCalendar';
 import type { MicrosoftCalendarStatus } from '@/hooks/useMicrosoftRecallCalendar';
-
 interface RecallCalendarConnectionProps {
   // Google
   googleStatus: GoogleCalendarStatus;
@@ -49,6 +49,7 @@ interface CalendarCardProps {
   onDisconnect: () => void;
   onCheckStatus: () => void;
   onRefresh: () => void;
+  isImpersonating: boolean;
 }
 
 const CalendarCard = ({
@@ -63,6 +64,7 @@ const CalendarCard = ({
   onDisconnect,
   onCheckStatus,
   onRefresh,
+  isImpersonating,
 }: CalendarCardProps) => {
   const isConnecting = status === 'connecting';
   const isSyncing = status === 'syncing';
@@ -131,6 +133,7 @@ const CalendarCard = ({
               variant="default"
               size="sm"
               onClick={onConnect}
+              disabled={isImpersonating}
               className="gradient-hero"
             >
               Verbinden
@@ -206,9 +209,22 @@ export const RecallCalendarConnection = ({
   onCheckMicrosoftStatus,
   onRefreshMeetings,
 }: RecallCalendarConnectionProps) => {
+  const { isImpersonating } = useImpersonation();
+
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-medium text-muted-foreground mb-2">Kalender-Integration</h3>
+      
+      {/* Impersonation Warning */}
+      {isImpersonating && (
+        <Alert variant="warning">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Kalender-Verbindungen können nicht während der Impersonation hergestellt werden. 
+            Der Benutzer muss sich selbst mit Microsoft/Google anmelden.
+          </AlertDescription>
+        </Alert>
+      )}
       
       {/* Google Calendar Card */}
       <CalendarCard
@@ -223,6 +239,7 @@ export const RecallCalendarConnection = ({
         onDisconnect={onDisconnectGoogle}
         onCheckStatus={onCheckGoogleStatus}
         onRefresh={onRefreshMeetings}
+        isImpersonating={isImpersonating}
       />
 
       {/* Microsoft Calendar Card */}
@@ -238,6 +255,7 @@ export const RecallCalendarConnection = ({
         onDisconnect={onDisconnectMicrosoft}
         onCheckStatus={onCheckMicrosoftStatus}
         onRefresh={onRefreshMeetings}
+        isImpersonating={isImpersonating}
       />
     </div>
   );
