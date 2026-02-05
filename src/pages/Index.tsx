@@ -81,7 +81,7 @@ const Index = () => {
               </GlassCard>
               
               <GlassCard title="Audio/Video hochladen">
-                <AudioUploadCard onUploadComplete={setActiveRecordingId} />
+                <AudioUploadCard />
               </GlassCard>
               
               <GlassCard title={isTeamlead ? `Team-Analyse: ${teamName}` : 'Account-Analyse'}>
