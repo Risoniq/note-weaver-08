@@ -1,31 +1,50 @@
 
 
-## Bug-Fix: Analyse wird nicht ausgelöst
+## Aufnahmen als eigenständiger Navigationsreiter
 
-### Problem gefunden
-Die `transcribe-audio` Edge Function ruft `analyze-transcript` auf, aber der Parameter-Name stimmt nicht überein:
-
-| Gesendet (transcribe-audio) | Erwartet (analyze-transcript) |
-|----------------------------|-------------------------------|
-| `recordingId` | `recording_id` |
-
-Dadurch schlägt die Analyse fehl mit "recording_id is required".
+### Übersicht
+Die "Aufnahmen"-Übersicht wird aus dem Dashboard herausgelöst und erhält eine eigene Route `/recordings` mit einem dedizierten Navigationseintrag neben "Transkripte".
 
 ---
 
 ## Änderungen
 
-### 1. Parameter-Name korrigieren
-**Datei:** `supabase/functions/transcribe-audio/index.ts`
+### 1. Neue Seite erstellen
+**Datei:** `src/pages/Recordings.tsx` (neu)
 
-Zeile 200 ändern von:
+Eine neue Seite, die die RecordingsList mit dem Team-Toggle anzeigt:
+- Header mit Titel "Aufnahmen"
+- Team/Personal Toggle für Teamleads
+- Die bestehende RecordingsList-Komponente
+
+### 2. Navigation erweitern
+**Datei:** `src/components/layout/AppLayout.tsx`
+
+Neuen Navigationseintrag hinzufügen:
 ```typescript
-body: JSON.stringify({ recordingId: recording.id }),
+const navItems = [
+  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Kalender", url: "/calendar", icon: Calendar },
+  { title: "Aufnahmen", url: "/recordings", icon: Video },  // NEU
+  { title: "Transkripte", url: "/transcripts", icon: FileText },
+  { title: "Einstellungen", url: "/settings", icon: Settings },
+];
 ```
-zu:
+
+### 3. Route registrieren
+**Datei:** `src/App.tsx`
+
+Neue Route hinzufügen:
 ```typescript
-body: JSON.stringify({ recording_id: recording.id }),
+import Recordings from "./pages/Recordings";
+// ...
+<Route path="/recordings" element={<ProtectedRoute><Recordings /></ProtectedRoute>} />
 ```
+
+### 4. Dashboard vereinfachen
+**Datei:** `src/pages/Index.tsx`
+
+Die RecordingsList vom Dashboard entfernen, da sie nun eine eigene Seite hat. Der Team-Toggle wird ebenfalls zur Recordings-Seite verschoben.
 
 ---
 
@@ -33,8 +52,17 @@ body: JSON.stringify({ recording_id: recording.id }),
 
 | Komponente | Änderung |
 |------------|----------|
-| `transcribe-audio/index.ts` | Parameter-Name von `recordingId` auf `recording_id` korrigieren |
+| `src/pages/Recordings.tsx` | Neue Seite mit RecordingsList + Team-Toggle |
+| `AppLayout.tsx` | + "Aufnahmen" Navigationseintrag mit Video-Icon |
+| `App.tsx` | + Route `/recordings` |
+| `Index.tsx` | − RecordingsList entfernen, − Team-Toggle entfernen |
 
-## Ergebnis
-Nach dieser Korrektur wird die KI-Analyse (Titel, Summary, Key Points, Action Items) automatisch nach der Transkription ausgelöst und die Ergebnisse werden in der Datenbank gespeichert.
+## Visuelles Ergebnis
+```text
+[Dashboard] [Kalender] [Aufnahmen] [Transkripte] [Einstellungen]
+                          ↑
+                      Neuer Tab
+```
+
+Die Aufnahmen-Seite zeigt alle Recordings in einer Kartenansicht mit Teamlead-Funktionalität (Team/Personal-Umschaltung).
 
