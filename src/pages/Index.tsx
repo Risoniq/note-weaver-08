@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { RecordingViewer } from "@/components/RecordingViewer";
 import { QuickMeetingJoin } from "@/components/calendar/QuickMeetingJoin";
 import { AccountAnalyticsCard } from "@/components/dashboard/AccountAnalyticsCard";
 import { TeamAnalyticsCard } from "@/components/dashboard/TeamAnalyticsCard";
 import { AudioUploadCard } from "@/components/dashboard/AudioUploadCard";
 import { Toaster } from "@/components/ui/toaster";
-import { RefreshCw, AlertTriangle } from "lucide-react";
+import { RefreshCw, AlertTriangle, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -91,6 +92,15 @@ const Index = () => {
                 )}
               </GlassCard>
             </div>
+
+            {/* Animated Link to Recordings */}
+            <Link 
+              to="/recordings" 
+              className="group flex items-center justify-center gap-2 py-4 text-lg font-medium text-primary transition-all duration-300 hover:gap-4"
+            >
+              <span className="animate-fade-in">Zu den Meeting-Analysen</span>
+              <ArrowRight className="h-5 w-5 transition-transform duration-300 group-hover:translate-x-2" />
+            </Link>
             
             {/* Active Recording Status */}
             {activeRecordingId && (
