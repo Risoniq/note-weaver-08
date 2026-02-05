@@ -1,90 +1,202 @@
 
-# Plan: Kalender-Verbindungsfehler fuer Impersonation beheben
+# Plan: Audio-Upload mit automatischer Transkription
 
-## Problem-Analyse
+## Uebersicht
 
-### Fehlermeldung in den Logs
+Eine neue Funktion unter dem Meeting-Kontingent, die es Benutzern ermoeglicht, MP3- und MP4-Dateien hochzuladen. Diese werden automatisch transkribiert und als neues Meeting gespeichert.
+
+## Architektur
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                         Frontend                                │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  AudioUploadCard (neue Komponente)                       │   │
+│  │  - Drag & Drop Zone                                      │   │
+│  │  - Datei-Validierung (MP3, MP4, max 50MB)                │   │
+│  │  - Upload-Fortschritt                                    │   │
+│  │  - Status-Anzeige (Uploading → Transcribing → Done)      │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Supabase Storage                             │
+│  Bucket: audio-uploads                                          │
+│  Pfad: {user_id}/{recording_id}.mp3                             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                Edge Function: transcribe-audio                  │
+│                                                                 │
+│  1. Audio von Storage abrufen                                   │
+│  2. MP4 → MP3 konvertieren (via FFmpeg/externe API)             │
+│  3. Transkription via ElevenLabs STT                            │
+│  4. Recording mit Transkript erstellen                          │
+│  5. analyze-transcript aufrufen                                 │
+│  6. Status auf 'done' setzen                                    │
+└─────────────────────────────────────────────────────────────────┘
 ```
-ERROR [MicrosoftAuth] User ID mismatch: 
-  provided 6e373589-24e0-4037-ac57-de56e0932ff4 (Fabio) 
-  vs authenticated 704551d2-286b-4e57-80d0-721f198aea43 (Dominik/Admin)
+
+## Benoetigte Komponenten
+
+### 1. Neue Frontend-Komponente: AudioUploadCard
+
+**Datei:** `src/components/upload/AudioUploadCard.tsx`
+
+- Drag & Drop Zone mit React
+- Akzeptiert: `.mp3`, `.mp4`, `.m4a`, `.wav`
+- Max. Dateigroesse: 50MB (ElevenLabs Limit: 1GB, aber wir begrenzen fuer UX)
+- Upload-Fortschrittsanzeige
+- Status-Tracking (uploading → transcribing → analyzing → done)
+
+### 2. Storage Bucket erstellen
+
+**SQL Migration:**
+```sql
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('audio-uploads', 'audio-uploads', false, 52428800);
+
+-- RLS: Nur eigene Dateien hochladen
+CREATE POLICY "Users can upload audio files"
+ON storage.objects FOR INSERT
+WITH CHECK (bucket_id = 'audio-uploads' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+-- RLS: Eigene Dateien lesen
+CREATE POLICY "Users can read own audio files"
+ON storage.objects FOR SELECT
+USING (bucket_id = 'audio-uploads' AND auth.uid()::text = (storage.foldername(name))[1]);
 ```
 
-### Ursache
-Wenn ein Admin einen anderen Benutzer impersoniert und versucht, dessen Kalender zu verbinden, schlaegt die Sicherheitspruefung in der Edge Function fehl:
+### 3. Edge Function: transcribe-audio
 
-1. Admin (Dominik) impersoniert Fabio
-2. Frontend sendet Fabios User-ID im Request
-3. Edge Function prueft den Auth-Token → findet Dominik
-4. User-ID-Mismatch → Request wird mit 403 Forbidden abgelehnt
+**Datei:** `supabase/functions/transcribe-audio/index.ts`
 
-### Betroffene Komponenten
-- `src/hooks/useMicrosoftRecallCalendar.ts` - Nutzt nicht den Impersonation-Kontext
-- `src/hooks/useGoogleRecallCalendar.ts` - Gleiches Problem
-- `supabase/functions/microsoft-recall-auth/index.ts` - Strikte Validierung (korrekt!)
-- `supabase/functions/google-recall-auth/index.ts` - Gleiches Verhalten
+Ablauf:
+1. Authentifizierung pruefen
+2. Audio-Datei von Storage abrufen
+3. MP4 → MP3 Konvertierung (falls noetig)
+4. ElevenLabs Speech-to-Text API aufrufen (Batch-Modus)
+5. Neues Recording in DB erstellen
+6. analyze-transcript Edge Function aufrufen
+7. Status auf 'done' setzen
 
-## Loesung
+### 4. ElevenLabs API-Key
 
-Es gibt zwei moegliche Ansaetze:
+**Neues Secret erforderlich:** `ELEVENLABS_API_KEY`
 
-### Option A: Impersonation fuer Kalender-Verbindung deaktivieren (Empfohlen)
-OAuth-Flows koennen nicht stellvertretend durchgefuehrt werden - der echte Benutzer muss sich selbst bei Microsoft/Google anmelden.
+Der Benutzer muss diesen Key eingeben. ElevenLabs bietet:
+- Batch-Transkription mit `scribe_v2` Modell
+- Speaker Diarization (verschiedene Sprecher erkennen)
+- 99+ Sprachen inkl. Deutsch
 
-**Aenderungen:**
-- In den Kalender-Komponenten eine Warnung anzeigen, wenn impersoniert wird
-- Button zum Verbinden im Impersonation-Modus deaktivieren
+## Dateistruktur der Aenderungen
 
-### Option B: Admin-Override in Edge Function (Nicht empfohlen)
-Admins koennten die Validierung umgehen, aber das hilft nicht - der OAuth-Flow wuerde trotzdem zum falschen Account fuehren.
+```text
+src/
+├── components/
+│   └── upload/
+│       └── AudioUploadCard.tsx       # NEUE Datei
+├── hooks/
+│   └── useAudioUpload.ts             # NEUE Datei (Upload-Logik)
+├── pages/
+│   └── Index.tsx                     # Erweitern um AudioUploadCard
 
-## Empfohlene Implementierung (Option A)
+supabase/
+├── functions/
+│   └── transcribe-audio/
+│       └── index.ts                  # NEUE Edge Function
+├── migrations/
+│   └── XXXXXX_audio_uploads_bucket.sql  # Storage Bucket
 
-### 1. RecallCalendarConnection.tsx anpassen
+config.toml                            # Function hinzufuegen
+```
+
+## UI-Design
+
+Die AudioUploadCard wird unter dem QuickMeetingJoin-Bereich platziert:
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│  Meeting-Kontingent                                          │
+│  ████████████░░░░░░░░ 12h / 20h                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────┐  ┌─────────────────────────────┐
+│  Bot zu Meeting senden      │  │  Account-Analyse            │
+│  [Meeting-URL eingeben]     │  │  [Statistiken]              │
+└─────────────────────────────┘  └─────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│  📤 Audio-Datei hochladen                                    │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │                                                        │  │
+│  │        🎤 Datei hierher ziehen                         │  │
+│  │           oder klicken zum Auswaehlen                  │  │
+│  │                                                        │  │
+│  │        MP3, MP4, M4A, WAV (max. 50MB)                  │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  Status: Bereit                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## Implementierungsschritte
+
+1. **Storage Bucket erstellen** - SQL Migration fuer audio-uploads
+2. **ElevenLabs Secret** - API-Key vom Benutzer anfordern
+3. **Edge Function erstellen** - transcribe-audio mit ElevenLabs STT
+4. **Frontend-Komponente** - AudioUploadCard mit Upload-Logik
+5. **Index.tsx anpassen** - Neue Komponente einbinden
+6. **Config.toml aktualisieren** - Neue Function registrieren
+
+## Technische Details
+
+### MP4 zu MP3 Konvertierung
+
+ElevenLabs unterstuetzt direkt MP4, daher ist keine Konvertierung noetig! Das STT-API extrahiert automatisch die Audio-Spur.
+
+Unterstuetzte Formate: `mp3, mp4, m4a, wav, webm, ogg, flac`
+
+### ElevenLabs STT Request
+
 ```typescript
-// Import hinzufuegen
-import { useImpersonation } from '@/contexts/ImpersonationContext';
+const formData = new FormData();
+formData.append("file", audioFile);
+formData.append("model_id", "scribe_v2");
+formData.append("diarize", "true");  // Sprecher erkennen
+formData.append("language_code", "deu"); // Deutsch
 
-// Im Component
-const { isImpersonating } = useImpersonation();
-
-// Warnung anzeigen und Button deaktivieren
-{isImpersonating && (
-  <Alert variant="warning">
-    <AlertTriangle className="h-4 w-4" />
-    <AlertDescription>
-      Kalender-Verbindungen koennen nicht waehrend der Impersonation 
-      hergestellt werden. Der Benutzer muss sich selbst mit 
-      Microsoft/Google anmelden.
-    </AlertDescription>
-  </Alert>
-)}
-
-// Buttons deaktivieren
-<Button 
-  onClick={connectMicrosoft} 
-  disabled={isImpersonating || isLoading}
->
-  Mit Microsoft verbinden
-</Button>
+const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+  method: "POST",
+  headers: { "xi-api-key": ELEVENLABS_API_KEY },
+  body: formData,
+});
 ```
 
-### 2. Status-Pruefung bleibt aktiv
-Admins koennen weiterhin den Verbindungsstatus sehen, aber keine neuen Verbindungen fuer andere Benutzer erstellen.
+### Response-Verarbeitung
 
-## Bereits verbundene Accounts
+Die ElevenLabs API liefert:
+```json
+{
+  "text": "Vollstaendiges Transkript...",
+  "words": [
+    { "text": "Hallo", "start": 0.0, "end": 0.5, "speaker": "Speaker 1" }
+  ]
+}
+```
 
-| Email | Google | Microsoft |
-|-------|--------|-----------|
-| dominik@risoniq.ai | Ja | Ja |
-| support@risoniq.ai | Nein | Ja |
-| as@ec-pd.com | Nein | Ja |
-| so@ec-pd.com | Nein | Ja |
+Das Transkript wird formatiert und in die `recordings`-Tabelle gespeichert.
 
-Fabios Account (`6e373589-...`) hat noch keine Kalender-Verbindung.
+## Kosten/Limits
 
-## Naechste Schritte
+- ElevenLabs STT: ~$0.20 pro Stunde Audio
+- Max. Dateigroesse: 1GB (wir begrenzen auf 50MB)
+- Maximale Audio-Laenge: 4.5 Stunden
 
-1. **Sofort**: Fabio muss sich selbst einloggen (nicht impersoniert) und die Microsoft-Kalender-Verbindung herstellen
-2. **Code-Aenderung**: UI-Warnung hinzufuegen, dass Kalender-Verbindungen nicht im Impersonation-Modus moeglich sind
-3. **Optional**: Status-Pruefung fuer impersonierte Benutzer ermoglichen (nur lesen, nicht verbinden)
+## Voraussetzungen
+
+- ElevenLabs Account mit API-Key
+- Genuegend Credits bei ElevenLabs
