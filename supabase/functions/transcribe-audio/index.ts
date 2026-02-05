@@ -197,7 +197,7 @@ Deno.serve(async (req) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${supabaseServiceKey}`,
         },
-        body: JSON.stringify({ recordingId: recording.id }),
+        body: JSON.stringify({ recording_id: recording.id }),
       });
       
       if (!analyzeResponse.ok) {
