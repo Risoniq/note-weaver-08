@@ -25,6 +25,9 @@ export interface ApiKeyData {
     dashboard?: boolean;
     transcripts?: boolean;
     team_stats?: boolean;
+    import?: boolean;
+    update?: boolean;
+    webhook_receive?: boolean;
   };
   created_by: string;
   last_used_at: string | null;
@@ -66,8 +69,8 @@ export const ApiKeyCard = ({ apiKey, onDelete, onConfigureWebhook, isDeleting }:
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const getPermissionBadges = () => {
-    const badges = [];
+  const getReadPermissionBadges = () => {
+    const badges: React.ReactNode[] = [];
     if (apiKey.permissions.dashboard) {
       badges.push(<Badge key="dashboard" variant="secondary" className="text-xs">Dashboard</Badge>);
     }
@@ -80,7 +83,23 @@ export const ApiKeyCard = ({ apiKey, onDelete, onConfigureWebhook, isDeleting }:
     return badges;
   };
 
+  const getWritePermissionBadges = () => {
+    const badges: React.ReactNode[] = [];
+    if (apiKey.permissions.import) {
+      badges.push(<Badge key="import" variant="outline" className="text-xs border-green-500 text-green-600">Import</Badge>);
+    }
+    if (apiKey.permissions.update) {
+      badges.push(<Badge key="update" variant="outline" className="text-xs border-blue-500 text-blue-600">Update</Badge>);
+    }
+    if (apiKey.permissions.webhook_receive) {
+      badges.push(<Badge key="webhook_receive" variant="outline" className="text-xs border-purple-500 text-purple-600">Webhook</Badge>);
+    }
+    return badges;
+  };
+
   const isExpired = apiKey.expires_at && new Date(apiKey.expires_at) < new Date();
+  const readBadges = getReadPermissionBadges();
+  const writeBadges = getWritePermissionBadges();
 
   return (
     <Card className={!apiKey.is_active || isExpired ? 'opacity-60' : ''}>
@@ -110,8 +129,19 @@ export const ApiKeyCard = ({ apiKey, onDelete, onConfigureWebhook, isDeleting }:
         </div>
 
         {/* Permissions */}
-        <div className="flex flex-wrap gap-1">
-          {getPermissionBadges()}
+        <div className="space-y-2">
+          {readBadges.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-xs text-muted-foreground mr-1">Lesen:</span>
+              {readBadges}
+            </div>
+          )}
+          {writeBadges.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-xs text-muted-foreground mr-1">Schreiben:</span>
+              {writeBadges}
+            </div>
+          )}
         </div>
 
         {/* Metadata */}
