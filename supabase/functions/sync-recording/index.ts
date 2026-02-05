@@ -520,16 +520,39 @@ Deno.serve(async (req) => {
               // Sammle auch alle echten Teilnehmer aus dem Transkript für participantsList
               const transcriptParticipants = new Map<string, { id: string; name: string }>()
               
-              const formattedTranscript = transcriptData
+              // Hilfsfunktion: Prüft ob Text mit Satzzeichen endet
+              const endsWithPunctuation = (text: string): boolean => {
+                return /[.!?]$/.test(text.trim());
+              };
+              
+              // Hilfsfunktion: Anzahl der Wörter zählen
+              const countWords = (text: string): number => {
+                return text.trim().split(/\s+/).filter(w => w.length > 0).length;
+              };
+              
+              // Erst alle Segmente sammeln mit Zeitstempeln
+              interface TranscriptSegment {
+                speaker: string;
+                text: string;
+                startTime?: number;
+                endTime?: number;
+                participantId?: string;
+              }
+              
+              const rawSegments: TranscriptSegment[] = transcriptData
                 .map((entry: { 
                   speaker?: string; 
                   speaker_id?: number; 
                   participant?: { id?: number; name?: string; platform_user_id?: string; identifier?: string };
                   user?: { id?: number; name?: string; platform_user_id?: string; identifier?: string };
-                  words?: { text?: string }[] 
+                  words?: { text?: string; start_timestamp?: { relative?: number }; end_timestamp?: { relative?: number } }[]
                 }) => {
                   const speaker = getBestSpeakerName(entry)
                   const text = entry.words?.map(w => w.text).join(' ') || ''
+                  
+                  // Zeitstempel aus words extrahieren (falls vorhanden)
+                  const startTime = entry.words?.[0]?.start_timestamp?.relative;
+                  const endTime = entry.words?.[entry.words.length - 1]?.end_timestamp?.relative;
                   
                   // Sammle Teilnehmer wenn es ein echter Name ist (kein Fallback)
                   const source = entry.participant || entry.user
@@ -543,8 +566,57 @@ Deno.serve(async (req) => {
                     }
                   }
                   
-                  return `${speaker}: ${text}`
+                  return { 
+                    speaker, 
+                    text, 
+                    startTime,
+                    endTime,
+                    participantId: String(source?.id || source?.platform_user_id || '')
+                  }
                 })
+                .filter((seg: TranscriptSegment) => seg.text.trim().length > 0)
+              
+              // Aufeinanderfolgende Segmente desselben Sprechers zusammenführen
+              const mergedSegments: TranscriptSegment[] = []
+              
+              for (let i = 0; i < rawSegments.length; i++) {
+                const current = rawSegments[i]
+                
+                if (mergedSegments.length === 0) {
+                  mergedSegments.push({ ...current })
+                  continue
+                }
+                
+                const last = mergedSegments[mergedSegments.length - 1]
+                const currentWordCount = countWords(current.text)
+                
+                // Zeitlücke berechnen (falls Zeitstempel vorhanden)
+                const timeGap = (last.endTime !== undefined && current.startTime !== undefined)
+                  ? current.startTime - last.endTime
+                  : 0
+                
+                // Zusammenführen wenn:
+                // 1. Gleicher Sprecher
+                // 2. Zeitlücke < 2 Sekunden ODER keine Zeitstempel verfügbar
+                // 3. Vorheriges Segment endet nicht mit Satzzeichen ODER aktuelles ist sehr kurz
+                const sameSpeaker = current.speaker === last.speaker
+                const smallTimeGap = timeGap < 2000 || (last.endTime === undefined || current.startTime === undefined)
+                const continuousSpeech = !endsWithPunctuation(last.text) || currentWordCount < 3
+                
+                if (sameSpeaker && smallTimeGap && continuousSpeech) {
+                  // Zusammenführen
+                  last.text = last.text.trim() + ' ' + current.text.trim()
+                  last.endTime = current.endTime
+                  console.log(`Segmente zusammengeführt für "${current.speaker}": +${currentWordCount} Wörter`)
+                } else {
+                  mergedSegments.push({ ...current })
+                }
+              }
+              
+              console.log(`Transkript: ${rawSegments.length} Roh-Segmente -> ${mergedSegments.length} zusammengeführte Segmente`)
+              
+              const formattedTranscript = mergedSegments
+                .map(seg => `${seg.speaker}: ${seg.text}`)
                 .join('\n\n')
               
               // Ergänze participantsList mit Sprechern aus dem Transkript
