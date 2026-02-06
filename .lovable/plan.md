@@ -1,51 +1,116 @@
 
-
 ## Ziel
-Die Audio-Upload-Funktion wieder funktionsfähig machen. Aktuell schlägt das Hochladen fehl, weil die `transcribe-audio` Edge Function nicht deployed ist.
+Alle Kalender-bezogenen Edge Functions reparieren und deployen, damit die Kalender-Integration vollständig funktioniert.
 
 ## Diagnose
 
-| Check | Ergebnis |
-|-------|----------|
-| Edge Function Code | Vorhanden und korrekt (npm: imports, Deno.serve()) |
-| Deployment Status | **Nicht deployed** (404 Not Found) |
-| Logs | Keine - Anfragen kommen nie an |
+### Aktuelle Situation
 
-## Lösung
+| Edge Function | Status | Problem |
+|---------------|--------|---------|
+| `google-recall-auth` | **Funktioniert** | - |
+| `microsoft-recall-auth` | **Funktioniert** | - |
+| `google-calendar-auth` | **404 Not Found** | Veraltete Imports |
+| `google-calendar-events` | **404 Not Found** | Veraltete Imports |
+| `recall-calendar-auth` | **404 Not Found** | Veraltete Imports |
+| `recall-calendar-meetings` | **404 Not Found** | Veraltete Imports |
 
-Die Edge Function muss deployed werden. Der Code ist bereits korrekt und verwendet:
-- `npm:@supabase/supabase-js@2` (moderner Import)
-- `Deno.serve()` (modernes Runtime)
-- Korrekte CORS-Headers
+### Ursache
+Die 4 nicht funktionierenden Funktionen verwenden noch veraltete Import-URLs:
+- `import { serve } from "https://deno.land/std@0.168.0/http/server.ts"`
+- `import { createClient } from "https://esm.sh/@supabase/supabase-js@2"`
 
-### Umsetzung
+Diese führen zu Deployment-Timeouts oder -Fehlern.
 
-1. **Deployment ausführen**
-   - Die `transcribe-audio` Funktion deployen
+---
 
-2. **Verifizierung**
-   - Prüfen, dass die Funktion erreichbar ist (sollte 401 statt 404 zurückgeben)
+## Umsetzungsplan
 
-3. **End-to-End Test**
-   - Audio-Upload auf dem Dashboard testen
+### Schritt 1: google-calendar-auth migrieren
+
+**Datei:** `supabase/functions/google-calendar-auth/index.ts`
+
+Änderungen:
+- Import von `serve()` entfernen
+- `createClient` auf `npm:@supabase/supabase-js@2` umstellen
+- `serve()` durch `Deno.serve()` ersetzen
+
+### Schritt 2: google-calendar-events migrieren
+
+**Datei:** `supabase/functions/google-calendar-events/index.ts`
+
+Änderungen:
+- Import von `serve()` entfernen
+- `serve()` durch `Deno.serve()` ersetzen
+- Kein Supabase-Import benötigt (diese Funktion ruft nur die Google API auf)
+
+### Schritt 3: recall-calendar-auth migrieren
+
+**Datei:** `supabase/functions/recall-calendar-auth/index.ts`
+
+Änderungen:
+- Import von `serve()` entfernen
+- `createClient` auf `npm:@supabase/supabase-js@2` umstellen
+- `serve()` durch `Deno.serve()` ersetzen
+
+### Schritt 4: recall-calendar-meetings migrieren
+
+**Datei:** `supabase/functions/recall-calendar-meetings/index.ts`
+
+Änderungen:
+- Import von `serve()` entfernen
+- `createClient` auf `npm:@supabase/supabase-js@2` umstellen
+- `serve()` durch `Deno.serve()` ersetzen
+
+### Schritt 5: Alle 4 Funktionen deployen
+
+Nach der Code-Aktualisierung alle 4 Funktionen gezielt deployen:
+- `google-calendar-auth`
+- `google-calendar-events`
+- `recall-calendar-auth`
+- `recall-calendar-meetings`
+
+### Schritt 6: Deployment verifizieren
+
+Per Test-Aufruf prüfen, dass alle Funktionen erreichbar sind (sollten 400/401 statt 404 zurückgeben).
+
+---
 
 ## Technische Details
 
-| Datei | Status |
-|-------|--------|
-| `supabase/functions/transcribe-audio/index.ts` | Keine Änderung nötig - nur Deployment |
+### Code-Änderungen pro Datei
 
-Die Funktion ist bereit und verwendet bereits die korrekte Architektur:
+```typescript
+// ALT (in allen 4 Dateien):
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-```text
-transcribe-audio/
-└── index.ts (npm: imports, Deno.serve())
+serve(async (req) => {
+  // ...
+});
+
+// NEU:
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+Deno.serve(async (req) => {
+  // ... (Rest bleibt identisch)
+});
 ```
+
+### Betroffene Dateien
+
+| Datei | Zeilen | Änderungstyp |
+|-------|--------|--------------|
+| `supabase/functions/google-calendar-auth/index.ts` | 1-2, 52 | Import-Migration |
+| `supabase/functions/google-calendar-events/index.ts` | 1, 28 | Import-Migration |
+| `supabase/functions/recall-calendar-auth/index.ts` | 1-2, 49 | Import-Migration |
+| `supabase/functions/recall-calendar-meetings/index.ts` | 1-2, 53 | Import-Migration |
+
+---
 
 ## Akzeptanzkriterien
 
-- Edge Function antwortet nicht mehr mit 404
-- Audio-Upload startet die Transkription erfolgreich
-- Fortschrittsbalken zeigt korrekten Status
-- Transkription erscheint in der Recordings-Liste
-
+- Alle 4 Funktionen antworten nicht mehr mit 404
+- Kalender-Verbindung kann gestartet werden (OAuth-Popup öffnet sich)
+- Kalender-Events werden korrekt synchronisiert
+- Meeting-Liste wird auf dem Dashboard angezeigt
