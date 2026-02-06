@@ -175,11 +175,22 @@ Deno.serve(async (req) => {
       name,
     }));
 
+    // Prepare transcript with metadata header (consistent with bot recordings)
+    const meetingTitle = title || audioFile.name.replace(/\.[^/.]+$/, '');
+    const transcriptWithHeader = `[Meeting-Info]
+User-ID: ${user.id}
+Recording-ID: ${recording.id}
+Source: manual
+Erstellt: ${new Date().toISOString()}
+---
+
+${formattedTranscript.trim()}`;
+
     // Update recording with transcript
     await supabaseAdmin
       .from('recordings')
       .update({
-        transcript_text: formattedTranscript.trim(),
+        transcript_text: transcriptWithHeader,
         status: 'done',
         duration: Math.round(duration),
         word_count: wordCount,
@@ -188,6 +199,23 @@ Deno.serve(async (req) => {
       .eq('id', recording.id);
 
     console.log(`Recording ${recording.id} completed. Duration: ${duration}s, Words: ${wordCount}`);
+
+    // Save transcript backup to storage
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupFileName = `${user.id}/${recording.id}_${timestamp}.txt`;
+
+    const { error: backupError } = await supabaseAdmin.storage
+      .from('transcript-backups')
+      .upload(backupFileName, new TextEncoder().encode(transcriptWithHeader), {
+        contentType: 'text/plain; charset=utf-8',
+        upsert: true
+      });
+
+    if (backupError) {
+      console.warn('Backup upload failed:', backupError);
+    } else {
+      console.log('Transcript backup saved:', backupFileName);
+    }
 
     // Trigger AI analysis
     try {
@@ -207,6 +235,69 @@ Deno.serve(async (req) => {
       }
     } catch (analyzeError) {
       console.warn('Failed to trigger AI analysis:', analyzeError);
+    }
+
+    // Export to external system (consistent with bot recordings)
+    const exportUrl = Deno.env.get('TRANSCRIPT_EXPORT_URL');
+    const exportSecret = Deno.env.get('TRANSCRIPT_EXPORT_SECRET');
+
+    if (exportUrl && exportSecret) {
+      console.log('Exporting transcript to external system...');
+      try {
+        const safeTitle = meetingTitle
+          .replace(/[äÄ]/g, 'ae')
+          .replace(/[öÖ]/g, 'oe')
+          .replace(/[üÜ]/g, 'ue')
+          .replace(/[ß]/g, 'ss')
+          .replace(/[^a-zA-Z0-9\s\-_]/g, '')
+          .replace(/\s+/g, '_')
+          .substring(0, 50);
+        
+        const txtContent = `========================================
+MEETING TRANSKRIPT
+========================================
+Titel: ${meetingTitle}
+Datum: ${new Date().toLocaleString('de-DE')}
+Dauer: ${Math.round(duration / 60)} Minuten
+Recording ID: ${recording.id}
+User ID: ${user.id}
+Source: Manual Upload
+========================================
+
+${formattedTranscript.trim()}`;
+
+        const exportPayload = {
+          recording_id: recording.id,
+          user_id: user.id,
+          title: meetingTitle,
+          safe_title: safeTitle,
+          transcript_txt: txtContent,
+          created_at: new Date().toISOString(),
+          duration: Math.round(duration),
+          metadata: {
+            source: 'manual',
+            word_count: wordCount,
+            speaker_count: participants.length,
+          }
+        };
+
+        const exportResponse = await fetch(exportUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-export-secret': exportSecret,
+          },
+          body: JSON.stringify(exportPayload),
+        });
+
+        if (exportResponse.ok) {
+          console.log('External export successful');
+        } else {
+          console.warn('External export failed:', await exportResponse.text());
+        }
+      } catch (exportError) {
+        console.warn('Export error:', exportError);
+      }
     }
 
     return new Response(JSON.stringify({
