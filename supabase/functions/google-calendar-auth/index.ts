@@ -5,6 +5,8 @@ function getCorsHeaders(req: Request) {
   const origin = req.headers.get('origin') || '';
   const allowedOrigins = [
     Deno.env.get('APP_URL') || '',
+    'https://notetaker2pro.com',
+    'https://www.notetaker2pro.com',
     'http://localhost:5173',
     'http://localhost:8080',
     'http://localhost:3000',
