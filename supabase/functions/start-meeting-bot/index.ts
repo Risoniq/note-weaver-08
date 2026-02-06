@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// Dynamic CORS headers based on origin
 
 // Dynamic CORS headers based on origin
 function getCorsHeaders(req: Request) {
