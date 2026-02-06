@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 
 // Helper: Sanitize title for safe filename usage
 function sanitizeTitle(title: string): string {
