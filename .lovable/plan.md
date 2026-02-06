@@ -1,47 +1,108 @@
 
 
-## Ziel
-Die Chat-Funktion reparieren, indem die fehlende `single-meeting-chat` Edge Function deployed wird.
+## SSL-Zertifikat Auswirkungsanalyse und Korrekturplan
 
-## Diagnose
+### Befund
 
-### Status der Chat-Funktionen
-
-| Komponente | Edge Function | Status | Test-Ergebnis |
-|---|---|---|---|
-| Dashboard-Chat (alle Meetings) | `meeting-chat` | Deployed | 200 OK, Streaming funktioniert |
-| Einzelmeeting-Chat (Deep Dive) | `single-meeting-chat` | **NICHT deployed** | **404 NOT_FOUND** |
-
-### Wo wird welcher Chat verwendet?
-
-- **Dashboard-Seite** (`src/components/dashboard/MeetingChatWidget.tsx`): Nutzt `meeting-chat` -- funktioniert
-- **Deep Dive Modal** (`src/components/meeting/MeetingChatWidget.tsx`): Nutzt `single-meeting-chat` -- **fehlerhaft (404)**
-
-### Ursache
-Die `single-meeting-chat` Edge Function existiert im Code, wurde aber nicht zum Server deployed. Dadurch bekommt der Browser einen 404-Fehler, wenn der Chat im Deep Dive Modal genutzt wird.
+Nach der SSL-Einrichtung fuer `notetaker2pro.com` gibt es ein kritisches CORS-Problem: **5 Edge Functions mit dynamischer CORS-Konfiguration enthalten die Domain `notetaker2pro.com` NICHT in ihrer erlaubten Origins-Liste.** Anfragen von der Produktions-Domain werden daher moeglicherweise blockiert.
 
 ---
 
-## Umsetzung
+### Kategorisierung aller 42 Edge Functions
 
-### Schritt 1: single-meeting-chat deployen
+**Kategorie A - Dynamische CORS MIT notetaker2pro.com (10 Funktionen) -- OK**
 
-Die bestehende Edge Function unter `supabase/functions/single-meeting-chat/index.ts` wird deployed. Der Code ist vollständig und korrekt:
-- Authentifizierung via JWT
-- Empfang von Transkript, Meeting-Titel, Summary, Key Points, Action Items
-- Streaming-Antwort via Lovable AI Gateway (google/gemini-3-flash-preview)
+Diese Funktionen enthalten `https://notetaker2pro.com` und `https://www.notetaker2pro.com` explizit:
 
-### Schritt 2: Funktionstest
+| Funktion | Status |
+|---|---|
+| google-calendar-events | OK |
+| sync-recording | OK |
+| admin-view-user-data | OK |
+| create-bot | OK |
+| analyze-transcript | OK |
+| recall-calendar-meetings | OK |
+| microsoft-recall-auth | OK |
+| meeting-bot-webhook | OK |
+| google-recall-auth | OK |
+| repair-all-recordings | OK |
 
-Nach dem Deployment wird die Funktion mit einem POST-Request getestet um sicherzustellen, dass sie erreichbar ist und korrekt antwortet.
+**Kategorie B - Dynamische CORS OHNE notetaker2pro.com (5 Funktionen) -- PROBLEM**
+
+Diese Funktionen haben dynamische CORS, aber nur `APP_URL`, localhost und Lovable-Domains. Wenn `APP_URL` nicht auf `https://notetaker2pro.com` gesetzt ist, werden Anfragen von der Produktions-Domain ABGELEHNT:
+
+| Funktion | Auswirkung |
+|---|---|
+| google-calendar-auth | Kalender-OAuth Login funktioniert nicht |
+| start-meeting-bot | Meeting-Bot kann nicht gestartet werden |
+| recall-calendar-auth | Recall-Kalender-Verbindung funktioniert nicht |
+| generate-webhook-token | Webhook-Token-Generierung schlaegt fehl |
+| admin-create-meeting | Admin kann keine Meetings erstellen |
+
+**Kategorie C - Wildcard CORS `*` (26 Funktionen) -- OK**
+
+Diese nutzen `Access-Control-Allow-Origin: *` und funktionieren mit jeder Domain:
+
+admin-approve-user, admin-assign-team-member, admin-create-api-key, admin-create-team, admin-dashboard, admin-delete-api-key, admin-delete-team, admin-delete-user, admin-list-api-keys, admin-save-webhook-config, admin-set-quota, admin-update-team, api-dashboard, api-import-transcript, api-team-stats, api-transcripts, api-update-recording, api-webhook-callback, cleanup-stale-recordings, desktop-sdk-webhook, edit-email-ai, export-transcripts, meeting-chat, single-meeting-chat, teamlead-recordings, transcribe-audio
+
+**Kategorie D - bulk-export-recordings -- PROBLEM**
+
+Diese Funktion hat eine eigene CORS-Logik die `notetaker2pro.com` ebenfalls NICHT enthaelt.
 
 ---
 
-## Betroffene Dateien
+### Loesung
+
+Alle 6 betroffenen Funktionen erhalten die standardisierte CORS-Konfiguration mit expliziter Unterstuetzung fuer `notetaker2pro.com`:
+
+**Aenderung fuer jede betroffene Funktion:**
+
+```text
+Vorher (Kategorie B):
+  allowedOrigins = [
+    APP_URL,
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
+  ]
+
+Nachher:
+  allowedOrigins = [
+    APP_URL,
+    'https://notetaker2pro.com',
+    'https://www.notetaker2pro.com',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:3000',
+  ]
+```
+
+### Betroffene Dateien
 
 | Datei | Aenderung |
-|-------|----------|
-| `supabase/functions/single-meeting-chat/index.ts` | Keine Code-Aenderung noetig -- nur Deployment |
+|---|---|
+| `supabase/functions/google-calendar-auth/index.ts` | notetaker2pro.com zu CORS hinzufuegen |
+| `supabase/functions/start-meeting-bot/index.ts` | notetaker2pro.com zu CORS hinzufuegen |
+| `supabase/functions/recall-calendar-auth/index.ts` | notetaker2pro.com zu CORS hinzufuegen |
+| `supabase/functions/generate-webhook-token/index.ts` | notetaker2pro.com zu CORS hinzufuegen |
+| `supabase/functions/admin-create-meeting/index.ts` | notetaker2pro.com zu CORS hinzufuegen |
+| `supabase/functions/bulk-export-recordings/index.ts` | notetaker2pro.com zu CORS hinzufuegen |
 
-## Geschaetzter Aufwand
-- Nur ein Deployment-Schritt, keine Code-Aenderungen erforderlich
+### Zusaetzliche Pruefung: OAuth Redirect URIs
+
+Die OAuth-Flows (Google/Microsoft Kalender) nutzen `window.location.origin` fuer die Redirect-URI. Das bedeutet:
+- Von `https://notetaker2pro.com` wird `https://notetaker2pro.com/calendar-callback` als Redirect-URI verwendet
+- Diese URL muss auch in der Google Cloud Console und Microsoft Azure als erlaubte Redirect-URI konfiguriert sein
+- Die Edge Functions selbst unterstuetzen dies bereits korrekt, da `redirectUri` dynamisch vom Client kommt
+
+### Keine weiteren Einschraenkungen
+
+- SSL aendert nichts an der Datenbank-Verbindung (Supabase nutzt eigenes SSL)
+- Storage-Buckets (audio-uploads, transcript-backups) sind nicht betroffen
+- Authentifizierung via JWT funktioniert unabhaengig von der Domain
+- Die Wildcard-CORS-Funktionen (26 Stueck) funktionieren weiterhin problemlos
+
+### Geschaetzter Aufwand
+- 6 Dateien, jeweils nur 2 Zeilen hinzufuegen
+- Deployment aller 6 Funktionen nach der Aenderung
+
