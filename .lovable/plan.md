@@ -1,171 +1,155 @@
 
 
 ## Ziel
-Alle Edge Functions auf das moderne `npm:` Import-Format und `Deno.serve()` Runtime aktualisieren, um den Admin-Bereich und alle anderen Funktionen der Anwendung zu reparieren.
+Den "Transkript neu laden" Button so anpassen, dass er für **manuelle Audio-Uploads** (`source: 'manual'`) die richtige Funktion aufruft (`analyze-transcript` statt `sync-recording`).
 
-## Zusammenfassung der Änderungen
+## Diagnose
 
-| Kategorie | Anzahl Dateien | Änderungstyp |
-|-----------|----------------|--------------|
-| Bereits korrekt | 3 | Nur Deployment |
-| Import-Migration | 20 | `esm.sh` zu `npm:` |
-| Volle Migration | 5 | `serve()` zu `Deno.serve()` + Imports |
-| **Gesamt** | 28 | |
+| Status | Beschreibung |
+|--------|-------------|
+| ✅ | `sync-recording` ist jetzt deployed und funktioniert für Bot-Aufnahmen |
+| ✅ | `analyze-transcript` ist deployed und hat die fehlende Analyse erfolgreich nachgeholt |
+| ❌ | Frontend ruft immer `sync-recording` auf, auch für manuelle Uploads |
+| ❌ | Manuelle Uploads haben keine Bot-ID, daher schlägt `sync-recording` fehl |
 
-## Detaillierte Änderungen
+### Aktueller Ablauf bei "Neu laden" Button
 
-### Dateien die KEINE Code-Änderung brauchen (nur Deployment)
-
-1. `supabase/functions/admin-dashboard/index.ts`
-2. `supabase/functions/single-meeting-chat/index.ts`
-3. `supabase/functions/meeting-bot-webhook/index.ts`
-
-### Dateien mit reiner Import-Migration
-
-Für diese Dateien wird nur Zeile 1 (und ggf. Zeile 2) geändert:
-
-```typescript
-// ALT:
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-// NEU:
-import { createClient } from 'npm:@supabase/supabase-js@2';
+```text
++----------------+     +-----------------+     +-------------------+
+|  User klickt   |---->| syncRecording   |---->| sync-recording    |
+|  "Neu laden"   |     | Status()        |     | Edge Function     |
++----------------+     +-----------------+     +-------------------+
+                                                      |
+                                                      v
+                                            "No bot associated"
+                                            (Fehler bei manuellen Uploads)
 ```
 
-**Admin-Funktionen (12 Dateien):**
-- `admin-approve-user/index.ts`
-- `admin-delete-user/index.ts`
-- `admin-set-quota/index.ts`
-- `admin-create-team/index.ts`
-- `admin-update-team/index.ts`
-- `admin-delete-team/index.ts`
-- `admin-assign-team-member/index.ts`
-- `admin-list-api-keys/index.ts`
-- `admin-create-api-key/index.ts`
-- `admin-delete-api-key/index.ts`
-- `admin-save-webhook-config/index.ts`
-- `admin-view-user-data/index.ts`
+### Gewünschter Ablauf
 
-**Utility-Funktionen (5 Dateien):**
-- `export-transcripts/index.ts`
-- `bulk-export-recordings/index.ts`
-- `repair-all-recordings/index.ts`
-- `cleanup-stale-recordings/index.ts`
-- `teamlead-recordings/index.ts`
-
-**API-Funktionen (6 Dateien):**
-- `api-transcripts/index.ts`
-- `api-team-stats/index.ts`
-- `api-import-transcript/index.ts`
-- `api-update-recording/index.ts`
-- `api-webhook-callback/index.ts`
-- `api-dashboard/index.ts`
-
-### Dateien mit vollständiger Migration (serve() + Imports)
-
-**admin-create-meeting/index.ts:**
-```typescript
-// ALT (Zeile 1-2):
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-// ... 
-serve(async (req) => {
-
-// NEU:
-import { createClient } from 'npm:@supabase/supabase-js@2';
-// ...
-Deno.serve(async (req) => {
+```text
++----------------+     +-----------------+     
+|  User klickt   |---->| syncRecording   |     
+|  "Neu laden"   |     | Status()        |     
++----------------+     +-----------------+     
+                              |
+                    +---------+---------+
+                    |                   |
+                    v                   v
+           source = 'manual'    source = 'bot'
+                    |                   |
+                    v                   v
+          +-------------------+  +-------------------+
+          | analyze-transcript|  | sync-recording    |
+          | (Re-Analyse)      |  | (Recall.ai Sync)  |
+          +-------------------+  +-------------------+
 ```
 
-**start-meeting-bot/index.ts:**
-```typescript
-// ALT (Zeile 1):
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-serve(async (req) => {
+---
 
-// NEU:
-// (keine Imports mehr nötig, serve entfernen)
-Deno.serve(async (req) => {
-```
+## Umsetzungsplan
 
-**edit-email-ai/index.ts:**
-```typescript
-// ALT (Zeile 1):
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-serve(async (req) => {
+### Schritt 1: syncRecordingStatus Funktion erweitern
 
-// NEU:
-Deno.serve(async (req) => {
-```
+**Datei:** `src/pages/MeetingDetail.tsx`
 
-**generate-webhook-token/index.ts:**
-```typescript
-// ALT (Zeile 1):
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-serve(async (req) => {
+**Änderung:** In der `syncRecordingStatus` Callback-Funktion eine Unterscheidung nach `recording.source` einbauen:
 
-// NEU:
-Deno.serve(async (req) => {
-```
+1. Wenn `recording.source === 'manual'`:
+   - Rufe `analyze-transcript` statt `sync-recording` auf
+   - Zeige passende Toast-Meldung ("Analyse wird durchgeführt...")
+   
+2. Wenn `recording.source !== 'manual'` (Bot-Aufnahmen):
+   - Behalte den bestehenden `sync-recording` Aufruf bei
 
-**desktop-sdk-webhook/index.ts:**
-```typescript
-// ALT (Zeile 1-2):
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-serve(async (req) => {
+### Schritt 2: Neuer Logik-Block für manuelle Uploads
 
-// NEU:
-import { createClient } from 'npm:@supabase/supabase-js@2';
-Deno.serve(async (req) => {
-```
-
-### Sonderfall: create-bot/index.ts
-
-Diese Funktion hat zusätzlich einen base64-Import der ersetzt werden muss:
+Einfügen in `syncRecordingStatus` (Zeile 162-208):
 
 ```typescript
-// ALT (Zeile 1-2):
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { encode as base64Encode } from "https://deno.land/std@0.208.0/encoding/base64.ts";
+const syncRecordingStatus = useCallback(async (forceResync = false) => {
+  if (!id || !recording) {
+    return;
+  }
+  
+  // Wenn nicht forced, nur bei nicht-fertigen Status synchronisieren
+  if (!forceResync && (recording.status === 'done' || recording.status === 'error')) {
+    return;
+  }
 
-// NEU:
-import { createClient } from 'npm:@supabase/supabase-js@2';
+  setIsSyncing(true);
+  try {
+    let data, error;
+    
+    // Für manuelle Uploads: analyze-transcript aufrufen
+    if (recording.source === 'manual') {
+      const result = await withTokenRefresh(
+        () => supabase.functions.invoke('analyze-transcript', {
+          body: { recording_id: id }
+        })
+      );
+      data = result.data;
+      error = result.error;
+    } else {
+      // Für Bot-Aufnahmen: sync-recording aufrufen
+      const result = await withTokenRefresh(
+        () => supabase.functions.invoke('sync-recording', {
+          body: { id, force_resync: forceResync }
+        })
+      );
+      data = result.data;
+      error = result.error;
+    }
 
-// Zeile 173 (base64Encode Verwendung):
-// ALT:
-const base64String = base64Encode(uint8Array);
+    if (error) {
+      console.error('Sync/Analysis error:', error);
+      toast.error(recording.source === 'manual' 
+        ? "Analyse fehlgeschlagen" 
+        : "Synchronisierung fehlgeschlagen"
+      );
+      return;
+    }
 
-// NEU (Web Standard):
-const base64String = btoa(String.fromCharCode(...uint8Array));
+    // Refetch the recording to get updated data
+    const updatedRecording = await fetchRecording();
+    // ... Rest bleibt unverändert
+  } catch (error) {
+    // ...
+  }
+}, [id, recording, fetchRecording]);
 ```
 
-## Deployment-Plan
+### Schritt 3: Toast-Meldungen anpassen
 
-Nach den Code-Änderungen werden alle 28 Funktionen deployed:
+Die Erfolgsmeldung sollte je nach Quelle unterschiedlich sein:
 
-1. **Admin-Funktionen** (14)
-2. **API-Funktionen** (6)  
-3. **Utility-Funktionen** (5)
-4. **Bot/Webhook-Funktionen** (3)
+| Quelle | Toast bei Erfolg |
+|--------|-----------------|
+| `manual` | "Analyse wurde erfolgreich aktualisiert!" |
+| Bot | "Transkript und Teilnehmernamen wurden aktualisiert!" |
 
-## Erwartete Ergebnisse
+---
 
-Nach erfolgreichem Deployment:
-- Admin-Bereich öffnet ohne "Failed to send request" Fehler
-- Benutzer freischalten/löschen funktioniert
-- Teams erstellen/bearbeiten/löschen funktioniert
-- API-Schlüssel verwalten funktioniert
-- Meeting-Bot starten funktioniert
-- E-Mail-Bearbeitung mit KI funktioniert
-- Transkript-Export funktioniert
-- Alle Funktionen antworten mit HTTP-Statuscodes statt 404
+## Technische Details
 
-## Sicherheitshinweis
+### Betroffene Dateien
 
-Diese Änderungen betreffen NUR den Quellcode der Edge Functions. Es werden keine Daten gelöscht oder modifiziert:
-- Keine Datenbank-Änderungen
-- Keine Transkript-Löschungen
-- Keine Benutzer-Änderungen
-- Reine Import-Syntax-Aktualisierung
+| Datei | Änderung |
+|-------|----------|
+| `src/pages/MeetingDetail.tsx` | `syncRecordingStatus` Funktion anpassen |
+
+### Geschätzter Umfang
+
+- **~20 Zeilen** Code-Änderung in einer Funktion
+- **Keine neuen Dependencies**
+- **Keine Datenbank-Änderungen**
+
+---
+
+## Akzeptanzkriterien
+
+- Bei manuellen Uploads zeigt der "Neu laden" Button keine Fehlermeldung mehr
+- Key Points, To-Dos und Summary werden bei manuellen Uploads erfolgreich generiert/aktualisiert
+- Bot-Aufnahmen funktionieren weiterhin wie bisher mit `sync-recording`
+- Toast-Meldungen sind kontextabhängig (Analyse vs. Synchronisierung)
 
