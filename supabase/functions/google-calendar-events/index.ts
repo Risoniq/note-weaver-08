@@ -25,7 +25,7 @@ function getCorsHeaders(req: Request) {
   };
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   
   if (req.method === 'OPTIONS') {

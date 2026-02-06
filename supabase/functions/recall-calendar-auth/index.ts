@@ -45,7 +45,7 @@ async function authenticateUser(req: Request): Promise<{ user: { id: string; ema
   return { user: { id: user.id, email: user.email || undefined } };
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   
   // Handle CORS preflight

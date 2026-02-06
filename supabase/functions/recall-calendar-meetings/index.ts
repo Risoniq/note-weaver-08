@@ -49,7 +49,7 @@ async function authenticateUser(req: Request): Promise<{ user: { id: string } | 
   return { user: { id: user.id } };
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   
   // Handle CORS preflight
