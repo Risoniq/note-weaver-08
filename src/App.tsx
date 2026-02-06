@@ -16,7 +16,6 @@ import CalendarCallback from "./pages/CalendarCallback";
 import MeetingDetail from "./pages/MeetingDetail";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
-import Transcripts from "./pages/Transcripts";
 import Recordings from "./pages/Recordings";
 import NotFound from "./pages/NotFound";
 

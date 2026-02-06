@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 
 const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Transkripte", url: "/transcripts", icon: FileText },
+  { title: "Aufnahmen", url: "/recordings", icon: FileText },
   { title: "Einstellungen", url: "/settings", icon: Settings },
 ];
 
