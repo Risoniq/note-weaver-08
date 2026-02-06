@@ -1,116 +1,111 @@
 
+
 ## Ziel
-Alle Kalender-bezogenen Edge Functions reparieren und deployen, damit die Kalender-Integration vollständig funktioniert.
+Zwei Probleme beheben:
+1. **Neuladen von Transkripten schlägt fehl** - für alle User ermöglichen
+2. **Hochgeladene Audio-Dateien werden nicht analysiert** - Key Points und To-Dos fehlen
 
 ## Diagnose
 
-### Aktuelle Situation
+### Problem 1: Sync-Recording schlägt fehl (404)
 
-| Edge Function | Status | Problem |
-|---------------|--------|---------|
-| `google-recall-auth` | **Funktioniert** | - |
-| `microsoft-recall-auth` | **Funktioniert** | - |
-| `google-calendar-auth` | **404 Not Found** | Veraltete Imports |
-| `google-calendar-events` | **404 Not Found** | Veraltete Imports |
-| `recall-calendar-auth` | **404 Not Found** | Veraltete Imports |
-| `recall-calendar-meetings` | **404 Not Found** | Veraltete Imports |
+| Check | Ergebnis |
+|-------|----------|
+| `sync-recording` Edge Function | **404 Not Found** |
+| Import-Syntax | Veraltet (`https://esm.sh/`) |
+| Logs | Keine (Anfragen kommen nicht an) |
 
-### Ursache
-Die 4 nicht funktionierenden Funktionen verwenden noch veraltete Import-URLs:
-- `import { serve } from "https://deno.land/std@0.168.0/http/server.ts"`
-- `import { createClient } from "https://esm.sh/@supabase/supabase-js@2"`
+**Ursache:** Die `sync-recording` Funktion verwendet veraltete URL-basierte Imports, die Deployment-Fehler verursachen.
 
-Diese führen zu Deployment-Timeouts oder -Fehlern.
+### Problem 2: Audio-Upload-Analyse fehlt (404)
+
+| Check | Ergebnis |
+|-------|----------|
+| `analyze-transcript` Edge Function | **404 Not Found** |
+| Import-Syntax | Bereits korrekt (`npm:@supabase/supabase-js@2`) |
+| Trigger | `transcribe-audio` ruft `analyze-transcript` auf |
+
+**Ursache:** Die `analyze-transcript` Funktion ist zwar korrekt geschrieben, aber nicht deployed.
+
+### Ablauf bei Audio-Upload
+
+```text
+                                                    
+  +------------------+    +-------------------+    +--------------------+
+  |  AudioUploadCard |    | transcribe-audio  |    | analyze-transcript |
+  |    (Frontend)    |--->|  (ElevenLabs STT) |--->|   (Lovable AI)     |
+  +------------------+    +-------------------+    +--------------------+
+                                    |                      |
+                                    |                      |
+                                    v                      v
+                           Transkript speichern   Key Points, To-Dos,
+                           in recordings          Summary speichern
+```
+
+Die Kette bricht ab, weil `analyze-transcript` nicht deployed ist (404).
 
 ---
 
 ## Umsetzungsplan
 
-### Schritt 1: google-calendar-auth migrieren
+### Schritt 1: sync-recording auf moderne Imports migrieren
 
-**Datei:** `supabase/functions/google-calendar-auth/index.ts`
-
-Änderungen:
-- Import von `serve()` entfernen
-- `createClient` auf `npm:@supabase/supabase-js@2` umstellen
-- `serve()` durch `Deno.serve()` ersetzen
-
-### Schritt 2: google-calendar-events migrieren
-
-**Datei:** `supabase/functions/google-calendar-events/index.ts`
+**Datei:** `supabase/functions/sync-recording/index.ts`
 
 Änderungen:
-- Import von `serve()` entfernen
-- `serve()` durch `Deno.serve()` ersetzen
-- Kein Supabase-Import benötigt (diese Funktion ruft nur die Google API auf)
+- Zeile 1: `import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'`
+  - Ersetzen durch: `import { createClient } from 'npm:@supabase/supabase-js@2'`
+- Rest des Codes bleibt unverändert (Funktion verwendet bereits `Deno.serve()`)
 
-### Schritt 3: recall-calendar-auth migrieren
+### Schritt 2: Beide Funktionen deployen
 
-**Datei:** `supabase/functions/recall-calendar-auth/index.ts`
+Nach der Code-Aktualisierung gezielt deployen:
+- `sync-recording`
+- `analyze-transcript`
 
-Änderungen:
-- Import von `serve()` entfernen
-- `createClient` auf `npm:@supabase/supabase-js@2` umstellen
-- `serve()` durch `Deno.serve()` ersetzen
+### Schritt 3: Deployment verifizieren
 
-### Schritt 4: recall-calendar-meetings migrieren
-
-**Datei:** `supabase/functions/recall-calendar-meetings/index.ts`
-
-Änderungen:
-- Import von `serve()` entfernen
-- `createClient` auf `npm:@supabase/supabase-js@2` umstellen
-- `serve()` durch `Deno.serve()` ersetzen
-
-### Schritt 5: Alle 4 Funktionen deployen
-
-Nach der Code-Aktualisierung alle 4 Funktionen gezielt deployen:
-- `google-calendar-auth`
-- `google-calendar-events`
-- `recall-calendar-auth`
-- `recall-calendar-meetings`
-
-### Schritt 6: Deployment verifizieren
-
-Per Test-Aufruf prüfen, dass alle Funktionen erreichbar sind (sollten 400/401 statt 404 zurückgeben).
+Per Test-Aufruf prüfen:
+- `sync-recording` sollte 401 (Unauthorized) statt 404 zurückgeben
+- `analyze-transcript` sollte 401 statt 404 zurückgeben
 
 ---
 
 ## Technische Details
 
-### Code-Änderungen pro Datei
-
-```typescript
-// ALT (in allen 4 Dateien):
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-serve(async (req) => {
-  // ...
-});
-
-// NEU:
-import { createClient } from "npm:@supabase/supabase-js@2";
-
-Deno.serve(async (req) => {
-  // ... (Rest bleibt identisch)
-});
-```
-
 ### Betroffene Dateien
 
-| Datei | Zeilen | Änderungstyp |
-|-------|--------|--------------|
-| `supabase/functions/google-calendar-auth/index.ts` | 1-2, 52 | Import-Migration |
-| `supabase/functions/google-calendar-events/index.ts` | 1, 28 | Import-Migration |
-| `supabase/functions/recall-calendar-auth/index.ts` | 1-2, 49 | Import-Migration |
-| `supabase/functions/recall-calendar-meetings/index.ts` | 1-2, 53 | Import-Migration |
+| Datei | Änderung | Status |
+|-------|----------|--------|
+| `supabase/functions/sync-recording/index.ts` | Import-Migration (Zeile 1) | Änderung erforderlich |
+| `supabase/functions/analyze-transcript/index.ts` | Keine | Nur Deployment |
+
+### Code-Änderung
+
+```typescript
+// ALT (Zeile 1 in sync-recording/index.ts):
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+// NEU:
+import { createClient } from 'npm:@supabase/supabase-js@2'
+```
+
+### Verbleibende Funktionen mit veralteten Imports
+
+Diese sind für das aktuelle Problem nicht relevant, sollten aber zukünftig migriert werden:
+
+- `admin-*` Funktionen (28+ Funktionen)
+- `api-*` Funktionen
+- `create-bot`, `start-meeting-bot`
+- `bulk-export-recordings`, `repair-all-recordings`
+- etc.
 
 ---
 
 ## Akzeptanzkriterien
 
-- Alle 4 Funktionen antworten nicht mehr mit 404
-- Kalender-Verbindung kann gestartet werden (OAuth-Popup öffnet sich)
-- Kalender-Events werden korrekt synchronisiert
-- Meeting-Liste wird auf dem Dashboard angezeigt
+- `sync-recording` antwortet nicht mehr mit 404
+- `analyze-transcript` antwortet nicht mehr mit 404
+- Transkripte können über den "Neu laden" Button erfolgreich synchronisiert werden
+- Hochgeladene Audio-Dateien erhalten nach der Transkription automatisch Key Points, To-Dos und Summary
+
