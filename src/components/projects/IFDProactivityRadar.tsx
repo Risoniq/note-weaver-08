@@ -1,0 +1,199 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend, Tooltip, ResponsiveContainer } from "recharts";
+import { useMemo } from "react";
+import { isBot, isMetadataField, normalizeGermanName, stripMetadataHeader } from "@/utils/participantUtils";
+
+interface Props {
+  recordings: any[];
+}
+
+const SOLUTION_PHRASES = [
+  "wir könnten", "mein vorschlag", "ich schlage vor", "eine idee wäre",
+  "wie wäre es wenn", "man könnte", "alternativ", "meine empfehlung",
+  "we could", "i suggest", "my proposal", "how about", "one option",
+  "wir sollten", "ich empfehle", "vielleicht könnten wir",
+];
+
+const REACTION_PHRASES = [
+  "genau", "darauf aufbauend", "stimme zu", "ergänzend dazu",
+  "guter punkt", "da bin ich", "bezüglich", "wie gesagt",
+  "agreed", "building on", "good point", "regarding",
+  "das stimmt", "richtig", "absolut", "auf jeden fall",
+];
+
+const SPEAKER_COLORS = [
+  "hsl(210, 70%, 50%)",
+  "hsl(340, 70%, 50%)",
+  "hsl(120, 60%, 40%)",
+  "hsl(30, 80%, 50%)",
+  "hsl(270, 60%, 50%)",
+  "hsl(180, 60%, 40%)",
+];
+
+interface SpeakerStats {
+  topicInitiations: number;
+  solutions: number;
+  questions: number;
+  reactions: number;
+  totalWords: number;
+  utterances: number;
+}
+
+function parseTranscriptLines(text: string): { speaker: string; content: string }[] {
+  const cleaned = stripMetadataHeader(text);
+  const lines: { speaker: string; content: string }[] = [];
+  // Match "Speaker Name: text" pattern
+  const regex = /^([^:\n]{1,60}):\s+(.+)$/gm;
+  let match;
+  while ((match = regex.exec(cleaned)) !== null) {
+    const speaker = match[1].trim();
+    if (!isBot(speaker) && !isMetadataField(speaker)) {
+      lines.push({ speaker: normalizeGermanName(speaker), content: match[2].trim() });
+    }
+  }
+  return lines;
+}
+
+function computeScores(recordings: any[]) {
+  const stats: Record<string, SpeakerStats> = {};
+
+  const ensure = (name: string) => {
+    if (!stats[name]) {
+      stats[name] = { topicInitiations: 0, solutions: 0, questions: 0, reactions: 0, totalWords: 0, utterances: 0 };
+    }
+  };
+
+  for (const rec of recordings) {
+    if (!rec.transcript_text) continue;
+    const lines = parseTranscriptLines(rec.transcript_text);
+    let prevSpeaker = "";
+
+    for (let i = 0; i < lines.length; i++) {
+      const { speaker, content } = lines[i];
+      ensure(speaker);
+      const s = stats[speaker];
+      const lower = content.toLowerCase();
+      const words = content.split(/\s+/).filter(Boolean);
+
+      s.totalWords += words.length;
+      s.utterances += 1;
+
+      // Topic initiation: speaker changed after a different speaker (simplistic)
+      if (speaker !== prevSpeaker && i > 0 && lines[i - 1].speaker !== speaker) {
+        // Check if there's a thematic shift (new paragraph / long pause indicator or first after different speaker sequence)
+        const prevContent = lines[i - 1].content.toLowerCase();
+        const isNewTopic = !REACTION_PHRASES.some(p => lower.startsWith(p));
+        if (isNewTopic) {
+          s.topicInitiations += 1;
+        }
+      }
+      if (i === 0) s.topicInitiations += 1; // First speaker initiates
+
+      // Solution proposals
+      for (const phrase of SOLUTION_PHRASES) {
+        if (lower.includes(phrase)) { s.solutions += 1; break; }
+      }
+
+      // Questions
+      if (content.includes("?")) {
+        s.questions += (content.match(/\?/g) || []).length;
+      }
+
+      // Reactions
+      for (const phrase of REACTION_PHRASES) {
+        if (lower.includes(phrase)) { s.reactions += 1; break; }
+      }
+
+      prevSpeaker = speaker;
+    }
+  }
+
+  return stats;
+}
+
+function normalize(stats: Record<string, SpeakerStats>) {
+  const speakers = Object.keys(stats);
+  if (!speakers.length) return [];
+
+  const maxVals = {
+    topicInitiations: Math.max(...speakers.map(s => stats[s].topicInitiations), 1),
+    solutions: Math.max(...speakers.map(s => stats[s].solutions), 1),
+    questions: Math.max(...speakers.map(s => stats[s].questions), 1),
+    reactions: Math.max(...speakers.map(s => stats[s].reactions), 1),
+    depth: Math.max(...speakers.map(s => stats[s].utterances > 0 ? stats[s].totalWords / stats[s].utterances : 0), 1),
+  };
+
+  // Sort by total activity, take top 6
+  const sorted = speakers
+    .map(name => ({ name, total: stats[name].topicInitiations + stats[name].solutions + stats[name].questions + stats[name].reactions + stats[name].utterances }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 6);
+
+  const dimensions = [
+    { key: "initiation", label: "Themen-Initiation" },
+    { key: "solutions", label: "Lösungsvorschläge" },
+    { key: "questions", label: "Fragen" },
+    { key: "reactions", label: "Reaktionsdichte" },
+    { key: "depth", label: "Inhaltliche Tiefe" },
+  ];
+
+  const data = dimensions.map(dim => {
+    const point: any = { dimension: dim.label };
+    for (const { name } of sorted) {
+      const s = stats[name];
+      const avgDepth = s.utterances > 0 ? s.totalWords / s.utterances : 0;
+      const raw: Record<string, number> = {
+        initiation: s.topicInitiations,
+        solutions: s.solutions,
+        questions: s.questions,
+        reactions: s.reactions,
+        depth: avgDepth,
+      };
+      const maxKey = dim.key as keyof typeof maxVals;
+      point[name] = Math.round((raw[dim.key] / maxVals[maxKey]) * 100);
+    }
+    return point;
+  });
+
+  return { data, speakers: sorted.map(s => s.name) };
+}
+
+export function IFDProactivityRadar({ recordings }: Props) {
+  const result = useMemo(() => {
+    const stats = computeScores(recordings);
+    return normalize(stats);
+  }, [recordings]);
+
+  if (!result || !result.speakers?.length) return null;
+
+  const { data, speakers } = result;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">Proaktivitäts-Netzdiagramm</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ResponsiveContainer width="100%" height={350}>
+          <RadarChart data={data} cx="50%" cy="50%" outerRadius="70%">
+            <PolarGrid />
+            <PolarAngleAxis dataKey="dimension" tick={{ fontSize: 11 }} />
+            <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 10 }} />
+            {speakers.map((name, i) => (
+              <Radar
+                key={name}
+                name={name}
+                dataKey={name}
+                stroke={SPEAKER_COLORS[i % SPEAKER_COLORS.length]}
+                fill={SPEAKER_COLORS[i % SPEAKER_COLORS.length]}
+                fillOpacity={0.15}
+              />
+            ))}
+            <Legend />
+            <Tooltip />
+          </RadarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}

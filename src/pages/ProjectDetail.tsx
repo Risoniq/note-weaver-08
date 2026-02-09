@@ -171,6 +171,7 @@ export default function ProjectDetail() {
               <IFDSpeakerTrend recordings={recordings} />
               <IFDTopicCloud recordings={recordings} />
             </div>
+            <IFDProactivityRadar recordings={recordings} />
           </>
         )}
 
