@@ -14,7 +14,7 @@ const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Kalender", url: "/calendar", icon: Calendar },
   { title: "Aufnahmen", url: "/recordings", icon: Video },
-  { title: "Transkripte", url: "/transcripts", icon: FileText },
+  { title: "Projekte", url: "/projects", icon: FolderKanban },
   { title: "Einstellungen", url: "/settings", icon: Settings },
 ];
 
