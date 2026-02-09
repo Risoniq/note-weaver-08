@@ -44,6 +44,7 @@ import { getConsistentParticipantCount } from "@/utils/participantUtils";
 import { EmailEditModal } from "@/components/meeting/EmailEditModal";
 import { ReportDownloadModal } from "@/components/meeting/ReportDownloadModal";
 import { DeepDiveModal } from "@/components/meeting/DeepDiveModal";
+import { ProjectAssignment } from "@/components/meeting/ProjectAssignment";
 import { useAuth } from "@/hooks/useAuth";
 import { useImpersonation } from "@/contexts/ImpersonationContext";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
