@@ -1,12 +1,12 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { 
   LayoutDashboard, 
-  Calendar, 
   FileText, 
   Settings, 
   Shield, 
   LogOut,
-  Mic
+  Mic,
+  FolderKanban
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
