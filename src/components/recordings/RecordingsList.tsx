@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 
 interface RecordingsListProps {
   viewMode?: 'personal' | 'team';
+  searchQuery?: string;
+  selectedMember?: string;
 }
 
 interface RecordingWithOwner extends Recording {
