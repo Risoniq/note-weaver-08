@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { TranscriptCard } from "@/components/transcripts/TranscriptCard";
 import { TranscriptSearch, TranscriptFilters } from "@/components/transcripts/TranscriptSearch";
 import { Recording, RecordingParticipant } from "@/types/recording";
-import { Users, Download, FolderOpen } from "lucide-react";
+import { Users, Download, FolderOpen, Search } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import {
