@@ -1,66 +1,30 @@
 
-## Bot-Avatar wird nicht ins Meeting uebernommen - Stack Overflow Fix
 
-### Problem
+## Video-Download-Button auf der Meeting-Detail-Seite
 
-Die Edge Function Logs zeigen den exakten Fehler:
+### Ziel
 
-```
-RangeError: Maximum call stack size exceeded
-  at fetchImageAsBase64 (create-bot/index.ts:154:38)
-```
+Auf der Meeting-Detail-Seite (`/meeting/:id`) wird unterhalb des Video-Players ein "Video herunterladen"-Button hinzugefuegt, damit User das Video direkt aus der Analyse herunterladen koennen.
 
-Das Bild wird korrekt von der Storage-URL geladen, aber die Base64-Konvertierung auf Zeile 172 crasht:
+### Aktuelle Situation
 
-```javascript
-const base64String = btoa(String.fromCharCode(...uint8Array));
-```
+- Die Video-Karte (Zeile 1305-1326 in `MeetingDetail.tsx`) zeigt nur den Video-Player
+- Kein Download-Button vorhanden
+- In der `RecordingDetailSheet` existiert bereits ein funktionierender Download-Button als Referenz
 
-Der Spread-Operator `...uint8Array` versucht, **jedes einzelne Byte** des Bildes als separates Funktionsargument zu uebergeben. Ein typisches JPEG (z.B. 200KB) hat 200.000 Bytes - JavaScript erlaubt aber nur ca. 65.000 Funktionsargumente. Der Call Stack laeuft ueber, die Funktion gibt `null` zurueck, und der Bot wird ohne Avatar erstellt.
+### Aenderung
 
-### Ursache
-
-- **Datei**: `supabase/functions/create-bot/index.ts`, Zeile 172
-- **Fehlerhafte Zeile**: `btoa(String.fromCharCode(...uint8Array))`
-- **Problem**: Spread-Operator auf grossen Arrays verursacht Stack Overflow
-
-### Loesung
-
-Die `fetchImageAsBase64`-Funktion wird so geaendert, dass das Bild in **8KB-Chunks** verarbeitet wird, statt alle Bytes auf einmal:
-
-```text
-Vorher (crasht bei Bildern > ~65KB):
-  btoa(String.fromCharCode(...uint8Array))
-
-Nachher (funktioniert fuer beliebig grosse Bilder):
-  Schleife ueber 8KB-Bloecke -> String zusammenbauen -> btoa()
-```
-
-### Betroffene Datei
+In `src/pages/MeetingDetail.tsx` wird unterhalb des Video-Players ein Download-Button eingefuegt:
 
 | Datei | Aenderung |
 |---|---|
-| `supabase/functions/create-bot/index.ts` | `fetchImageAsBase64`-Funktion: Chunked Base64-Konvertierung statt Spread-Operator |
+| `src/pages/MeetingDetail.tsx` | Download-Button unterhalb des Video-Players in der Video-Card einfuegen |
 
-### Technisches Detail
+### Details
 
-Die neue Implementierung:
+- Der Button wird nach dem `aspect-video`-Container aber noch innerhalb der `CardContent` platziert
+- Styling: `variant="outline"` mit Download-Icon, konsistent zum Rest der Seite
+- Oeffnet die `video_url` in einem neuen Tab zum Herunterladen
+- Das `Download`-Icon ist bereits importiert (Zeile 33)
+- Keine neuen Abhaengigkeiten noetig
 
-```text
-function fetchImageAsBase64(imageUrl):
-  1. Bild per fetch() laden (unveraendert)
-  2. ArrayBuffer in Uint8Array konvertieren (unveraendert)
-  3. NEU: In 8192-Byte-Chunks durchlaufen
-     - Fuer jeden Chunk: Byte fuer Byte zu String konvertieren
-     - Kein Spread-Operator, kein Stack Overflow
-  4. btoa() auf den fertigen String anwenden
-```
-
-### Keine weiteren Aenderungen noetig
-
-- **Storage-Bucket**: `bot-avatars` ist oeffentlich (public = true) - korrekt
-- **Frontend**: Alle 3 Aufrufer (MeetingBot, QuickMeetingJoin, RecallUpcomingMeetings) senden `botAvatarUrl` korrekt
-- **DB-Speicherung**: Avatar-URL wird korrekt in `recall_calendar_users.bot_avatar_url` gespeichert
-- **Recall.ai-Config**: `automatic_video_output` mit `kind: "jpeg"` und `b64_data` ist korrekt konfiguriert
-
-Das einzige Problem ist die Base64-Konvertierung in der Edge Function.
