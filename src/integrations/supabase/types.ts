@@ -53,6 +53,78 @@ export type Database = {
         }
         Relationships: []
       }
+      project_recordings: {
+        Row: {
+          added_at: string
+          id: string
+          project_id: string
+          recording_id: string
+        }
+        Insert: {
+          added_at?: string
+          id?: string
+          project_id: string
+          recording_id: string
+        }
+        Update: {
+          added_at?: string
+          id?: string
+          project_id?: string
+          recording_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_recordings_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_recordings_recording_id_fkey"
+            columns: ["recording_id"]
+            isOneToOne: false
+            referencedRelation: "recordings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          analysis: Json | null
+          color: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          analysis?: Json | null
+          color?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          analysis?: Json | null
+          color?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       recall_calendar_users: {
         Row: {
           bot_avatar_url: string | null
