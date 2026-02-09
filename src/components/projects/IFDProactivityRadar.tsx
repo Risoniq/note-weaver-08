@@ -111,10 +111,9 @@ function computeScores(recordings: any[]) {
   return stats;
 }
 
-function normalize(stats: Record<string, SpeakerStats>) {
+function normalize(stats: Record<string, SpeakerStats>): { data: any[]; speakers: string[] } | null {
   const speakers = Object.keys(stats);
-  if (!speakers.length) return [];
-
+  if (!speakers.length) return null;
   const maxVals = {
     topicInitiations: Math.max(...speakers.map(s => stats[s].topicInitiations), 1),
     solutions: Math.max(...speakers.map(s => stats[s].solutions), 1),
