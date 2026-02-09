@@ -1,30 +1,37 @@
 
 
-## Suche und User-Filter im Aufnahmen-Tab
+## Automatische Gesamtanalyse und erweiterte Fortschritts-Timeline
 
-### Problem
-Der "Aufnahmen"-Reiter zeigt alle Recordings ohne Moeglichkeit, nach Titel/Transkript zu suchen oder nach Team-Mitgliedern zu filtern.
-
-### Loesung
-Die Suchleiste und Filter direkt in den Aufnahmen-Tab integrieren, indem `RecordingsList` um Props fuer Suche und User-Filter erweitert wird.
+### Ueberblick
+Beim Oeffnen einer Projektseite wird automatisch eine KI-Analyse gestartet (falls Recordings vorhanden und noch keine Analyse existiert). Ausserdem wird die Fortschritts-Timeline um weitere KPIs erweitert, die Qualitaet und Fortschritt besser abbilden.
 
 ### Aenderungen
 
 | Datei | Aenderung |
 |---|---|
-| `src/components/recordings/RecordingsList.tsx` | Neue Props: `searchQuery` und `selectedMember`. Client-seitige Filterung der Recordings nach Titel, Transkript-Text, Summary und User-ID |
-| `src/pages/Recordings.tsx` | Suchfeld und User-Filter-Dropdown oberhalb des Aufnahmen-Tabs hinzufuegen. Gemeinsame State-Variablen fuer beide Tabs nutzen |
+| `src/pages/ProjectDetail.tsx` | Automatische Analyse beim Laden ausloesen (via `useEffect`), wenn Recordings vorhanden aber keine Analyse gespeichert ist |
+| `src/components/projects/IFDTimeline.tsx` | Zusaetzliche Metriken pro Meeting: Dauer (Min), Teilnehmerzahl, Wortanzahl. Alle Linien im gleichen Chart mit zwei Y-Achsen (links: Anzahl, rechts: Dauer/Woerter) |
 
 ### Technische Details
 
-**RecordingsList.tsx:**
-- Neue optionale Props: `searchQuery?: string`, `selectedMember?: string`
-- Nach dem Laden der Recordings wird client-seitig gefiltert:
-  - Titel, Transkript-Text und Summary werden gegen den Suchbegriff geprueft (case-insensitive)
-  - Bei Team-Ansicht wird nach `user_id` des ausgewaehlten Mitglieds gefiltert
-- Die angezeigte Anzahl in der Ueberschrift passt sich an die gefilterten Ergebnisse an
+**ProjectDetail.tsx -- Auto-Analyse:**
+- Ein `useEffect` prueft nach dem Laden der Recordings, ob `project.analysis` leer ist und Recordings vorhanden sind
+- Falls ja, wird `handleAnalyze()` automatisch aufgerufen
+- Damit wird beim ersten Besuch sofort die KI-Analyse angestossen, ohne dass der User den Button klicken muss
+- Der Button bleibt fuer manuelle Neuanalysen erhalten
 
-**Recordings.tsx (Aufnahmen-Tab):**
-- Ein Suchfeld (Input mit Search-Icon) wird oberhalb des RecordingsList-Grids platziert
-- Im Team-Modus erscheint zusaetzlich das User-Filter-Dropdown (wie bereits im Transkripte-Tab vorhanden)
-- Die bestehenden `selectedMember`- und Such-State-Variablen werden fuer beide Tabs gemeinsam genutzt, sodass ein Wechsel zwischen Tabs die Filterung beibehalt
+**IFDTimeline.tsx -- Erweiterte KPIs:**
+- Neue Datenpunkte pro Meeting:
+  - `duration`: Dauer in Minuten (`r.duration / 60`)
+  - `participants`: Anzahl Teilnehmer (aus `r.participants` oder `r.calendar_attendees`)
+  - `wordCount`: Wortanzahl (`r.word_count`)
+- Zwei Y-Achsen fuer bessere Lesbarkeit:
+  - Linke Achse (yAxisId="left"): Action Items, Key Points, Teilnehmer
+  - Rechte Achse (yAxisId="right"): Dauer (Min), Wortanzahl
+- Farbkodierung:
+  - Action Items: Orange
+  - Key Points: Violett
+  - Teilnehmer: Blau
+  - Dauer: Gruen
+  - Woerter: Grau
+
