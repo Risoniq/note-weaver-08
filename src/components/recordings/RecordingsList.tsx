@@ -176,10 +176,10 @@ export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', select
     <div className="w-full">
       <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
         {isTeamView && <Users className="h-5 w-5" />}
-        {isTeamView ? 'Team-Aufnahmen' : 'Aufnahmen'} ({recordings.length})
+        {isTeamView ? 'Team-Aufnahmen' : 'Aufnahmen'} ({filteredRecordings.length})
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {recordings.map((recording) => (
+        {filteredRecordings.map((recording) => (
           <div key={recording.id} className="relative">
             {isTeamView && recording.owner_email && !recording.is_own && (
               <Badge 
