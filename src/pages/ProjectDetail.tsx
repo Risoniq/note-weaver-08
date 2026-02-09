@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Trash2, Brain, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -37,6 +37,24 @@ export default function ProjectDetail() {
   });
 
   const { data: recordings, isLoading: recLoading } = useProjectRecordings(id);
+  const autoAnalyzeTriggered = useRef(false);
+
+  // Auto-trigger analysis when recordings exist but no analysis yet
+  useEffect(() => {
+    if (
+      !autoAnalyzeTriggered.current &&
+      !analyzing &&
+      !recLoading &&
+      !projectLoading &&
+      project &&
+      !project.analysis &&
+      recordings &&
+      recordings.length > 0
+    ) {
+      autoAnalyzeTriggered.current = true;
+      handleAnalyze();
+    }
+  }, [recordings, recLoading, projectLoading, project]);
 
   const handleAnalyze = async () => {
     if (!id) return;
