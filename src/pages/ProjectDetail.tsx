@@ -7,6 +7,7 @@ import { IFDKpiCards } from "@/components/projects/IFDKpiCards";
 import { IFDTimeline } from "@/components/projects/IFDTimeline";
 import { IFDSpeakerTrend } from "@/components/projects/IFDSpeakerTrend";
 import { IFDTopicCloud } from "@/components/projects/IFDTopicCloud";
+import { IFDProactivityRadar } from "@/components/projects/IFDProactivityRadar";
 import { AssignRecordingsDialog } from "@/components/projects/AssignRecordingsDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -170,6 +171,7 @@ export default function ProjectDetail() {
               <IFDSpeakerTrend recordings={recordings} />
               <IFDTopicCloud recordings={recordings} />
             </div>
+            <IFDProactivityRadar recordings={recordings} />
           </>
         )}
 
