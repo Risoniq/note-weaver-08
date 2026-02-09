@@ -329,7 +329,38 @@ const Recordings = () => {
 
           {/* Tab: Aufnahmen */}
           <TabsContent value="recordings">
-            <RecordingsList viewMode={isTeamlead ? viewMode : 'personal'} />
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Aufnahmen durchsuchen..."
+                    value={recordingsSearchQuery}
+                    onChange={(e) => setRecordingsSearchQuery(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                </div>
+                {isTeamlead && viewMode === 'team' && (
+                  <Select value={selectedMember} onValueChange={setSelectedMember}>
+                    <SelectTrigger className="w-52">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Alle Mitglieder</SelectItem>
+                      {Array.from(memberEmails.entries()).map(([userId, email]) => (
+                        <SelectItem key={userId} value={userId}>{email}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              <RecordingsList
+                viewMode={isTeamlead ? viewMode : 'personal'}
+                searchQuery={recordingsSearchQuery}
+                selectedMember={isTeamlead && viewMode === 'team' ? selectedMember : 'all'}
+              />
+            </div>
           </TabsContent>
 
           {/* Tab: Transkripte */}
