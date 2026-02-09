@@ -1321,6 +1321,14 @@ export default function MeetingDetail() {
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                   </div>
+                  <div className="mt-4">
+                    <Button variant="outline" asChild>
+                      <a href={recording.video_url} target="_blank" rel="noopener noreferrer">
+                        <Download className="h-4 w-4 mr-2" />
+                        Video herunterladen
+                      </a>
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             )}
