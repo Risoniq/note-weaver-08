@@ -21,7 +21,7 @@ interface RecordingWithOwner extends Recording {
   is_own?: boolean;
 }
 
-export const RecordingsList = ({ viewMode = 'personal' }: RecordingsListProps) => {
+export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', selectedMember = 'all' }: RecordingsListProps) => {
   const [recordings, setRecordings] = useState<RecordingWithOwner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
