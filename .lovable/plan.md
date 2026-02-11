@@ -1,53 +1,42 @@
 
 
-## Automatische Recording-Erkennung fuer Kalender-Bots
+## Zwei Massnahmen: Bot-Daten retten + Auto-Ingest Zeitfenster erweitern
 
-### Problem
-Wenn Recall.ai automatisch einen Bot zu einem Kalender-Meeting sendet, wird kein Eintrag in der `recordings`-Tabelle erstellt. Dadurch erscheint das Meeting nie im Dashboard und kein Transkript wird gespeichert.
+### 1. Sofort-Massnahme: Bot-Daten wiederherstellen
 
-Bei manuellen Bots (`create-bot`) wird der Eintrag explizit angelegt (Zeile 488-498 in `create-bot/index.ts`). Diese Logik fehlt fuer automatische Bots.
+Sobald du die Bot-ID aus dem Recall.ai Dashboard lieferst, werde ich:
+- Einen `recordings`-Eintrag mit dieser Bot-ID fuer User `so@ec-pd.com` erstellen
+- `sync-recording` triggern, um Transkript und Video von Recall.ai zu holen
+- Falls der Bot manuell entfernt wurde, hat Recall.ai moeglicherweise trotzdem eine Teilaufnahme gespeichert
 
-### Loesung
+**Aktion erforderlich**: Bitte die Bot-ID aus dem Recall.ai Dashboard kopieren.
 
-**Datei: `supabase/functions/recall-calendar-meetings/index.ts`**
+### 2. Bug-Fix: Zeitfenster fuer Auto-Ingest erweitern
 
-In der `list`-Action, nach dem Sortieren der Meetings (Zeile 472), wird folgender Block eingefuegt:
-
-1. Alle Meetings mit `bot_id` sammeln
-2. Pruefen ob fuer diese `bot_id`s bereits ein `recordings`-Eintrag existiert (`SELECT recall_bot_id FROM recordings WHERE recall_bot_id IN (...)`)
-3. Fuer jede fehlende `bot_id`:
-   - Neuen `recordings`-Eintrag erstellen:
-     - `recall_bot_id`: die bot_id aus dem Kalender-Meeting
-     - `user_id`: der authentifizierte User (supabaseUserId)
-     - `meeting_id`: neue UUID via `crypto.randomUUID()`
-     - `meeting_url`: extrahierte Meeting-URL
-     - `status`: `recording` (Bot ist bereits im Meeting)
-     - `source`: `bot`
-     - `title`: Meeting-Titel aus dem Kalender
-   - Asynchron `sync-recording` aufrufen (via `fetch` an die eigene Edge Function URL mit Service-Role-Key), damit Transkript und Video geholt werden sobald der Bot fertig ist
-4. Loggen wie viele Recordings automatisch erzeugt wurden
-
-### Ablauf
-
-```text
-Vorher:
-  Recall.ai sendet Bot automatisch -> Bot nimmt auf -> Kein DB-Eintrag -> Meeting unsichtbar
-
-Nachher:
-  Recall.ai sendet Bot automatisch -> Bot nimmt auf
-  Frontend pollt alle 15s "list" -> Meeting hat bot_id
-  -> Kein recordings-Eintrag gefunden -> Wird automatisch erstellt
-  -> sync-recording wird asynchron getriggert
-  -> Meeting erscheint sofort im Dashboard
-  -> Transkript wird automatisch synchronisiert
+**Problem**: Die `list`-Action in `recall-calendar-meetings` holt nur Meetings der letzten 2 Stunden:
+```
+const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
 ```
 
-### Keine weiteren Dateien betroffen
-- `useRecallCalendarMeetings.ts`: Keine Aenderung noetig (nutzt bestehende Polling-Logik)
-- `create-bot/index.ts`: Keine Aenderung (manuelle Bots funktionieren weiterhin wie bisher)
-- `sync-recording/index.ts`: Keine Aenderung (wird nur asynchron aufgerufen)
+Wenn der User die Kalender-Seite nicht innerhalb von 2 Stunden nach Meeting-Start oeffnet, wird das Meeting nie erkannt und kein Recording angelegt.
 
-### Sicherheit
-- Recording wird nur fuer den authentifizierten User erstellt (auth.uid = user_id)
-- Duplikate werden durch Vorab-Check auf existierende `recall_bot_id` verhindert
-- Service-Role-Key wird nur intern fuer den sync-recording Aufruf verwendet
+**Loesung**: Das Zeitfenster auf **24 Stunden** erweitern:
+
+**Datei: `supabase/functions/recall-calendar-meetings/index.ts`**
+- Zeile 144: `2 * 60 * 60 * 1000` aendern zu `24 * 60 * 60 * 1000`
+- Log-Meldung entsprechend anpassen
+
+Dies stellt sicher, dass auch Meetings vom Vortag noch erkannt und automatisch als Recording angelegt werden, solange der User mindestens einmal taeglich die App oeffnet.
+
+### Technische Details
+
+```text
+Vorher (2h Fenster):
+  Meeting um 14:00 -> User oeffnet App um 16:30 -> Meeting nicht mehr sichtbar -> Verloren
+
+Nachher (24h Fenster):
+  Meeting um 14:00 -> User oeffnet App um 16:30 -> Meeting noch sichtbar -> Auto-Ingest greift
+```
+
+Keine weiteren Dateien betroffen. Die Aenderung ist minimal (eine Zeile) und hat keine Nebenwirkungen, da die Auto-Ingest-Logik bereits Duplikate verhindert.
+
