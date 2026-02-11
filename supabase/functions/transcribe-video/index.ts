@@ -67,7 +67,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (recording.user_id !== user.id) {
+    // Check ownership or admin role
+    const isOwner = recording.user_id === user.id;
+    let isAdmin = false;
+    if (!isOwner) {
+      const { data: adminRole } = await supabaseAdmin
+        .from('user_roles')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('role', 'admin')
+        .maybeSingle();
+      isAdmin = !!adminRole;
+    }
+
+    if (!isOwner && !isAdmin) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
