@@ -110,3 +110,6 @@ verify_jwt = false
 
 [functions.transcribe-video]
 verify_jwt = false
+
+[functions.recall-transcribe]
+verify_jwt = false

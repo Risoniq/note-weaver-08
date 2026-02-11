@@ -107,6 +107,7 @@ export default function MeetingDetail() {
   
   // Video Transcription State
   const [isTranscribingVideo, setIsTranscribingVideo] = useState(false);
+  const [isRecallTranscribing, setIsRecallTranscribing] = useState(false);
   
   // Soft-Delete State
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -725,6 +726,46 @@ export default function MeetingDetail() {
               >
                 <Sparkles className="h-4 w-4 mr-2" />
                 Video transkribieren
+              </Button>
+            )}
+            {/* Recall.ai Transkript erstellen Button */}
+            {recording.source === 'bot' && !recording.transcript_text && recording.recall_bot_id && recording.status !== 'transcribing' && !isTranscribingVideo && !isRecallTranscribing && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={async () => {
+                  setIsRecallTranscribing(true);
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (!session) {
+                      toast.error("Sitzung abgelaufen");
+                      setIsRecallTranscribing(false);
+                      return;
+                    }
+                    const { data, error } = await supabase.functions.invoke('recall-transcribe', {
+                      headers: { Authorization: `Bearer ${session.access_token}` },
+                      body: { recording_id: recording.id },
+                    });
+                    if (error) throw error;
+                    setRecording(prev => prev ? { ...prev, status: 'transcribing' } : null);
+                    toast.success("Recall.ai Transkription gestartet! Klicke in 1-2 Minuten auf 'Transkript neu laden'.");
+                  } catch (err) {
+                    console.error('Recall transcription error:', err);
+                    toast.error("Recall Transkription fehlgeschlagen");
+                  } finally {
+                    setIsRecallTranscribing(false);
+                  }
+                }}
+                className="rounded-xl"
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                Recall Transkript erstellen
+              </Button>
+            )}
+            {isRecallTranscribing && (
+              <Button variant="outline" size="sm" disabled className="rounded-xl">
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Recall Transkription...
               </Button>
             )}
             {isTranscribingVideo && (
