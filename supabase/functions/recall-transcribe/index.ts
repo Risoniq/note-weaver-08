@@ -129,7 +129,7 @@ serve(async (req) => {
         body: JSON.stringify({
           provider: {
             recallai_async: {
-              language_code: "deu",
+              language_code: "de-DE",
             },
           },
         }),
