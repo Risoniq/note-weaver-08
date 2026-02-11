@@ -471,6 +471,78 @@ Deno.serve(async (req) => {
       // Sort by start_time
       meetings.sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
+      // ========== AUTO-INGESTION: Create missing recordings for calendar bots ==========
+      try {
+        const meetingsWithBots = meetings.filter((m: any) => m.bot_id);
+        if (meetingsWithBots.length > 0) {
+          const botIds = meetingsWithBots.map((m: any) => m.bot_id);
+          console.log('[auto-ingest] Checking bot_ids:', botIds);
+
+          const { data: existingRecordings, error: lookupError } = await supabase
+            .from('recordings')
+            .select('recall_bot_id')
+            .in('recall_bot_id', botIds);
+
+          if (lookupError) {
+            console.error('[auto-ingest] Lookup error:', lookupError);
+          } else {
+            const existingBotIds = new Set((existingRecordings || []).map((r: any) => r.recall_bot_id));
+            const missingMeetings = meetingsWithBots.filter((m: any) => !existingBotIds.has(m.bot_id));
+
+            if (missingMeetings.length > 0) {
+              console.log('[auto-ingest] Creating', missingMeetings.length, 'missing recording(s)');
+
+              for (const meeting of missingMeetings) {
+                const newMeetingId = crypto.randomUUID();
+                const { data: inserted, error: insertError } = await supabase
+                  .from('recordings')
+                  .insert({
+                    meeting_id: newMeetingId,
+                    recall_bot_id: meeting.bot_id,
+                    user_id: supabaseUserId,
+                    meeting_url: meeting.meeting_url || null,
+                    status: 'recording',
+                    source: 'bot',
+                    title: meeting.title || 'Kalender-Meeting',
+                    calendar_attendees: meeting.attendees || null,
+                  })
+                  .select('id')
+                  .single();
+
+                if (insertError) {
+                  console.error('[auto-ingest] Insert error for bot', meeting.bot_id, ':', insertError);
+                  continue;
+                }
+
+                console.log('[auto-ingest] Created recording', inserted.id, 'for bot', meeting.bot_id);
+
+                // Trigger sync-recording asynchronously
+                if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+                  fetch(`${SUPABASE_URL}/functions/v1/sync-recording`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ recording_id: inserted.id }),
+                  }).then(res => {
+                    console.log('[auto-ingest] sync-recording triggered for', inserted.id, '- status:', res.status);
+                  }).catch(err => {
+                    console.error('[auto-ingest] sync-recording fetch error:', err);
+                  });
+                }
+              }
+            } else {
+              console.log('[auto-ingest] All bot recordings already exist');
+            }
+          }
+        }
+      } catch (ingestError) {
+        // Never let ingestion errors break the list response
+        console.error('[auto-ingest] Unexpected error:', ingestError);
+      }
+      // ========== END AUTO-INGESTION ==========
+
       return new Response(
         JSON.stringify({ success: true, meetings }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
