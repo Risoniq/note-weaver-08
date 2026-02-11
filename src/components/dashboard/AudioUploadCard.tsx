@@ -6,6 +6,21 @@ import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
+const pollForCompletion = async (recordingId: string, accessToken: string): Promise<any> => {
+  const { data, error } = await supabase
+    .from('recordings')
+    .select('status, duration, word_count')
+    .eq('id', recordingId)
+    .single();
+
+  if (error) throw new Error('Polling fehlgeschlagen');
+  if (data.status === 'done') return data;
+  if (data.status === 'error') throw new Error('Transkription fehlgeschlagen');
+
+  await new Promise((r) => setTimeout(r, 3000));
+  return pollForCompletion(recordingId, accessToken);
+};
+
 interface AudioUploadCardProps {
   onUploadComplete?: (recordingId: string) => void;
 }
@@ -59,7 +74,7 @@ export function AudioUploadCard({ onUploadComplete }: AudioUploadCardProps) {
       formData.append('title', title || file.name);
 
       setStatus('transcribing');
-      setProgress(40);
+      setProgress(30);
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe-audio`,
@@ -72,19 +87,23 @@ export function AudioUploadCard({ onUploadComplete }: AudioUploadCardProps) {
         }
       );
 
-      setProgress(80);
-
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Transkription fehlgeschlagen');
       }
 
       const result = await response.json();
+      const recordingId = result.recordingId;
+
+      // Poll for completion
+      setProgress(50);
+      const pollResult = await pollForCompletion(recordingId, session.access_token);
+      
       setProgress(100);
       setStatus('success');
 
       toast.success('Audio erfolgreich transkribiert!', {
-        description: `${result.wordCount} Wörter, ${Math.floor(result.duration / 60)}:${String(result.duration % 60).padStart(2, '0')} Minuten`,
+        description: `${pollResult.word_count || 0} Wörter, ${Math.floor((pollResult.duration || 0) / 60)}:${String((pollResult.duration || 0) % 60).padStart(2, '0')} Minuten`,
       });
 
       if (onUploadComplete) {
