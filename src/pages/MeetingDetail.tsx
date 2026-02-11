@@ -731,7 +731,7 @@ export default function MeetingDetail() {
               </Button>
             )}
             {/* Re-Sync Button für abgeschlossene Meetings */}
-            {recording.status === 'done' && (
+            {['done', 'error', 'transcribing'].includes(recording.status) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -744,7 +744,7 @@ export default function MeetingDetail() {
               </Button>
             )}
             {/* Status-Sync für laufende Meetings */}
-            {['pending', 'joining', 'recording', 'processing'].includes(recording.status) && (
+            {['pending', 'joining', 'recording', 'processing', 'transcribing'].includes(recording.status) && (
               <Button
                 variant="ghost"
                 size="sm"
