@@ -104,6 +104,9 @@ export default function MeetingDetail() {
   // Resync Warning Dialog State
   const [showResyncWarning, setShowResyncWarning] = useState(false);
   
+  // Video Transcription State
+  const [isTranscribingVideo, setIsTranscribingVideo] = useState(false);
+  
   // Auth für User-Email
   const { user } = useAuth();
   const { isAdmin } = useAdminCheck();
@@ -671,6 +674,48 @@ export default function MeetingDetail() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {/* Video transkribieren Button */}
+            {recording.video_url && !recording.transcript_text && recording.status !== 'transcribing' && !isTranscribingVideo && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={async () => {
+                  setIsTranscribingVideo(true);
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (!session) {
+                      toast.error("Sitzung abgelaufen");
+                      return;
+                    }
+                    toast.info("Video wird transkribiert... Das kann bei langen Videos einige Minuten dauern.");
+                    const { data, error } = await supabase.functions.invoke('transcribe-video', {
+                      headers: { Authorization: `Bearer ${session.access_token}` },
+                      body: { recording_id: recording.id },
+                    });
+                    if (error) throw error;
+                    toast.success(`Transkription abgeschlossen! ${data.wordCount} Wörter, ${data.speakerCount} Sprecher`);
+                    // Reload recording
+                    const updated = await fetchRecording();
+                    if (updated) setRecording(updated);
+                  } catch (err) {
+                    console.error('Video transcription error:', err);
+                    toast.error("Video-Transkription fehlgeschlagen");
+                  } finally {
+                    setIsTranscribingVideo(false);
+                  }
+                }}
+                className="rounded-xl"
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                Video transkribieren
+              </Button>
+            )}
+            {isTranscribingVideo && (
+              <Button variant="outline" size="sm" disabled className="rounded-xl">
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Transkribiere...
+              </Button>
+            )}
             {/* Re-Sync Button für abgeschlossene Meetings */}
             {recording.status === 'done' && (
               <Button

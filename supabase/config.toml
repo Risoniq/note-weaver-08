@@ -107,3 +107,6 @@ verify_jwt = false
 
 [functions.analyze-project]
 verify_jwt = false
+
+[functions.transcribe-video]
+verify_jwt = false
