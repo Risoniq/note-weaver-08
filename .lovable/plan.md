@@ -1,40 +1,46 @@
 
 
-## Soft-Delete fuer Meetings mit Wiederherstellung im Admin Dashboard
+## Fix: Stuck "transcribing" Recordings reparierbar machen
 
-Statt Meetings dauerhaft zu loeschen, werden sie als "geloescht" markiert (Soft-Delete). Im normalen Dashboard sind sie unsichtbar, im Admin Dashboard werden sie mit rotem Rahmen angezeigt und koennen wiederhergestellt werden.
+### Problem
+Das Recording haengt im Status "transcribing" fest. Die UI zeigt fuer diesen Status weder den "Transkript neu laden"-Button noch den "Aktualisieren"-Button an, weil:
+- "Transkript neu laden" nur bei `status === 'done'` erscheint
+- "Aktualisieren" nur bei `['pending', 'joining', 'recording', 'processing']` erscheint
 
-### Ablauf
+Der Status "transcribing" faellt durch beide Bedingungen.
 
-1. **Datenbank-Migration**: Neue Spalte `deleted_at` (timestamp, nullable) zur `recordings`-Tabelle hinzufuegen. NULL = aktiv, Wert = geloescht.
+### Loesung
 
-2. **RLS-Policies anpassen**: Die bestehenden SELECT-Policies fuer normale User und Teamleads werden um `AND deleted_at IS NULL` ergaenzt, sodass geloeschte Meetings automatisch herausgefiltert werden. Die Admin-SELECT-Policy bleibt unveraendert (sieht alles).
+**Datei: `src/pages/MeetingDetail.tsx`**
 
-3. **Loeschen-Button auf Meeting-Detail-Seite** (`src/pages/MeetingDetail.tsx`): Statt `DELETE` wird ein `UPDATE` mit `deleted_at = now()` ausgefuehrt. Bestaetigung ueber AlertDialog, danach Navigation zurueck zur Startseite.
+1. Den Status `'transcribing'` zur Liste der aktualisierbaren Status hinzufuegen (Zeile 747), sodass der "Aktualisieren"-Button auch bei haengenden Transkriptionen erscheint
+2. Alternativ (oder zusaetzlich): Den "Transkript neu laden"-Button auch fuer `'transcribing'` und `'error'` Status anzeigen, damit der User eine vollstaendige Neu-Synchronisation ausloesen kann
 
-4. **Admin Dashboard anpassen** (`src/pages/Admin.tsx` / Impersonation-View): Geloeschte Meetings werden mit rotem Rahmen (`border-2 border-red-500`) und einem "Geloescht"-Badge angezeigt. Ein "Wiederherstellen"-Button setzt `deleted_at` zurueck auf NULL.
+### Konkrete Aenderung
 
-5. **RecordingCard anpassen** (`src/components/recordings/RecordingCard.tsx`): Optionaler `isDeleted`-Prop fuer roten Rahmen im Admin-View.
+In Zeile 747 wird die Status-Liste erweitert:
 
-6. **Edge Functions anpassen**: `admin-view-user-data` und `admin-dashboard` muessen geloeschte Recordings mitzaehlen/anzeigen, aber in den Statistiken als separat markieren.
+```
+// Vorher:
+{['pending', 'joining', 'recording', 'processing'].includes(recording.status) && (
 
-### Technische Details
+// Nachher:
+{['pending', 'joining', 'recording', 'processing', 'transcribing'].includes(recording.status) && (
+```
 
-| Datei | Aenderung |
-|---|---|
-| Migration (SQL) | `ALTER TABLE recordings ADD COLUMN deleted_at timestamptz DEFAULT NULL` |
-| Migration (SQL) | RLS-Policy `Users can view own recordings` ergaenzen: `auth.uid() = user_id AND deleted_at IS NULL` |
-| Migration (SQL) | RLS-Policy `Teamleads can view team recordings` ergaenzen: `... AND recordings.deleted_at IS NULL` |
-| `src/pages/MeetingDetail.tsx` | Loeschen-Button mit Soft-Delete (`UPDATE ... SET deleted_at = now()`) und AlertDialog |
-| `src/components/recordings/RecordingCard.tsx` | `isDeleted`-Prop fuer roten Rahmen |
-| `src/components/recordings/RecordingsList.tsx` | Keine Aenderung noetig (RLS filtert automatisch) |
-| `supabase/functions/admin-view-user-data/index.ts` | Geloeschte Recordings mit `deleted_at`-Feld zurueckgeben |
-| `src/types/recording.ts` | `deleted_at` Feld zum Interface hinzufuegen |
+Zusaetzlich wird der "Transkript neu laden"-Button auch fuer fehlgeschlagene/haengende Status angezeigt:
 
-### Verhalten
+```
+// Vorher:
+{recording.status === 'done' && (
 
-- **User loescht Meeting**: `deleted_at` wird gesetzt, Meeting verschwindet aus Dashboard und Aufnahmen-Liste
-- **Admin sieht alles**: Geloeschte Meetings haben roten Rahmen + "Geloescht am..."-Badge + Wiederherstellen-Button
-- **Admin stellt wieder her**: `deleted_at` wird auf NULL gesetzt, Meeting erscheint wieder beim User
-- **Quota**: Geloeschte Meetings zaehlen weiterhin zum Kontingent (Minuten bleiben verbraucht)
+// Nachher:
+{['done', 'error', 'transcribing'].includes(recording.status) && (
+```
+
+Damit kann der User bei haengenden Transkriptionen sowohl schnell aktualisieren als auch eine vollstaendige Neu-Synchronisation ausloesen.
+
+### Sofort-Fix fuer das aktuelle Recording
+
+Nach dem Code-Update kann der User auf "Aktualisieren" oder "Transkript neu laden" klicken, was die sync-recording Edge Function aufruft und den korrekten Status von Recall.ai abruft.
 
