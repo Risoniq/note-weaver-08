@@ -685,6 +685,9 @@ export default function MeetingDetail() {
                 variant="default"
                 size="sm"
                 onClick={async () => {
+                  if (recording.duration && recording.duration > 3600) {
+                    toast.warning("Dieses Meeting ist über 60 Minuten lang. Die Video-Transkription kann bei sehr langen Meetings fehlschlagen. Möchtest du es trotzdem versuchen?");
+                  }
                   setIsTranscribingVideo(true);
                   try {
                     const { data: { session } } = await supabase.auth.getSession();

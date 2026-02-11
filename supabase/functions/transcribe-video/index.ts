@@ -16,10 +16,11 @@ async function processVideoTranscription(
   const elevenLabsKey = Deno.env.get('ELEVENLABS_API_KEY')!;
   const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-  try {
-    // Update status
-    await supabaseAdmin.from('recordings').update({ status: 'transcribing' }).eq('id', recordingId);
+  // Save previous status so we can restore on hard crash recovery
+  const { data: prevRec } = await supabaseAdmin.from('recordings').select('status').eq('id', recordingId).single();
+  const previousStatus = prevRec?.status || 'done';
 
+  try {
     console.log(`Downloading video from: ${videoUrl}`);
     const videoResponse = await fetch(videoUrl);
     if (!videoResponse.ok) {
@@ -27,7 +28,16 @@ async function processVideoTranscription(
     }
 
     const videoBlob = await videoResponse.blob();
-    console.log(`Video downloaded: ${(videoBlob.size / 1024 / 1024).toFixed(1)} MB`);
+    const sizeMB = videoBlob.size / 1024 / 1024;
+    console.log(`Video downloaded: ${sizeMB.toFixed(1)} MB`);
+
+    // Reject files too large for edge function processing
+    if (sizeMB > 500) {
+      throw new Error(`Video too large (${sizeMB.toFixed(0)} MB). Max 500 MB for edge function processing.`);
+    }
+
+    // Only set transcribing AFTER successful download to avoid stuck state on hard crash
+    await supabaseAdmin.from('recordings').update({ status: 'transcribing' }).eq('id', recordingId);
 
     // Transcribe with ElevenLabs
     console.log('Starting ElevenLabs transcription...');
@@ -186,6 +196,11 @@ Deno.serve(async (req) => {
 
     if (!recording.video_url) {
       return new Response(JSON.stringify({ error: 'No video URL available' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Warn about long recordings that may exceed edge function limits
+    if (recording.duration && recording.duration > 3600) {
+      console.warn(`Recording ${recording_id} is ${Math.round(recording.duration / 60)} min long - may exceed edge function limits`);
     }
 
     // Run in background with waitUntil
