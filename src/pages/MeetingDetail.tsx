@@ -685,22 +685,31 @@ export default function MeetingDetail() {
                     const { data: { session } } = await supabase.auth.getSession();
                     if (!session) {
                       toast.error("Sitzung abgelaufen");
+                      setIsTranscribingVideo(false);
                       return;
                     }
-                    toast.info("Video wird transkribiert... Das kann bei langen Videos einige Minuten dauern.");
-                    const { data, error } = await supabase.functions.invoke('transcribe-video', {
+                    toast.info("Video wird im Hintergrund transkribiert... Das kann einige Minuten dauern.");
+                    const { error } = await supabase.functions.invoke('transcribe-video', {
                       headers: { Authorization: `Bearer ${session.access_token}` },
                       body: { recording_id: recording.id },
                     });
                     if (error) throw error;
-                    toast.success(`Transkription abgeschlossen! ${data.wordCount} Wörter, ${data.speakerCount} Sprecher`);
-                    // Reload recording
-                    const updated = await fetchRecording();
-                    if (updated) setRecording(updated);
+                    setRecording(prev => prev ? { ...prev, status: 'transcribing' } : null);
+                    const pollInterval = setInterval(async () => {
+                      const updated = await fetchRecording();
+                      if (updated) {
+                        setRecording(updated);
+                        if (updated.status === 'done' || updated.status === 'error') {
+                          clearInterval(pollInterval);
+                          setIsTranscribingVideo(false);
+                          if (updated.status === 'done') toast.success("Transkription abgeschlossen!");
+                          else toast.error("Transkription fehlgeschlagen");
+                        }
+                      }
+                    }, 15000);
                   } catch (err) {
                     console.error('Video transcription error:', err);
                     toast.error("Video-Transkription fehlgeschlagen");
-                  } finally {
                     setIsTranscribingVideo(false);
                   }
                 }}
