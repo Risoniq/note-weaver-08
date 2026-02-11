@@ -1,56 +1,53 @@
 
 
-## Proaktivitaets-Netzdiagramm fuer Projekt-Analyse
+## Automatische Recording-Erkennung fuer Kalender-Bots
 
-### Ueberblick
-Neben der bestehenden Themen-Heatmap wird ein Radar-Chart (Netzdiagramm) eingefuegt, das die inhaltliche Proaktivitaet jeder Person ueber alle Projekt-Meetings hinweg visualisiert. Es geht nicht nur um Redeanteil, sondern um qualitative Beitraege.
+### Problem
+Wenn Recall.ai automatisch einen Bot zu einem Kalender-Meeting sendet, wird kein Eintrag in der `recordings`-Tabelle erstellt. Dadurch erscheint das Meeting nie im Dashboard und kein Transkript wird gespeichert.
 
-### Gemessene Dimensionen (Radar-Achsen)
+Bei manuellen Bots (`create-bot`) wird der Eintrag explizit angelegt (Zeile 488-498 in `create-bot/index.ts`). Diese Logik fehlt fuer automatische Bots.
 
-| Achse | Was wird gemessen | Wie |
-|---|---|---|
-| **Themen-Initiation** | Wer bringt neue Themen ein? | Erster Sprecher nach Themenwechsel (Pause/neuer Abschnitt) |
-| **Loesungsvorschlaege** | Wer bietet konkrete Loesungen an? | Phrasen wie "wir koennten", "mein Vorschlag", "ich schlage vor", "eine Idee waere" |
-| **Fragen stellen** | Wer treibt Diskussion durch Fragen? | Saetze mit Fragezeichen zaehlen |
-| **Reaktionsdichte** | Wer geht auf andere ein? | Direkte Antworten auf vorherige Sprecher (Namensnennungen, Bezugnahmen wie "genau", "darauf aufbauend") |
-| **Inhaltliche Tiefe** | Wer liefert substantielle Beitraege? | Durchschnittliche Wortanzahl pro Wortmeldung (laengere Beitraege = tiefere Ausfuehrungen) |
+### Loesung
 
-Jede Dimension wird pro Person normalisiert (0-100), sodass die Personen vergleichbar sind.
+**Datei: `supabase/functions/recall-calendar-meetings/index.ts`**
 
-### Aenderungen
+In der `list`-Action, nach dem Sortieren der Meetings (Zeile 472), wird folgender Block eingefuegt:
 
-| Datei | Aenderung |
-|---|---|
-| `src/components/projects/IFDProactivityRadar.tsx` | **Neue Datei** -- Radar-Chart-Komponente mit Recharts `RadarChart`. Analysiert alle Transkripte der Recordings und berechnet die 5 Dimensionen pro Sprecher |
-| `src/pages/ProjectDetail.tsx` | Import und Einbindung der neuen Komponente im Chart-Grid (neben TopicCloud) |
+1. Alle Meetings mit `bot_id` sammeln
+2. Pruefen ob fuer diese `bot_id`s bereits ein `recordings`-Eintrag existiert (`SELECT recall_bot_id FROM recordings WHERE recall_bot_id IN (...)`)
+3. Fuer jede fehlende `bot_id`:
+   - Neuen `recordings`-Eintrag erstellen:
+     - `recall_bot_id`: die bot_id aus dem Kalender-Meeting
+     - `user_id`: der authentifizierte User (supabaseUserId)
+     - `meeting_id`: neue UUID via `crypto.randomUUID()`
+     - `meeting_url`: extrahierte Meeting-URL
+     - `status`: `recording` (Bot ist bereits im Meeting)
+     - `source`: `bot`
+     - `title`: Meeting-Titel aus dem Kalender
+   - Asynchron `sync-recording` aufrufen (via `fetch` an die eigene Edge Function URL mit Service-Role-Key), damit Transkript und Video geholt werden sobald der Bot fertig ist
+4. Loggen wie viele Recordings automatisch erzeugt wurden
 
-### Technische Details
+### Ablauf
 
-**IFDProactivityRadar.tsx:**
-- Nimmt `recordings: any[]` als Prop (wie alle IFD-Komponenten)
-- Iteriert ueber alle `transcript_text`-Felder und aggregiert pro Sprecher:
-  - Zeilenweise Analyse: `Speaker: Text` Muster parsen
-  - Bots und Metadaten werden via `participantUtils` gefiltert
-  - Namen werden via `normalizeGermanName` vereinheitlicht
-- Berechnet 5 Scores, normalisiert auf 0-100
-- Nutzt Recharts `RadarChart`, `PolarGrid`, `PolarAngleAxis`, `Radar` (eine Linie pro Sprecher)
-- Maximal 6 Sprecher (die aktivsten), farbkodiert
-- Tooltip zeigt absolute Werte
-
-**Einbindung in ProjectDetail.tsx:**
-- Wird im 2-spalten Grid neben oder unter der TopicCloud platziert
-- Aendert das Grid zu 1 Spalte wenn 3 Komponenten, oder fuegt eine neue Zeile hinzu
-
-### Phrasen-Erkennung fuer Loesungsvorschlaege (Deutsch + Englisch)
 ```text
-"wir könnten", "mein vorschlag", "ich schlage vor", "eine idee wäre",
-"wie wäre es wenn", "man könnte", "alternativ", "meine empfehlung",
-"we could", "I suggest", "my proposal", "how about", "one option"
+Vorher:
+  Recall.ai sendet Bot automatisch -> Bot nimmt auf -> Kein DB-Eintrag -> Meeting unsichtbar
+
+Nachher:
+  Recall.ai sendet Bot automatisch -> Bot nimmt auf
+  Frontend pollt alle 15s "list" -> Meeting hat bot_id
+  -> Kein recordings-Eintrag gefunden -> Wird automatisch erstellt
+  -> sync-recording wird asynchron getriggert
+  -> Meeting erscheint sofort im Dashboard
+  -> Transkript wird automatisch synchronisiert
 ```
 
-### Phrasen-Erkennung fuer Reaktionsdichte
-```text
-"genau", "darauf aufbauend", "wie [Name] gesagt", "stimme zu",
-"ergänzend dazu", "guter punkt", "da bin ich", "bezüglich",
-"agreed", "building on", "good point", "regarding"
-```
+### Keine weiteren Dateien betroffen
+- `useRecallCalendarMeetings.ts`: Keine Aenderung noetig (nutzt bestehende Polling-Logik)
+- `create-bot/index.ts`: Keine Aenderung (manuelle Bots funktionieren weiterhin wie bisher)
+- `sync-recording/index.ts`: Keine Aenderung (wird nur asynchron aufgerufen)
+
+### Sicherheit
+- Recording wird nur fuer den authentifizierten User erstellt (auth.uid = user_id)
+- Duplikate werden durch Vorab-Check auf existierende `recall_bot_id` verhindert
+- Service-Role-Key wird nur intern fuer den sync-recording Aufruf verwendet
