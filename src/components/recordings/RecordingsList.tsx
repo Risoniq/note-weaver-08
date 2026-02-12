@@ -59,8 +59,8 @@ export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', select
         return;
       }
 
-      // Teamlead viewing team recordings
-      if (isTeamlead && viewMode === 'team') {
+      // Admin (not impersonating) or Teamlead viewing team recordings
+      if ((isAdmin && !isImpersonating) || (isTeamlead && viewMode === 'team')) {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           setIsLoading(false);
@@ -74,7 +74,7 @@ export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', select
         });
 
         if (error) {
-          console.error('Error fetching team recordings:', error);
+          console.error('Error fetching team/admin recordings:', error);
         } else {
           setRecordings((data?.recordings || []) as RecordingWithOwner[]);
         }
@@ -101,7 +101,7 @@ export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', select
     fetchRecordings();
 
     // Realtime subscription for updates (only for non-impersonated and non-team view)
-    if (!isImpersonating && viewMode !== 'team') {
+    if (!isImpersonating && viewMode !== 'team' && !isAdmin) {
       const channel = supabase
         .channel('recordings-changes')
         .on(
@@ -171,7 +171,7 @@ export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', select
     );
   }
 
-  const isTeamView = viewMode === 'team';
+  const isTeamView = viewMode === 'team' || (isAdmin && !isImpersonating);
 
   return (
     <div className="w-full">

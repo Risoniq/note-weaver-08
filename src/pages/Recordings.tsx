@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { RecordingsList } from "@/components/recordings/RecordingsList";
 import { useTeamleadCheck } from "@/hooks/useTeamleadCheck";
+import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -41,6 +42,7 @@ interface RecordingWithOwner extends Recording {
 
 const Recordings = () => {
   const { isTeamlead, isLoading: teamleadLoading, teamName, teamMembers } = useTeamleadCheck();
+  const { isAdmin } = useAdminCheck();
   const { user } = useAuth();
   const [viewMode, setViewMode] = useState<'personal' | 'team'>('personal');
 
@@ -65,7 +67,7 @@ const Recordings = () => {
     const fetchRecordings = async () => {
       setIsLoadingTranscripts(true);
       try {
-        if (isTeamlead && viewMode === 'team') {
+        if (isAdmin || (isTeamlead && viewMode === 'team')) {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) {
             setIsLoadingTranscripts(false);
@@ -141,13 +143,13 @@ const Recordings = () => {
         supabase.removeChannel(channel);
       };
     }
-  }, [user, isTeamlead, viewMode]);
+  }, [user, isTeamlead, isAdmin, viewMode]);
 
   // Filter and sort recordings
   const filteredRecordings = useMemo(() => {
     let result = [...recordings];
 
-    if (viewMode === 'team' && selectedMember !== 'all') {
+    if ((isAdmin || viewMode === 'team') && selectedMember !== 'all') {
       result = result.filter((r) => (r as any).user_id === selectedMember);
     }
 
@@ -194,7 +196,7 @@ const Recordings = () => {
     }
 
     return result;
-  }, [recordings, filters, viewMode, selectedMember]);
+  }, [recordings, filters, viewMode, selectedMember, isAdmin]);
 
   const totalPages = Math.ceil(filteredRecordings.length / ITEMS_PER_PAGE);
   const paginatedRecordings = filteredRecordings.slice(
@@ -341,7 +343,7 @@ const Recordings = () => {
                     className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   />
                 </div>
-                {isTeamlead && viewMode === 'team' && (
+                {(isAdmin || (isTeamlead && viewMode === 'team')) && (
                   <Select value={selectedMember} onValueChange={setSelectedMember}>
                     <SelectTrigger className="w-52">
                       <SelectValue />
@@ -356,10 +358,10 @@ const Recordings = () => {
                 )}
               </div>
               <RecordingsList
-                viewMode={isTeamlead ? viewMode : 'personal'}
+                viewMode={isAdmin ? 'team' : (isTeamlead ? viewMode : 'personal')}
                 searchQuery={recordingsSearchQuery}
-                selectedMember={isTeamlead && viewMode === 'team' ? selectedMember : 'all'}
-                memberEmails={isTeamlead && viewMode === 'team' ? memberEmails : undefined}
+                selectedMember={(isAdmin || (isTeamlead && viewMode === 'team')) ? selectedMember : 'all'}
+                memberEmails={(isAdmin || (isTeamlead && viewMode === 'team')) ? memberEmails : undefined}
               />
             </div>
           </TabsContent>
@@ -370,7 +372,7 @@ const Recordings = () => {
               {/* Team Member Filter + Export */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  {isTeamlead && viewMode === 'team' && (
+                  {(isAdmin || (isTeamlead && viewMode === 'team')) && (
                     <>
                       <span className="text-sm text-muted-foreground">Filtern nach Mitglied:</span>
                       <Select value={selectedMember} onValueChange={setSelectedMember}>

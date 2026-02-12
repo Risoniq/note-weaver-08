@@ -54,14 +54,72 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (!membership) {
-      return new Response(JSON.stringify({ error: 'Forbidden - Teamlead access required' }), {
+    // Check if user is admin
+    const { data: isAdmin } = await supabaseAdmin.rpc('has_role', {
+      _user_id: user.id,
+      _role: 'admin',
+    });
+
+    if (!membership && !isAdmin) {
+      return new Response(JSON.stringify({ error: 'Forbidden - Teamlead or Admin access required' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Get all team members
+    let memberUserIds: string[] = [];
+    let teamMembersData: any[] = [];
+
+    if (isAdmin && !membership) {
+      // Admin path: fetch ALL recordings from all users
+      const { data: allRecordings, error: allRecError } = await supabaseAdmin
+        .from('recordings')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (allRecError) {
+        console.error('Admin recordings fetch error:', allRecError);
+        return new Response(JSON.stringify({ error: 'Failed to fetch recordings' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Collect unique user IDs from recordings
+      const uniqueUserIds = [...new Set((allRecordings || []).map(r => r.user_id).filter(Boolean))];
+
+      // Resolve all user emails
+      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
+      const userEmailMap = new Map<string, string>();
+      if (authUsers?.users) {
+        for (const u of authUsers.users) {
+          userEmailMap.set(u.id, u.email || 'Unknown');
+        }
+      }
+
+      const recordingsWithOwner = (allRecordings || []).map(rec => ({
+        ...rec,
+        owner_email: userEmailMap.get(rec.user_id) || 'Unknown',
+        is_own: rec.user_id === user.id,
+      }));
+
+      const membersWithInfo = uniqueUserIds.map(uid => ({
+        user_id: uid,
+        role: 'member',
+        email: userEmailMap.get(uid) || 'Unknown',
+      }));
+
+      return new Response(JSON.stringify({
+        team: { name: 'Alle Accounts' },
+        members: membersWithInfo,
+        recordings: recordingsWithOwner,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Teamlead path: existing logic
     const { data: teamMembers, error: teamMembersError } = await supabaseAdmin
       .from('team_members')
       .select('user_id, role')
@@ -75,7 +133,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const memberUserIds = teamMembers?.map(m => m.user_id) || [];
+    memberUserIds = teamMembers?.map(m => m.user_id) || [];
 
     // Get user emails for display
     const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
@@ -87,28 +145,6 @@ Deno.serve(async (req) => {
         }
       }
     }
-
-    // Fetch recordings for all team members
-    const { data: recordings, error: recordingsError } = await supabaseAdmin
-      .from('recordings')
-      .select('*')
-      .in('user_id', memberUserIds)
-      .order('created_at', { ascending: false });
-
-    if (recordingsError) {
-      console.error('Recordings fetch error:', recordingsError);
-      return new Response(JSON.stringify({ error: 'Failed to fetch recordings' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Add owner info to each recording
-    const recordingsWithOwner = (recordings || []).map(rec => ({
-      ...rec,
-      owner_email: userEmailMap.get(rec.user_id) || 'Unknown',
-      is_own: rec.user_id === user.id,
-    }));
 
     // Build team members list with emails
     const membersWithInfo = teamMembers?.map(m => ({
