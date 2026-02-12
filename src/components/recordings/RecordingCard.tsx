@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Recording, getStatusLabel, getStatusColor } from "@/types/recording";
-import { Calendar, Clock, FileText, Target, CheckSquare, Loader2, Upload, RotateCcw, User, Users as UsersIcon } from "lucide-react";
+import { Calendar, Clock, Loader2, Upload, RotateCcw, User, Users as UsersIcon } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -102,56 +102,8 @@ export const RecordingCard = ({ recording, onClick, isDeleted, onRestore, ownerE
             )}
           </div>
 
-          {/* Summary preview */}
-          {recording.summary && recording.status === 'done' && (
-            <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
-              {recording.summary}
-            </p>
-          )}
 
-          {/* Stats row */}
-          {isAnalyzing ? (
-            <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border">
-              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <FileText className="h-3.5 w-3.5 opacity-50" />
-                <Skeleton className="h-4 w-20" />
-              </div>
-              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Target className="h-3.5 w-3.5 opacity-50" />
-                <Skeleton className="h-4 w-16" />
-              </div>
-              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <CheckSquare className="h-3.5 w-3.5 opacity-50" />
-                <Skeleton className="h-4 w-20" />
-              </div>
-            </div>
-          ) : recording.status === 'done' ? (
-            <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border">
-              {recording.word_count && (
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <FileText className="h-3.5 w-3.5" />
-                  <span>{recording.word_count.toLocaleString('de-DE')} Wörter</span>
-                </div>
-              )}
-              {recording.key_points && recording.key_points.length > 0 && (
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <Target className="h-3.5 w-3.5" />
-                  <span>{recording.key_points.length} Key Points</span>
-                </div>
-              )}
-              {recording.action_items && recording.action_items.length > 0 && (
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <CheckSquare className="h-3.5 w-3.5" />
-                  <span>{recording.action_items.length} Action Items</span>
-                </div>
-              )}
-            </div>
-          ) : isActive ? (
-            <div className="flex items-center gap-2 pt-2 border-t border-border text-sm text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <span>Meeting läuft...</span>
-            </div>
-          ) : null}
+
         </div>
       </CardContent>
     </Card>
