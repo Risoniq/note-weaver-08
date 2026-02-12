@@ -1,48 +1,66 @@
 
 
-## Genauere Meeting-Titel aus Transkript-Inhalten
+## Meeting-Titel aus Recall.ai Metadaten abgreifen (manueller Bot-Beitritt)
 
 ### Problem
-Aktuell werden Meeting-Titel entweder aus dem Kalender uebernommen (falls vorhanden) oder von der KI generiert. Die KI-generierten Titel sind oft zu generisch ("Team Meeting", "Besprechung") und nicht aussagekraeftig genug.
+Wenn der Bot manuell zu einem Meeting hinzugefuegt wird (kein Kalender), bleibt der Titel leer bis die KI-Analyse nach Meeting-Ende einen generiert. Die Meeting-Plattformen (Zoom, Google Meet) stellen aber den Titel bereit, sobald der Bot im Meeting ist - dieser wird aktuell nicht abgefragt.
 
 ### Loesung
 
-**1. Besserer KI-Prompt fuer Titel-Generierung (`analyze-transcript`)**
+Recall.ai bietet ein `meeting_metadata`-Feature, das den Meeting-Titel direkt von der Plattform extrahiert (Zoom: vollstaendig, Google Meet: eingeschraenkt, Teams: nur mit Sign-in). Dieses muss beim Bot-Erstellen aktiviert und beim Sync ausgelesen werden.
 
-Der aktuelle Prompt ist zu vage ("kurzer, aussagekraeftiger Titel, max 50 Zeichen"). Er wird verbessert:
+### Aenderungen
 
-- Laengere Titel erlauben (max 80 Zeichen statt 50)
-- Konkretere Anweisungen: Firmennamen, Projektnamen, Themen aus dem Transkript verwenden
-- Beispiele anpassen: Statt "Team Standup" lieber "Projekt Alpha - Sprint Review mit Firma XY"
-- Teilnehmer-Namen und Firmen aus dem Transkript extrahieren und im Titel verwenden
-- Regel: Der Titel soll das SPEZIFISCHE Thema widerspiegeln, nicht nur die Meeting-Art
+**1. `create-bot/index.ts` - Meeting Metadata aktivieren**
 
-**2. Kalender-Titel auch nach Beitritt aktualisieren (`sync-recording`)**
+Im `recording_config`-Objekt wird `meeting_metadata: {}` hinzugefuegt. Das aktiviert die Metadata-Erfassung bei Recall.ai, sodass der Meeting-Titel automatisch gesammelt wird sobald der Bot dem Meeting beitritt.
 
-Aktuell wird der Kalender-Titel nur gesetzt wenn `!recording.title`. Aenderung:
-- Den Kalender-Titel IMMER laden und in einem neuen Feld `calendar_title` speichern (fuer Referenz)
-- Wenn der Kalender-Titel aussagekraeftiger ist als "Meeting" oder ein generischer Bot-Name, diesen bevorzugen
-- Wenn kein Kalender-Titel vorhanden ist, die KI einen besseren Titel generieren lassen
+Vorher:
+```
+recording_config: {
+  transcript: { ... }
+}
+```
 
-**3. Titel-Aktualisierung nach Analyse erzwingen**
+Nachher:
+```
+recording_config: {
+  transcript: { ... },
+  meeting_metadata: {}
+}
+```
 
-In `analyze-transcript` wird die Bedingung gelockert:
-- Wenn der aktuelle Titel generisch ist (z.B. nur "Meeting", "Besprechung", oder ein UUID-Fragment), wird der KI-generierte Titel trotzdem uebernommen
-- Manuell gesetzte, spezifische Titel werden weiterhin NICHT ueberschrieben
+**2. `sync-recording/index.ts` - Meeting-Titel aus Bot-Metadaten extrahieren**
 
-### Technische Details
+Nach dem Abrufen der `botData` von Recall.ai wird der Meeting-Titel aus den Metadaten extrahiert. Dies geschieht in der bestehenden Sync-Logik (Abschnitt 7), BEVOR der Kalender-Titel geprueft wird:
 
-**`supabase/functions/analyze-transcript/index.ts`:**
-- Prompt-Anpassung fuer spezifischere Titel:
-  - Anweisung: "Extrahiere konkrete Themen, Firmennamen, Projektnamen aus dem Gespraech"
-  - Max 80 Zeichen statt 50
-  - Bessere Beispiele mit echtem Kontext
-- Neue Logik: Titel wird auch ueberschrieben wenn der bestehende Titel "generisch" ist (Pruefung via Regex/Wortliste: "Meeting", "Besprechung", "Untitled", Meeting-ID-Fragmente)
+- Pfad: `botData.recordings?.[0]?.media_shortcuts?.meeting_metadata?.data?.title`
+- Der Metadata-Titel wird nur gesetzt wenn der aktuelle Titel generisch/leer ist (gleiche `isGenericTitle`-Logik wie bereits vorhanden)
+- Prioritaet: Kalender-Titel > Metadata-Titel > AI-generierter Titel
 
-**`supabase/functions/sync-recording/index.ts`:**
-- Zeile 221: Bedingung aendern von `if (!recording.title && calendarMeeting.title)` zu: Kalender-Titel immer laden, aber nur setzen wenn noch kein manueller Titel existiert ODER der bestehende Titel generisch ist
-- Bei jedem Sync den Kalender-Titel erneut pruefen (nicht nur beim ersten Mal)
+Die neue Logik wird zwischen Zeile 200 (nach `updates` Initialisierung) und Zeile 203 (vor dem Kalender-Check) eingefuegt:
+
+```
+// Meeting-Titel aus Recall.ai Metadaten extrahieren (funktioniert bei manuellem Beitritt)
+const metadataTitle = botData.recordings?.[0]?.media_shortcuts?.meeting_metadata?.data?.title;
+if (metadataTitle && metadataTitle.trim()) {
+  const currentTitle = recording.title?.trim().toLowerCase() || '';
+  // Nur setzen wenn aktueller Titel generisch ist
+  if (isGeneric(currentTitle)) {
+    updates.title = metadataTitle.trim();
+    console.log('Meeting-Titel aus Metadata uebernommen:', metadataTitle);
+  }
+}
+```
+
+### Plattform-Unterstuetzung
+
+| Plattform | Titel verfuegbar? |
+|-----------|-------------------|
+| Zoom | Ja (vollstaendig) |
+| Google Meet | Eingeschraenkt (Bot muss eingeloggt sein) |
+| Microsoft Teams | Nein (Bot muesste eingeloggt sein) |
+
+Fuer Teams-Meetings greift weiterhin die KI-Titel-Generierung aus dem Transkript als Fallback.
 
 ### Keine Datenbank-Aenderungen noetig
-Die bestehenden Felder `title` in der `recordings`-Tabelle reichen aus.
-
