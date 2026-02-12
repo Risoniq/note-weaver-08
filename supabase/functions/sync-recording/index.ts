@@ -720,6 +720,49 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
         }
       } else {
         console.log('Keine Transkript-URL in media_shortcuts gefunden')
+        
+        // === AUTOMATISCHER RECALL-TRANSKRIPTIONS-FALLBACK ===
+        // Wenn kein Transkript vorhanden und Bot hat Recordings, automatisch Async Transcription starten
+        if (botData.recordings && botData.recordings.length > 0) {
+          const recallRecordingId = botData.recordings[0].id
+          console.log(`Kein Streaming-Transkript vorhanden. Starte automatische Recall Async Transcription für Recording: ${recallRecordingId}`)
+          
+          try {
+            const autoTranscriptResponse = await fetch(
+              `https://eu-central-1.recall.ai/api/v1/recording/${recallRecordingId}/create_transcript/`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Token ${recallApiKey}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  provider: {
+                    recallai_async: {
+                      language_code: "de",
+                    },
+                  },
+                }),
+              }
+            )
+            
+            if (autoTranscriptResponse.ok) {
+              const autoResult = await autoTranscriptResponse.json()
+              console.log('Automatische Recall-Transkription erfolgreich gestartet:', JSON.stringify(autoResult))
+              // Status auf "transcribing" setzen statt "done"
+              updates.status = 'transcribing'
+              console.log('Status auf "transcribing" gesetzt - nächster sync-recording-Aufruf holt fertiges Transkript ab')
+            } else {
+              const errText = await autoTranscriptResponse.text()
+              console.error('Automatische Recall-Transkription fehlgeschlagen:', autoTranscriptResponse.status, errText)
+              // Status bleibt "done", User kann manuell "Recall Transkript erstellen" nutzen
+            }
+          } catch (autoTranscriptError) {
+            console.error('Fehler bei automatischer Recall-Transkription:', autoTranscriptError)
+          }
+        } else {
+          console.log('Keine Recall Recordings vorhanden - kein automatischer Transkriptions-Fallback möglich')
+        }
       }
       
       // 7b. Transkript als Backup-Datei in Storage speichern
