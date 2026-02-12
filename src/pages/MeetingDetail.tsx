@@ -746,27 +746,21 @@ export default function MeetingDetail() {
                       headers: { Authorization: `Bearer ${session.access_token}` },
                       body: { recording_id: recording.id },
                     });
-                    if (error) {
-                      // For non-2xx, data may contain the JSON body
-                      const errMsg = data?.error || error?.message || '';
-                      if (errMsg.includes('Keine Aufnahmen')) {
+                    if (error) throw error;
+                    if (data?.error) {
+                      if (data.error.includes('Keine Aufnahmen')) {
                         toast.error("Dieser Bot hat keine Aufnahmen erzeugt. Ein Transkript kann nicht erstellt werden.");
-                        setIsRecallTranscribing(false);
-                        return;
+                      } else {
+                        toast.error(data.error);
                       }
-                      throw error;
+                      setIsRecallTranscribing(false);
+                      return;
                     }
                     setRecording(prev => prev ? { ...prev, status: 'transcribing' } : null);
                     toast.success("Recall.ai Transkription gestartet! Klicke in 1-2 Minuten auf 'Transkript neu laden'.");
                   } catch (err: any) {
                       console.error('Recall transcription error:', err);
-                      // Check if error message indicates no recordings
-                      const msg = err?.message || String(err);
-                      if (msg.includes('non-2xx') || msg.includes('400')) {
-                        toast.error("Dieser Bot hat keine Aufnahmen erzeugt. Ein Transkript kann nicht erstellt werden.");
-                      } else {
-                        toast.error("Recall Transkription fehlgeschlagen");
-                      }
+                      toast.error("Recall Transkription fehlgeschlagen");
                   } finally {
                     setIsRecallTranscribing(false);
                   }

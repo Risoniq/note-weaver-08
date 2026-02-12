@@ -107,8 +107,8 @@ serve(async (req) => {
     console.log("Bot data recordings:", JSON.stringify(botData.recordings));
 
     if (!botData.recordings || botData.recordings.length === 0) {
-      return new Response(JSON.stringify({ error: "Keine Aufnahmen beim Recall Bot gefunden" }), {
-        status: 400,
+      return new Response(JSON.stringify({ success: false, error: "Keine Aufnahmen beim Recall Bot gefunden" }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
