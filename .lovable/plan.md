@@ -1,45 +1,54 @@
 
 
-## Aufnahmen-Ansicht: Listenansicht mit Benutzer-Infos und Filter
+## Admin-Ansicht: Account-Zuordnung in /recordings
 
 ### Ziel
-Die Aufnahmen werden in einer vertikalen Liste (statt im 3-Spalten-Grid) angezeigt, mit Informationen zum jeweiligen Benutzer/Account und einer Filteroption nach Benutzer.
+Admins sehen bei jeder Aufnahme, von welchem Benutzer-Account sie stammt (E-Mail-Adresse), und koennen nach Benutzern filtern.
 
 ### Aenderungen
 
-**1. RecordingsList: Grid durch Listenansicht ersetzen**
-- Das aktuelle 3-Spalten-Grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`) wird durch eine einspaltige Liste (`space-y-3`) ersetzt
-- Jede Karte zeigt den Besitzer (E-Mail) als Badge an, nicht nur im Team-Modus
+**1. `teamlead-recordings` Edge Function erweitern**
+- Neben der bestehenden Teamlead-Pruefung wird ein zweiter Pfad fuer Admins hinzugefuegt
+- Wenn der Benutzer Admin ist (geprueft via `has_role`), werden ALLE Recordings aller Benutzer geladen (statt nur Team-Mitglieder)
+- Alle Benutzer-E-Mails werden aufgeloest und als `owner_email` an jede Aufnahme angehaengt
+- Die Antwort enthaelt eine `members`-Liste mit allen Benutzern (user_id + email), damit der Filter funktioniert
 
-**2. RecordingCard: Mehr Informationen anzeigen**
-- Zusammenfassung (summary) als Vorschautext hinzufuegen (1-2 Zeilen, abgeschnitten)
-- Besitzer-E-Mail als zusaetzliches Metadatum anzeigen (neues optionales Prop `ownerEmail`)
-- Teilnehmer-Anzahl anzeigen, wenn vorhanden
-- Layout bleibt horizontal kompakt fuer Listenansicht
+**2. `RecordingsList.tsx` anpassen**
+- Neuer Pfad: Wenn `isAdmin` und nicht impersonating, wird ebenfalls die `teamlead-recordings` Edge Function aufgerufen (die jetzt auch fuer Admins funktioniert)
+- Die `ownerEmail` wird fuer Admins IMMER angezeigt (nicht nur im Team-Modus)
+- Der `viewMode`-Check fuer die Anzeige der `ownerEmail` wird um den Admin-Fall ergaenzt
 
-**3. Recordings-Seite: Benutzer-Filter auch im Aufnahmen-Tab**
-- Der bestehende Mitglieder-Filter (Select-Dropdown) wird auch im "Aufnahmen"-Tab angezeigt, wenn Team-Modus aktiv ist
-- Die `RecordingsList`-Komponente erhaelt die `memberEmails`-Map als Prop, um Besitzer-Namen anzuzeigen
-- Der Benutzer-Filter ist bereits implementiert und wird nur sichtbar gemacht
+**3. `Recordings.tsx` anpassen**
+- Admins sehen den Mitglieder-Filter (Select-Dropdown) im Aufnahmen-Tab auch ohne Team-Modus
+- Die `memberEmails`-Map wird auch fuer Admins befuellt (ueber dieselbe Edge Function)
+- Admins brauchen keinen Team-Toggle, da sie standardmaessig alle Recordings sehen
 
 ### Technische Details
 
-**RecordingCard.tsx** - Neue Props:
+**teamlead-recordings/index.ts:**
 ```
-ownerEmail?: string   // E-Mail des Besitzers
+// Nach der Teamlead-Pruefung: Admin-Fallback
+const { data: isAdmin } = await supabaseAdmin.rpc('has_role', { 
+  _user_id: user.id, _role: 'admin' 
+});
+
+if (!membership && !isAdmin) {
+  return 403 Forbidden;
+}
+
+// Wenn Admin: alle Recordings laden, alle User-Emails aufloesen
+// Wenn Teamlead: bisherige Logik (nur Team-Members)
 ```
-Neue Anzeige-Elemente:
-- Besitzer-Badge mit User-Icon neben dem Datum
-- Summary-Text unterhalb der Meta-Infos (line-clamp-2)
 
-**RecordingsList.tsx** - Layout-Aenderung:
-- Grid-Klassen von `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4` zu `flex flex-col gap-3`
-- `ownerEmail` wird aus der `memberEmails`-Map an jede RecordingCard weitergegeben
+**RecordingsList.tsx:**
+- Admin-Bedingung in `fetchRecordings`: Wenn `isAdmin && !isImpersonating`, rufe `teamlead-recordings` auf (funktioniert jetzt auch fuer Admins)
+- `ownerEmail`-Prop wird uebergeben wenn `isAdmin` oder `isTeamView`
 
-**Recordings.tsx** - Filter-Integration:
-- `memberEmails`-Daten werden auch im Aufnahmen-Tab genutzt
-- Das Select-Dropdown fuer Mitglieder erscheint im Aufnahmen-Tab (Team-Modus)
-- Die bestehende Filter-Logik aus dem Transkripte-Tab wird wiederverwendet
+**Recordings.tsx:**
+- Filter-Dropdown wird angezeigt wenn `isAdmin || (isTeamlead && viewMode === 'team')`
+- `memberEmails` wird auch fuer Admins aus der Edge-Function-Antwort befuellt
+- Daten werden fuer Admins ueber die erweiterte Edge Function geladen
 
 ### Keine Datenbank-Aenderungen noetig
-Alle benoetigten Daten (owner_email, user_id) sind bereits ueber die `teamlead-recordings` Edge Function verfuegbar.
+Alle benoetigten Daten sind bereits vorhanden, nur die Edge Function muss um den Admin-Pfad erweitert werden.
+
