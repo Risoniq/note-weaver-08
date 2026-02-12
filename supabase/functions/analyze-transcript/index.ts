@@ -137,9 +137,28 @@ Deno.serve(async (req) => {
     const transcript = recording.transcript_text;
     console.log(`Transcript length: ${transcript.length} characters`);
 
-    // Check if a title already exists
-    const hasExistingTitle = recording.title && recording.title.trim() !== '';
-    console.log(`Has existing title: ${hasExistingTitle} (${recording.title || 'none'})`);
+    // Check if title is generic and should be overwritten by AI
+    const isGenericTitle = (title: string | null): boolean => {
+      if (!title || title.trim() === '') return true;
+      const t = title.trim().toLowerCase();
+      const genericTerms = [
+        'meeting', 'besprechung', 'untitled', 'aufnahme', 'recording',
+        'call', 'anruf', 'konferenz', 'conference', 'session',
+        'notetaker', 'note taker', 'bot',
+      ];
+      // Exact match with generic term
+      if (genericTerms.some(term => t === term)) return true;
+      // Starts with generic term + only whitespace/numbers/punctuation after
+      if (genericTerms.some(term => t.startsWith(term) && /^[\s\d\-_.:]+$/.test(t.slice(term.length)))) return true;
+      // UUID fragment (8+ hex chars)
+      if (/^[0-9a-f]{8,}/i.test(t)) return true;
+      // Very short (≤3 chars)
+      if (t.length <= 3) return true;
+      return false;
+    };
+
+    const needsTitle = isGenericTitle(recording.title);
+    console.log(`Needs title: ${needsTitle} (current: "${recording.title || 'none'}")`);
 
     // Call Lovable AI for analysis
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -152,22 +171,22 @@ Deno.serve(async (req) => {
     }
 
     // Build dynamic system prompt based on whether title is needed
-    const titleInstruction = hasExistingTitle 
+    const titleInstruction = !needsTitle 
       ? '' 
-      : '1. Einen kurzen, aussagekräftigen Titel für das Meeting basierend auf dem Inhalt (max 50 Zeichen)\n';
+      : '1. Einen spezifischen, aussagekräftigen Titel für das Meeting (max 80 Zeichen)\n';
     
-    const numbering = hasExistingTitle 
+    const numbering = !needsTitle 
       ? { summary: '1', keyPoints: '2', actionItems: '3' }
       : { summary: '2', keyPoints: '3', actionItems: '4' };
 
-    const jsonFormat = hasExistingTitle
+    const jsonFormat = !needsTitle
       ? `{
   "summary": "Zusammenfassung des Meetings...",
   "key_points": ["Punkt 1", "Punkt 2", "Punkt 3"],
   "action_items": ["Aufgabe (Verantwortlicher: Name)", "Aufgabe (Verantwortlicher: Nicht zugewiesen)"]
 }`
       : `{
-  "title": "Meeting-Titel basierend auf Inhalt",
+  "title": "Spezifischer Meeting-Titel mit Kontext",
   "summary": "Zusammenfassung des Meetings...",
   "key_points": ["Punkt 1", "Punkt 2", "Punkt 3"],
   "action_items": ["Aufgabe (Verantwortlicher: Name)", "Aufgabe (Verantwortlicher: Nicht zugewiesen)"]
@@ -183,11 +202,15 @@ WICHTIGE REGELN FÜR ACTION ITEMS:
 - Wenn eine Person eine Aufgabe übernimmt oder zugewiesen bekommt, nutze deren Namen aus dem Transkript
 - Wenn im Transkript keine konkrete Person genannt wird, die die Aufgabe übernimmt, schreibe "Verantwortlicher: Nicht zugewiesen" statt "Unbekannt"
 - Format für Action Items: "Aufgabenbeschreibung (Verantwortlicher: [Name aus Transkript])"
-${!hasExistingTitle ? `
+${needsTitle ? `
 WICHTIGE REGELN FÜR DEN TITEL:
-- Der Titel soll das Hauptthema oder den Zweck des Meetings widerspiegeln
-- Beispiele: "Projekt-Kickoff Q1", "Sales Review März", "Team Standup", "Kundengespräch Firma XY"
-- Wenn das Meeting keinen klaren Fokus hat, nutze das dominante Thema
+- Der Titel MUSS das SPEZIFISCHE Thema des Meetings widerspiegeln, NICHT nur die Meeting-Art
+- Extrahiere konkrete Firmennamen, Projektnamen, Kundennamen oder Themen aus dem Gespräch
+- Verwende Teilnehmer-Namen oder Firmen wenn sie das Meeting charakterisieren
+- Max 80 Zeichen
+- GUTE Beispiele: "Projekt Alpha - Sprint Review mit Firma XY", "Vertriebsgespräch Müller GmbH - Angebot Q2", "Produktlaunch App v3.0 - Marketingplanung"
+- SCHLECHTE Beispiele: "Team Meeting", "Besprechung", "Call", "Meeting 14.01." - diese sind zu generisch!
+- Wenn das Meeting keinen klaren Fokus hat, nutze das dominante Thema + Kontext (z.B. Teilnehmer oder Datum-Bezug)
 ` : ''}
 WEITERE REGELN:
 - Schreibe IMMER professionell und freundlich
@@ -297,10 +320,10 @@ ${jsonFormat}`;
       word_count: wordCount,
     };
 
-    // Only set title if no existing title and AI generated one
-    if (!hasExistingTitle && analysis.title) {
+    // Set title if current title is generic/missing and AI generated one
+    if (needsTitle && analysis.title) {
       updateData.title = analysis.title;
-      console.log(`Setting generated title: ${analysis.title}`);
+      console.log(`Setting generated title: ${analysis.title} (replaced generic: "${recording.title || ''}")`);
     }
 
     // Update the recording with analysis results

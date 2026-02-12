@@ -217,12 +217,26 @@ Deno.serve(async (req) => {
         if (meetings.length > 0) {
           const calendarMeeting = meetings[0]
           
-          // Meeting-Titel aus Kalender übernehmen (falls Recording noch keinen hat)
-          if (!recording.title && calendarMeeting.title) {
-            updates.title = calendarMeeting.title
-            console.log('Kalender-Titel übernommen:', calendarMeeting.title)
+          // Meeting-Titel aus Kalender übernehmen (wenn generisch oder leer)
+          if (calendarMeeting.title) {
+            const currentTitle = recording.title?.trim().toLowerCase() || '';
+            const genericTerms = ['meeting', 'besprechung', 'untitled', 'aufnahme', 'recording', 'call', 'notetaker', 'bot'];
+            const isGeneric = !currentTitle || 
+              genericTerms.some(t => currentTitle === t) ||
+              genericTerms.some(t => currentTitle.startsWith(t) && /^[\s\d\-_.:]*$/.test(currentTitle.slice(t.length))) ||
+              /^[0-9a-f]{8,}/i.test(currentTitle) ||
+              currentTitle.length <= 3;
+            
+            // Kalender-Titel auch nur setzen wenn er selbst nicht generisch ist
+            const calTitle = calendarMeeting.title.trim().toLowerCase();
+            const calIsGeneric = genericTerms.some(t => calTitle === t);
+            
+            if (isGeneric && !calIsGeneric) {
+              updates.title = calendarMeeting.title;
+              console.log('Kalender-Titel übernommen (ersetze generischen Titel):', calendarMeeting.title);
+            }
           }
-          
+
           const attendees = calendarMeeting.meeting_attendees || calendarMeeting.attendees || []
           
           if (attendees.length > 0) {
