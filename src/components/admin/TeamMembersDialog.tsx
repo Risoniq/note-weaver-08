@@ -20,9 +20,16 @@ import {
 } from '@/components/ui/select';
 import type { TeamData } from './TeamCard';
 
+interface UserTeam {
+  id: string;
+  name: string;
+  role: string;
+}
+
 interface UserData {
   id: string;
   email: string;
+  teams: UserTeam[];
   team_id: string | null;
   team_name: string | null;
   team_role: string | null;
@@ -34,8 +41,8 @@ interface TeamMembersDialogProps {
   team: TeamData | null;
   users: UserData[];
   onAssign: (userId: string, teamId: string, role?: string) => Promise<void>;
-  onRemove: (userId: string) => Promise<void>;
-  onSetRole: (userId: string, role: string) => Promise<void>;
+  onRemove: (userId: string, teamId: string) => Promise<void>;
+  onSetRole: (userId: string, role: string, teamId: string) => Promise<void>;
   isLoading?: boolean;
 }
 
@@ -52,21 +59,26 @@ export function TeamMembersDialog({
   const [searchQuery, setSearchQuery] = useState('');
 
   const teamMembers = useMemo(() => 
-    users.filter(u => u.team_id === team?.id),
+    users.filter(u => (u.teams || []).some(t => t.id === team?.id)),
     [users, team]
   );
 
   const availableUsers = useMemo(() => {
     const query = searchQuery.toLowerCase();
     return users
-      .filter(u => u.team_id !== team?.id)
+      .filter(u => !(u.teams || []).some(t => t.id === team?.id))
       .filter(u => u.email.toLowerCase().includes(query));
   }, [users, team, searchQuery]);
 
   if (!team) return null;
 
+  const getMemberRole = (user: UserData): string => {
+    const membership = (user.teams || []).find(t => t.id === team.id);
+    return membership?.role || 'member';
+  };
+
   const handleRoleChange = async (userId: string, newRole: string) => {
-    await onSetRole(userId, newRole);
+    await onSetRole(userId, newRole, team.id);
   };
 
   return (
@@ -94,14 +106,20 @@ export function TeamMembersDialog({
                   {teamMembers.map(member => (
                     <div key={member.id} className="flex items-center justify-between p-2 bg-muted rounded">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                        {member.team_role === 'lead' && (
+                        {getMemberRole(member) === 'lead' && (
                           <Crown className="h-4 w-4 text-amber-500 flex-shrink-0" />
                         )}
                         <span className="text-sm truncate">{member.email}</span>
+                        {/* Show other team badges */}
+                        {(member.teams || []).filter(t => t.id !== team.id).map(t => (
+                          <Badge key={t.id} variant="outline" className="text-xs flex-shrink-0">
+                            {t.name}
+                          </Badge>
+                        ))}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <Select
-                          value={member.team_role || 'member'}
+                          value={getMemberRole(member)}
                           onValueChange={(value) => handleRoleChange(member.id, value)}
                           disabled={isLoading}
                         >
@@ -116,7 +134,7 @@ export function TeamMembersDialog({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => onRemove(member.id)}
+                          onClick={() => onRemove(member.id, team.id)}
                           disabled={isLoading}
                         >
                           <X className="h-4 w-4" />
@@ -152,11 +170,11 @@ export function TeamMembersDialog({
                     <div key={user.id} className="flex items-center justify-between p-2 hover:bg-muted rounded">
                       <div className="flex items-center gap-2">
                         <span className="text-sm">{user.email}</span>
-                        {user.team_name && (
-                          <Badge variant="outline" className="text-xs">
-                            {user.team_name}
+                        {(user.teams || []).map(t => (
+                          <Badge key={t.id} variant="outline" className="text-xs">
+                            {t.name}
                           </Badge>
-                        )}
+                        ))}
                       </div>
                       <Button
                         variant="outline"

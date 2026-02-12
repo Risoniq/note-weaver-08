@@ -41,10 +41,11 @@ interface RecordingWithOwner extends Recording {
 }
 
 const Recordings = () => {
-  const { isTeamlead, isLoading: teamleadLoading, teamName, teamMembers } = useTeamleadCheck();
+  const { isTeamlead, isLoading: teamleadLoading, teamName, teamMembers, leadTeams } = useTeamleadCheck();
   const { isAdmin } = useAdminCheck();
   const { user } = useAuth();
   const [viewMode, setViewMode] = useState<'personal' | 'team'>('personal');
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
   const [recordingsSearchQuery, setRecordingsSearchQuery] = useState("");
   // --- Transcript tab state ---
@@ -306,19 +307,44 @@ const Recordings = () => {
 
           {/* Team Toggle for Teamleads */}
           {isTeamlead && !teamleadLoading && (
-            <ToggleGroup
-              type="single"
-              value={viewMode}
-              onValueChange={(v) => v && setViewMode(v as 'personal' | 'team')}
-            >
-              <ToggleGroupItem value="personal" aria-label="Meine Meetings">
-                Meine
-              </ToggleGroupItem>
-              <ToggleGroupItem value="team" aria-label="Team-Meetings">
-                <Users className="h-4 w-4 mr-1" />
-                Team
-              </ToggleGroupItem>
-            </ToggleGroup>
+            <div className="flex items-center gap-2">
+              <ToggleGroup
+                type="single"
+                value={viewMode}
+                onValueChange={(v) => {
+                  if (v) {
+                    setViewMode(v as 'personal' | 'team');
+                    if (v === 'team' && leadTeams.length > 0 && !selectedTeamId) {
+                      setSelectedTeamId(leadTeams.length > 1 ? null : leadTeams[0].id);
+                    }
+                  }
+                }}
+              >
+                <ToggleGroupItem value="personal" aria-label="Meine Meetings">
+                  Meine
+                </ToggleGroupItem>
+                <ToggleGroupItem value="team" aria-label="Team-Meetings">
+                  <Users className="h-4 w-4 mr-1" />
+                  Team
+                </ToggleGroupItem>
+              </ToggleGroup>
+              {viewMode === 'team' && leadTeams.length > 1 && (
+                <Select
+                  value={selectedTeamId || 'all'}
+                  onValueChange={(v) => setSelectedTeamId(v === 'all' ? null : v)}
+                >
+                  <SelectTrigger className="w-40 h-9">
+                    <SelectValue placeholder="Alle Teams" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Alle Teams</SelectItem>
+                    {leadTeams.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
           )}
         </div>
 

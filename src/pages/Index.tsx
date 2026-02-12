@@ -7,6 +7,13 @@ import { TeamAnalyticsCard } from "@/components/dashboard/TeamAnalyticsCard";
 import { AudioUploadCard } from "@/components/dashboard/AudioUploadCard";
 import { Toaster } from "@/components/ui/toaster";
 import { RefreshCw, AlertTriangle, ArrowRight } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -20,7 +27,8 @@ import { useAutoStartTour } from "@/hooks/useOnboardingTour";
 const Index = () => {
   const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
   const { quota, loading: quotaLoading } = useUserQuota();
-  const { isTeamlead, teamName } = useTeamleadCheck();
+  const { isTeamlead, teamName, leadTeams } = useTeamleadCheck();
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [showExhaustedModal, setShowExhaustedModal] = useState(false);
 
   // Auto-start onboarding tour for first-time users
@@ -84,9 +92,26 @@ const Index = () => {
                 <AudioUploadCard />
               </GlassCard>
               
-              <GlassCard title={isTeamlead ? `Team-Analyse: ${teamName}` : 'Account-Analyse'}>
+              <GlassCard title={isTeamlead ? `Team-Analyse${leadTeams.length > 1 ? '' : ': ' + teamName}` : 'Account-Analyse'}>
                 {isTeamlead ? (
-                  <TeamAnalyticsCard />
+                  <div className="space-y-2">
+                    {leadTeams.length > 1 && (
+                      <Select
+                        value={selectedTeamId || leadTeams[0]?.id || ''}
+                        onValueChange={setSelectedTeamId}
+                      >
+                        <SelectTrigger className="w-full h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {leadTeams.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <TeamAnalyticsCard teamId={selectedTeamId || leadTeams[0]?.id || null} />
+                  </div>
                 ) : (
                   <AccountAnalyticsCard />
                 )}

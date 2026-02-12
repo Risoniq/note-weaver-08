@@ -55,6 +55,12 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
+interface UserTeam {
+  id: string;
+  name: string;
+  role: string;
+}
+
 interface UserData {
   id: string;
   email: string;
@@ -70,9 +76,10 @@ interface UserData {
   is_admin: boolean;
   max_minutes: number;
   used_minutes: number;
+  teams: UserTeam[];
   team_id: string | null;
   team_name: string | null;
-  team_role: string | null; // 'member', 'lead', or null
+  team_role: string | null;
 }
 
 interface Summary {
@@ -431,7 +438,7 @@ const Admin = () => {
     }
   };
 
-  const handleRemoveTeamMember = async (userId: string) => {
+  const handleRemoveTeamMember = async (userId: string, teamId: string) => {
     setActionLoading(userId);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -442,7 +449,7 @@ const Admin = () => {
           headers: {
             Authorization: `Bearer ${sessionData.session.access_token}`,
           },
-          body: { user_id: userId, action: 'remove' },
+          body: { user_id: userId, team_id: teamId, action: 'remove' },
         })
       );
 
@@ -465,7 +472,7 @@ const Admin = () => {
     }
   };
 
-  const handleSetTeamRole = async (userId: string, role: string) => {
+  const handleSetTeamRole = async (userId: string, role: string, teamId: string) => {
     setActionLoading(userId);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -476,7 +483,7 @@ const Admin = () => {
           headers: {
             Authorization: `Bearer ${sessionData.session.access_token}`,
           },
-          body: { user_id: userId, action: 'set-role', role },
+          body: { user_id: userId, action: 'set-role', role, team_id: teamId },
         })
       );
 
@@ -866,28 +873,22 @@ const Admin = () => {
                             </TableCell>
                             <TableCell>{getStatusBadge(user)}</TableCell>
                             <TableCell>
-                              <Select
-                                value={user.team_id || 'none'}
-                                onValueChange={(value) => {
-                                  if (value === 'none') {
-                                    handleRemoveTeamMember(user.id);
-                                  } else {
-                                    handleAssignTeamMember(user.id, value);
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="w-32 h-8">
-                                  <SelectValue placeholder="Kein Team" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">Kein Team</SelectItem>
-                                  {teams.map((team) => (
-                                    <SelectItem key={team.id} value={team.id}>
-                                      {team.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div className="flex flex-wrap gap-1">
+                                {(user.teams || []).length === 0 ? (
+                                  <span className="text-muted-foreground text-sm">Kein Team</span>
+                                ) : (
+                                  (user.teams || []).map((ut) => (
+                                    <Badge
+                                      key={ut.id}
+                                      variant={ut.role === 'lead' ? 'default' : 'secondary'}
+                                      className="text-xs"
+                                    >
+                                      {ut.role === 'lead' && '👑 '}
+                                      {ut.name}
+                                    </Badge>
+                                  ))
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2 min-w-[160px]">

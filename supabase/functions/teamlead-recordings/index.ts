@@ -23,7 +23,6 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 
-    // Verify user authentication
     const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -38,13 +37,19 @@ Deno.serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check if user is a team lead
-    const { data: membership, error: membershipError } = await supabaseAdmin
+    // Optional: filter by specific team_id
+    let requestedTeamId: string | null = null;
+    try {
+      const url = new URL(req.url);
+      requestedTeamId = url.searchParams.get('team_id');
+    } catch {}
+
+    // Check if user is a team lead (can be in multiple teams)
+    const { data: memberships, error: membershipError } = await supabaseAdmin
       .from('team_members')
       .select('team_id, role, teams(id, name, max_minutes)')
       .eq('user_id', user.id)
-      .eq('role', 'lead')
-      .maybeSingle();
+      .eq('role', 'lead');
 
     if (membershipError) {
       console.error('Membership check error:', membershipError);
@@ -60,17 +65,23 @@ Deno.serve(async (req) => {
       _role: 'admin',
     });
 
-    if (!membership && !isAdmin) {
+    if ((!memberships || memberships.length === 0) && !isAdmin) {
       return new Response(JSON.stringify({ error: 'Forbidden - Teamlead or Admin access required' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    let memberUserIds: string[] = [];
-    let teamMembersData: any[] = [];
+    // Get all auth users for email resolution
+    const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
+    const userEmailMap = new Map<string, string>();
+    if (authUsers?.users) {
+      for (const u of authUsers.users) {
+        userEmailMap.set(u.id, u.email || 'Unknown');
+      }
+    }
 
-    if (isAdmin && !membership) {
+    if (isAdmin && (!memberships || memberships.length === 0)) {
       // Admin path: fetch ALL recordings from all users
       const { data: allRecordings, error: allRecError } = await supabaseAdmin
         .from('recordings')
@@ -85,17 +96,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Collect unique user IDs from recordings
       const uniqueUserIds = [...new Set((allRecordings || []).map(r => r.user_id).filter(Boolean))];
-
-      // Resolve all user emails
-      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const userEmailMap = new Map<string, string>();
-      if (authUsers?.users) {
-        for (const u of authUsers.users) {
-          userEmailMap.set(u.id, u.email || 'Unknown');
-        }
-      }
 
       const recordingsWithOwner = (allRecordings || []).map(rec => ({
         ...rec,
@@ -119,11 +120,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Teamlead path: existing logic
+    // Teamlead path: collect members from all lead teams (or specific team)
+    const leadTeamIds = memberships!.map(m => m.team_id);
+    const targetTeamIds = requestedTeamId && leadTeamIds.includes(requestedTeamId)
+      ? [requestedTeamId]
+      : leadTeamIds;
+
+    // Fetch all team members from target teams
     const { data: teamMembers, error: teamMembersError } = await supabaseAdmin
       .from('team_members')
-      .select('user_id, role')
-      .eq('team_id', membership.team_id);
+      .select('user_id, role, team_id')
+      .in('team_id', targetTeamIds);
 
     if (teamMembersError) {
       console.error('Team members fetch error:', teamMembersError);
@@ -133,29 +140,50 @@ Deno.serve(async (req) => {
       });
     }
 
-    memberUserIds = teamMembers?.map(m => m.user_id) || [];
+    // Deduplicate member user IDs across teams
+    const memberUserIds = [...new Set(teamMembers?.map(m => m.user_id) || [])];
 
-    // Get user emails for display
-    const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-    const userEmailMap = new Map<string, string>();
-    if (authUsers?.users) {
-      for (const u of authUsers.users) {
-        if (memberUserIds.includes(u.id)) {
-          userEmailMap.set(u.id, u.email || 'Unknown');
-        }
-      }
-    }
-
-    // Build team members list with emails
     const membersWithInfo = teamMembers?.map(m => ({
       user_id: m.user_id,
       role: m.role,
+      team_id: m.team_id,
       email: userEmailMap.get(m.user_id) || 'Unknown',
     })) || [];
 
+    // Deduplicate members for the response
+    const uniqueMembers = Array.from(
+      new Map(membersWithInfo.map(m => [m.user_id, m])).values()
+    );
+
+    // Fetch recordings for all team member user IDs
+    const { data: teamRecordings, error: recError } = await supabaseAdmin
+      .from('recordings')
+      .select('*')
+      .in('user_id', memberUserIds)
+      .order('created_at', { ascending: false });
+
+    if (recError) {
+      console.error('Recordings fetch error:', recError);
+      return new Response(JSON.stringify({ error: 'Failed to fetch recordings' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const recordingsWithOwner = (teamRecordings || []).map(rec => ({
+      ...rec,
+      owner_email: userEmailMap.get(rec.user_id) || 'Unknown',
+      is_own: rec.user_id === user.id,
+    }));
+
+    // Return first team info or combined
+    const teamInfo = targetTeamIds.length === 1
+      ? memberships!.find(m => m.team_id === targetTeamIds[0])?.teams
+      : { name: 'Alle Teams' };
+
     return new Response(JSON.stringify({
-      team: membership.teams,
-      members: membersWithInfo,
+      team: teamInfo,
+      members: uniqueMembers,
       recordings: recordingsWithOwner,
     }), {
       status: 200,

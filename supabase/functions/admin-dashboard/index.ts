@@ -214,8 +214,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Build team membership map (user_id -> team info)
-    const teamMemberMap = new Map<string, { teamId: string; teamName: string; teamRole: string }>();
+    // Build team membership map (user_id -> array of team memberships)
+    const teamMemberMap = new Map<string, { teamId: string; teamName: string; teamRole: string }[]>();
     const teamMemberCounts = new Map<string, number>();
     const teamLeadsMap = new Map<string, string[]>(); // team_id -> lead emails
     if (teamMembers && teams) {
@@ -223,11 +223,13 @@ Deno.serve(async (req) => {
       for (const tm of teamMembers) {
         const team = teamsById.get(tm.team_id);
         if (team) {
-          teamMemberMap.set(tm.user_id, {
+          const existing = teamMemberMap.get(tm.user_id) || [];
+          existing.push({
             teamId: tm.team_id,
             teamName: team.name,
-            teamRole: tm.role, // 'member' or 'lead'
+            teamRole: tm.role,
           });
+          teamMemberMap.set(tm.user_id, existing);
           teamMemberCounts.set(tm.team_id, (teamMemberCounts.get(tm.team_id) || 0) + 1);
           
           // Track team leads
@@ -294,18 +296,29 @@ Deno.serve(async (req) => {
       const calendar = calendarMap.get(user.id) || { google: false, microsoft: false };
       const onlineStatus = getUserOnlineStatus(user.id);
       const roles = rolesMap.get(user.id) || { isApproved: false, isAdmin: false };
-      const teamInfo = teamMemberMap.get(user.id);
+      const userTeams = teamMemberMap.get(user.id) || [];
       
-      // If user is in a team, show team quota, otherwise individual quota
+      // If user is in team(s), use the highest team quota, otherwise individual
       let maxMinutes: number;
       let usedMinutes: number;
       
-      if (teamInfo) {
-        const team = teams?.find(t => t.id === teamInfo.teamId);
-        maxMinutes = team?.max_minutes ?? 600;
-        usedMinutes = teamUsedMinutesMap.get(teamInfo.teamId) ?? 0;
+      if (userTeams.length > 0) {
+        // Use highest team quota across all teams
+        let bestMaxMinutes = 0;
+        let bestUsedMinutes = 0;
+        for (const ut of userTeams) {
+          const team = teams?.find(t => t.id === ut.teamId);
+          const teamMax = team?.max_minutes ?? 600;
+          const teamUsed = teamUsedMinutesMap.get(ut.teamId) ?? 0;
+          if (teamMax > bestMaxMinutes) {
+            bestMaxMinutes = teamMax;
+            bestUsedMinutes = teamUsed;
+          }
+        }
+        maxMinutes = bestMaxMinutes;
+        usedMinutes = bestUsedMinutes;
       } else {
-        maxMinutes = quotaMap.get(user.id) ?? 120; // Default 2h
+        maxMinutes = quotaMap.get(user.id) ?? 120;
         usedMinutes = Math.round(stats.duration / 60);
       }
 
@@ -324,9 +337,12 @@ Deno.serve(async (req) => {
         is_admin: roles.isAdmin,
         max_minutes: maxMinutes,
         used_minutes: usedMinutes,
-        team_id: teamInfo?.teamId || null,
-        team_name: teamInfo?.teamName || null,
-        team_role: teamInfo?.teamRole || null, // 'member', 'lead', or null
+        // Multi-team: return teams array
+        teams: userTeams.map(ut => ({ id: ut.teamId, name: ut.teamName, role: ut.teamRole })),
+        // Backwards compat: first team
+        team_id: userTeams[0]?.teamId || null,
+        team_name: userTeams[0]?.teamName || null,
+        team_role: userTeams[0]?.teamRole || null,
       };
     });
 

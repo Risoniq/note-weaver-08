@@ -7,15 +7,20 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 
-export const TeamAnalyticsCard = () => {
-  const { isTeamlead, teamId, teamName } = useTeamleadCheck();
+interface TeamAnalyticsCardProps {
+  teamId?: string | null;
+}
+
+export const TeamAnalyticsCard = ({ teamId: propTeamId }: TeamAnalyticsCardProps) => {
+  const { isTeamlead, teamId: hookTeamId, teamName } = useTeamleadCheck();
+  const activeTeamId = propTeamId ?? hookTeamId;
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [memberEmails, setMemberEmails] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchTeamRecordings = async () => {
-      if (!isTeamlead || !teamId) {
+      if (!isTeamlead || !activeTeamId) {
         setLoading(false);
         return;
       }
@@ -51,7 +56,7 @@ export const TeamAnalyticsCard = () => {
     };
 
     fetchTeamRecordings();
-  }, [isTeamlead, teamId]);
+  }, [isTeamlead, activeTeamId]);
 
   const analytics = useMemo<AccountAnalytics | null>(() => {
     if (recordings.length === 0) return null;
