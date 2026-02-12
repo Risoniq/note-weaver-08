@@ -1,54 +1,25 @@
 
 
-## Fix: Auto-Ingest erstellt Recordings fuer zukuenftige Meetings
-
-### Problem
-
-Die Auto-Ingest-Logik in der `recall-calendar-meetings` Edge Function (Zeile 476) erstellt Recording-Eintraege fuer **alle** Kalender-Meetings, die eine `bot_id` haben - auch fuer Meetings, die erst morgen oder spaeter stattfinden. Das fuehrt dazu, dass auf der Aufnahmen-Seite viele Meetings mit dem Status "Aufnahme laeuft" angezeigt werden, obwohl diese noch gar nicht begonnen haben.
-
-### Ursache
-
-```typescript
-// Aktuell: filtert nur nach bot_id, ignoriert Zeitpunkt
-const meetingsWithBots = meetings.filter((m: any) => m.bot_id);
-```
-
-### Loesung
-
-Die Auto-Ingest-Logik soll nur Meetings beruecksichtigen, deren `start_time` in der Vergangenheit liegt (also Meetings die bereits begonnen haben oder laufen). Zukuenftige Meetings sollen ignoriert werden.
+## Buttons verschieben: Share und Loeschen aus Header entfernen, Share in Toolbar
 
 ### Aenderungen
 
-**1. Edge Function `recall-calendar-meetings/index.ts` (Zeile 476)**
+**Datei: `src/pages/MeetingDetail.tsx`**
 
-Filter erweitern: Nur Meetings mit `bot_id` UND `start_time <= jetzt` werden auto-ingested.
+1. **Header-Bereich (Zeilen 818-837)**: Die beiden Buttons "Meeting teilen" (Share2) und "Meeting loeschen" (Trash2) werden komplett aus dem Header entfernt. Dort bleibt nur der Status-Badge und der Aktualisieren-Button.
 
-```typescript
-const now = new Date();
-const meetingsWithBots = meetings.filter((m: any) => 
-  m.bot_id && new Date(m.start_time) <= now
-);
-```
+2. **Transkript-Toolbar (Zeilen 1048-1068)**: Der Share-Button wird zwischen "Transkript neu laden" und "Bericht herunterladen" eingefuegt. Die Toolbar bekommt dann drei Buttons:
+   - Transkript neu laden (links)
+   - Meeting teilen (Mitte/rechts)
+   - Bericht herunterladen (rechts)
 
-**2. Aufraumen: Falsch erstellte Recordings loeschen**
+3. **Loeschen-Button**: Wird ebenfalls in die Toolbar verschoben (ganz rechts), damit er weiterhin erreichbar ist, aber nicht prominent im Header steht.
 
-Die bereits faelschlich erstellten Recordings fuer den User as@ec-pd.com muessen bereinigt werden. Ueber eine Datenbank-Migration werden alle Recordings mit Status "recording" oder "pending" geloescht, die am 2026-02-12 um 20:27 massenweise erstellt wurden (erkennbar daran, dass alle innerhalb einer Sekunde erstellt wurden und keinen Transcript/Video haben).
-
-SQL-Migration:
-```sql
-DELETE FROM recordings
-WHERE user_id = (SELECT id FROM auth.users WHERE email = 'as@ec-pd.com')
-  AND status IN ('pending', 'recording')
-  AND created_at >= '2026-02-12T20:27:22Z'
-  AND created_at <= '2026-02-12T20:27:24Z'
-  AND transcript_text IS NULL
-  AND video_url IS NULL;
-```
-
-### Zusammenfassung
+### Technische Details
 
 | Datei | Aenderung |
 |-------|-----------|
-| `supabase/functions/recall-calendar-meetings/index.ts` | Filter um Zeitpruefung erweitern (nur vergangene/laufende Meetings) |
-| Migration SQL | Falsch erstellte Recordings bereinigen |
+| `src/pages/MeetingDetail.tsx` | Share + Delete Buttons aus Header entfernen (Zeilen 818-837), Share Button in Transkript-Toolbar einfuegen (nach Zeile 1058) |
+
+Keine weiteren Dateien betroffen.
 
