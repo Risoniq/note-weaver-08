@@ -473,7 +473,8 @@ Deno.serve(async (req) => {
 
       // ========== AUTO-INGESTION: Create missing recordings for calendar bots ==========
       try {
-        const meetingsWithBots = meetings.filter((m: any) => m.bot_id);
+        const now = new Date();
+        const meetingsWithBots = meetings.filter((m: any) => m.bot_id && new Date(m.start_time) <= now);
         if (meetingsWithBots.length > 0) {
           const botIds = meetingsWithBots.map((m: any) => m.bot_id);
           console.log('[auto-ingest] Checking bot_ids:', botIds);
