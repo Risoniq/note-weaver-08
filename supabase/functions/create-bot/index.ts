@@ -425,7 +425,8 @@ Deno.serve(async (req) => {
               language_code: "auto"
             }
           }
-        }
+        },
+        meeting_metadata: {}
       }
     };
     
