@@ -1,43 +1,45 @@
 
 
-## Recordings reparieren und aufraumen
+## Aufnahmen-Ansicht: Listenansicht mit Benutzer-Infos und Filter
 
-### 1. Recording `095908e4` synchronisieren (reparierbar)
+### Ziel
+Die Aufnahmen werden in einer vertikalen Liste (statt im 3-Spalten-Grid) angezeigt, mit Informationen zum jeweiligen Benutzer/Account und einer Filteroption nach Benutzer.
 
-Dieses Recording hat bei Recall.ai sowohl ein **Video** als auch ein **Transkript** (Streaming-Transkript), wurde aber nie korrekt in die Datenbank synchronisiert. 
+### Aenderungen
 
-**Aktion:** `sync-recording` mit `force_resync: true` fuer Recording-ID `095908e4-22a7-4f44-b4c9-b07189a8e735` aufrufen. Das holt Video-URL und Transkript von Recall.ai, speichert es in der DB und startet die KI-Analyse.
+**1. RecordingsList: Grid durch Listenansicht ersetzen**
+- Das aktuelle 3-Spalten-Grid (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`) wird durch eine einspaltige Liste (`space-y-3`) ersetzt
+- Jede Karte zeigt den Besitzer (E-Mail) als Badge an, nicht nur im Team-Modus
 
-### 2. Nicht reparierbare Recordings aufraumen
+**2. RecordingCard: Mehr Informationen anzeigen**
+- Zusammenfassung (summary) als Vorschautext hinzufuegen (1-2 Zeilen, abgeschnitten)
+- Besitzer-E-Mail als zusaetzliches Metadatum anzeigen (neues optionales Prop `ownerEmail`)
+- Teilnehmer-Anzahl anzeigen, wenn vorhanden
+- Layout bleibt horizontal kompakt fuer Listenansicht
 
-6 Recordings haben bei Recall.ai **keine Aufnahmen**, weil die Bots entweder:
-- aus dem Warteraum gekickt wurden (5x)
-- einen ungueltigen Meeting-Link hatten (1x)
+**3. Recordings-Seite: Benutzer-Filter auch im Aufnahmen-Tab**
+- Der bestehende Mitglieder-Filter (Select-Dropdown) wird auch im "Aufnahmen"-Tab angezeigt, wenn Team-Modus aktiv ist
+- Die `RecordingsList`-Komponente erhaelt die `memberEmails`-Map als Prop, um Besitzer-Namen anzuzeigen
+- Der Benutzer-Filter ist bereits implementiert und wird nur sichtbar gemacht
 
-Diese Recordings blockieren die Ansicht und zeigen leere Eintraege.
+### Technische Details
 
-**Aktion:** Status dieser 6 Recordings auf `"error"` setzen und einen beschreibenden Titel hinzufuegen, damit klar ist, warum kein Transkript vorhanden ist:
+**RecordingCard.tsx** - Neue Props:
+```
+ownerEmail?: string   // E-Mail des Besitzers
+```
+Neue Anzeige-Elemente:
+- Besitzer-Badge mit User-Icon neben dem Datum
+- Summary-Text unterhalb der Meta-Infos (line-clamp-2)
 
-| Recording ID | Neuer Titel |
-|---|---|
-| `b49363db-...` | "Bot aus Warteraum entfernt" |
-| `8ef3df81-...` | Behaelt "AH Lambeck Sven Krause Teil 1" (hat schon Titel) |
-| `a40679da-...` | "Bot aus Warteraum entfernt" |
-| `298d8ac7-...` | "Meeting-Link ungueltig" |
-| `89a1b149-...` | "Bot aus Warteraum entfernt" |
-| `fb309341-...` | "Bot Warteraum-Timeout" |
+**RecordingsList.tsx** - Layout-Aenderung:
+- Grid-Klassen von `grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4` zu `flex flex-col gap-3`
+- `ownerEmail` wird aus der `memberEmails`-Map an jede RecordingCard weitergegeben
 
-### 3. Laufendes Recording belassen
+**Recordings.tsx** - Filter-Integration:
+- `memberEmails`-Daten werden auch im Aufnahmen-Tab genutzt
+- Das Select-Dropdown fuer Mitglieder erscheint im Aufnahmen-Tab (Team-Modus)
+- Die bestehende Filter-Logik aus dem Transkripte-Tab wird wiederverwendet
 
-Recording `9d9bc207` (Bot `e083c609`) ist aktuell im Status "recording" - das Meeting laeuft gerade. Hier wird nichts geaendert.
-
-### 4. Geplantes Meeting belassen
-
-Recording `f96acac5` (Meeting am 23.02.2026) ist korrekt im Status "pending".
-
-### Technische Umsetzung
-
-1. **sync-recording aufrufen** fuer `095908e4` (ueber Edge Function curl)
-2. **SQL-Update** fuer die 6 nicht reparierbaren Recordings: Status auf `error`, Titel setzen
-3. Keine Code-Aenderungen noetig - nur Daten-Operationen
-
+### Keine Datenbank-Aenderungen noetig
+Alle benoetigten Daten (owner_email, user_id) sind bereits ueber die `teamlead-recordings` Edge Function verfuegbar.
