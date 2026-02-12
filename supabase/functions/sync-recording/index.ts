@@ -200,6 +200,31 @@ Deno.serve(async (req) => {
     // 7. Daten vorbereiten für Update
     const updates: Record<string, unknown> = { status: status }
 
+    // 7.0 Meeting-Titel aus Recall.ai Plattform-Metadaten extrahieren (bei manuellem Beitritt)
+    try {
+      const metadataTitle = botData.recordings?.[0]?.media_shortcuts?.meeting_metadata?.data?.title;
+      if (metadataTitle && metadataTitle.trim()) {
+        const currentTitle = recording.title?.trim().toLowerCase() || '';
+        const genericTerms = ['meeting', 'besprechung', 'untitled', 'aufnahme', 'recording', 'call', 'notetaker', 'bot'];
+        const isGenericMeta = !currentTitle || 
+          genericTerms.some(t => currentTitle === t) ||
+          genericTerms.some(t => currentTitle.startsWith(t) && /^[\s\d\-_.:]*$/.test(currentTitle.slice(t.length))) ||
+          /^[0-9a-f]{8,}/i.test(currentTitle) ||
+          currentTitle.length <= 3;
+        
+        if (isGenericMeta) {
+          updates.title = metadataTitle.trim();
+          console.log('Meeting-Titel aus Plattform-Metadata uebernommen:', metadataTitle);
+        } else {
+          console.log('Behalte bestehenden Titel (nicht generisch):', recording.title);
+        }
+      } else {
+        console.log('Keine Meeting-Metadata von Recall.ai verfuegbar');
+      }
+    } catch (metaError) {
+      console.error('Fehler beim Auslesen der Meeting-Metadata:', metaError);
+    }
+
     // 7a. Kalender-Teilnehmer von Recall.ai abrufen und speichern
     try {
       const meetingsResponse = await fetch(`https://eu-central-1.recall.ai/api/v1/calendar/meetings/?bot_id=${recording.recall_bot_id}`, {
