@@ -66,10 +66,18 @@ export const RecordingCard = ({ recording, onClick, isDeleted, onRestore, ownerE
                 </h3>
               </div>
             )}
-            <Badge className={`shrink-0 ${getStatusColor(displayStatus)}`}>
-              {isAnalyzing && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-              {getStatusLabel(displayStatus)}
-            </Badge>
+            <div className="flex items-center gap-2 shrink-0">
+              {ownerEmail && (
+                <Badge className="bg-primary/15 text-primary border border-primary/30 hover:bg-primary/20">
+                  <User className="h-3 w-3 mr-1" />
+                  {ownerEmail}
+                </Badge>
+              )}
+              <Badge className={getStatusColor(displayStatus)}>
+                {isAnalyzing && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                {getStatusLabel(displayStatus)}
+              </Badge>
+            </div>
           </div>
 
           {/* Meta row: date, duration, owner, participants */}
@@ -86,12 +94,6 @@ export const RecordingCard = ({ recording, onClick, isDeleted, onRestore, ownerE
                 <span>{duration}</span>
               </div>
             ) : null}
-            {ownerEmail && (
-              <div className="flex items-center gap-1.5">
-                <User className="h-3.5 w-3.5" />
-                <span>{ownerEmail}</span>
-              </div>
-            )}
             {participantCount > 0 && (
               <div className="flex items-center gap-1.5">
                 <UsersIcon className="h-3.5 w-3.5" />
