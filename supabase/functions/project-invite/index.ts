@@ -24,7 +24,107 @@ Deno.serve(async (req) => {
     if (authError || !user) throw new Error("Unauthorized");
 
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
-    const { action, projectId, email, memberId } = await req.json();
+    const body = await req.json();
+    const { action, projectId, email, memberId, userId: bodyUserId } = body;
+
+    // ── LIST TEAM MEMBERS ──
+    if (action === "list-team-members") {
+      if (!projectId) throw new Error("projectId required");
+
+      // Get caller's teams
+      const { data: myTeamRows } = await supabaseAdmin
+        .from("team_members")
+        .select("team_id")
+        .eq("user_id", user.id);
+      const teamIds = (myTeamRows ?? []).map((t: any) => t.team_id);
+
+      if (teamIds.length === 0) {
+        return new Response(JSON.stringify({ members: [] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get team names
+      const { data: teams } = await supabaseAdmin
+        .from("teams")
+        .select("id, name")
+        .in("id", teamIds);
+      const teamMap = new Map((teams ?? []).map((t: any) => [t.id, t.name]));
+
+      // Get all members of those teams (excluding caller)
+      const { data: allMembers } = await supabaseAdmin
+        .from("team_members")
+        .select("user_id, team_id")
+        .in("team_id", teamIds)
+        .neq("user_id", user.id);
+
+      // Deduplicate user_ids
+      const uniqueUserIds = [...new Set((allMembers ?? []).map((m: any) => m.user_id))];
+      if (uniqueUserIds.length === 0) {
+        return new Response(JSON.stringify({ members: [] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Resolve emails
+      const { data: { users: allUsers } } = await supabaseAdmin.auth.admin.listUsers();
+      const userEmailMap = new Map((allUsers ?? []).map((u: any) => [u.id, u.email]));
+
+      // Get existing project members to mark already-invited
+      const { data: existingMembers } = await supabaseAdmin
+        .from("project_members")
+        .select("user_id")
+        .eq("project_id", projectId);
+      const existingSet = new Set((existingMembers ?? []).map((m: any) => m.user_id));
+
+      const result = (allMembers ?? []).map((m: any) => ({
+        userId: m.user_id,
+        email: userEmailMap.get(m.user_id) ?? "Unknown",
+        teamId: m.team_id,
+        teamName: teamMap.get(m.team_id) ?? "Unknown",
+        alreadyInvited: existingSet.has(m.user_id),
+      }));
+
+      return new Response(JSON.stringify({ members: result }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── INVITE BY USER ID ──
+    if (action === "invite-by-user-id") {
+      const userId = bodyUserId;
+      if (!projectId || !userId) throw new Error("projectId and userId required");
+
+      // Verify caller is project owner
+      const { data: proj, error: pErr2 } = await supabaseAdmin
+        .from("projects")
+        .select("user_id")
+        .eq("id", projectId)
+        .single();
+      if (pErr2 || !proj) throw new Error("Project not found");
+      if (proj.user_id !== user.id) throw new Error("Only the project owner can invite");
+
+      if (userId === user.id) throw new Error("Cannot invite yourself");
+
+      // Check same team
+      const { data: myT } = await supabaseAdmin.from("team_members").select("team_id").eq("user_id", user.id);
+      const { data: targetT } = await supabaseAdmin.from("team_members").select("team_id").eq("user_id", userId);
+      const myIds = new Set((myT ?? []).map((t: any) => t.team_id));
+      const inSameTeam = (targetT ?? []).some((t: any) => myIds.has(t.team_id));
+      if (!inSameTeam) throw new Error("User is not in the same team");
+
+      const { error: insErr } = await supabaseAdmin
+        .from("project_members")
+        .insert({ project_id: projectId, user_id: userId, invited_by: user.id, status: "pending" });
+      if (insErr) {
+        if (insErr.code === "23505") throw new Error("User already invited");
+        throw new Error(insErr.message);
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (action === "invite") {
       if (!projectId || !email) throw new Error("projectId and email required");
