@@ -39,7 +39,59 @@ Deno.serve(async (req) => {
     const userId = claimsData.claims.sub;
 
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
-    const { action, recording_id, email, share_id } = await req.json();
+    const { action, recording_id, email, share_id, user_ids } = await req.json();
+
+    if (action === "list-team-members") {
+      // Get user's teams
+      const { data: memberships } = await adminClient
+        .from("team_members")
+        .select("team_id")
+        .eq("user_id", userId);
+
+      if (!memberships || memberships.length === 0) {
+        return new Response(JSON.stringify({ success: true, members: [] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const teamIds = memberships.map((m: any) => m.team_id);
+
+      // Get team names
+      const { data: teams } = await adminClient
+        .from("teams")
+        .select("id, name")
+        .in("id", teamIds);
+
+      const teamMap = new Map<string, string>();
+      (teams || []).forEach((t: any) => teamMap.set(t.id, t.name));
+
+      // Get all members of those teams
+      const { data: allMembers } = await adminClient
+        .from("team_members")
+        .select("user_id, team_id")
+        .in("team_id", teamIds)
+        .neq("user_id", userId);
+
+      // Resolve emails
+      const members = [];
+      const seen = new Set<string>();
+      for (const m of allMembers || []) {
+        const key = `${m.user_id}-${m.team_id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const { data: userData } = await adminClient.auth.admin.getUserById(m.user_id);
+        members.push({
+          userId: m.user_id,
+          email: userData?.user?.email || "Unbekannt",
+          teamId: m.team_id,
+          teamName: teamMap.get(m.team_id) || "Unbekannt",
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true, members }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (action === "list") {
       // List all shares for a recording
@@ -134,6 +186,51 @@ Deno.serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true, shared_with_email: targetUser.email }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (action === "share-team") {
+      if (!recording_id || !Array.isArray(user_ids) || user_ids.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, error: "recording_id und user_ids erforderlich" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Verify ownership
+      const { data: rec } = await adminClient
+        .from("recordings")
+        .select("user_id")
+        .eq("id", recording_id)
+        .single();
+
+      if (!rec || rec.user_id !== userId) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Du kannst nur eigene Meetings teilen" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Filter out self
+      const targetIds = (user_ids as string[]).filter((id: string) => id !== userId);
+      
+      let shared = 0;
+      let skipped = 0;
+      for (const targetId of targetIds) {
+        const { error: insertError } = await adminClient
+          .from("shared_recordings")
+          .insert({ recording_id, shared_by: userId, shared_with: targetId });
+        if (insertError) {
+          if (insertError.code === "23505") { skipped++; continue; }
+          console.error("share-team insert error:", insertError);
+        } else {
+          shared++;
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, shared, skipped }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

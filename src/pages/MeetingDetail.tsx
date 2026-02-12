@@ -47,6 +47,7 @@ import { EmailEditModal } from "@/components/meeting/EmailEditModal";
 import { ReportDownloadModal } from "@/components/meeting/ReportDownloadModal";
 import { DeepDiveModal } from "@/components/meeting/DeepDiveModal";
 import { ProjectAssignment } from "@/components/meeting/ProjectAssignment";
+import { TeamShareDropdown } from "@/components/meeting/TeamShareDropdown";
 import { ShareRecordingDialog } from "@/components/meeting/ShareRecordingDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { useImpersonation } from "@/contexts/ImpersonationContext";
@@ -677,8 +678,9 @@ export default function MeetingDetail() {
             <p className="text-muted-foreground mt-1">
               {format(new Date(recording.created_at), "EEEE, dd. MMMM yyyy 'um' HH:mm 'Uhr'", { locale: de })}
             </p>
-            <div className="mt-2">
+            <div className="mt-2 flex flex-col gap-2">
               <ProjectAssignment recordingId={recording.id} />
+              <TeamShareDropdown recordingId={recording.id} />
             </div>
           </div>
           <div className="flex items-center gap-3">
