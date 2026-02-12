@@ -1,46 +1,43 @@
 
 
-## Recall.ai Bot-Diagnose fuer zwei Bot-IDs
+## Recordings reparieren und aufraumen
 
-### Ausgangslage
+### 1. Recording `095908e4` synchronisieren (reparierbar)
 
-- **Bot `b65530f7-...`**: Existiert in der Datenbank (Recording `8ef3df81-...`, Titel "AH Lambeck Sven Krause Teil 1", Status "done"), aber ohne Video-URL und ohne Transkript.
-- **Bot `aed63db5-...`**: Existiert NICHT in der Datenbank. Kein Recording-Eintrag vorhanden.
+Dieses Recording hat bei Recall.ai sowohl ein **Video** als auch ein **Transkript** (Streaming-Transkript), wurde aber nie korrekt in die Datenbank synchronisiert. 
 
-Der User moechte pruefen, ob bei Recall.ai noch Daten (Video, Transkript, Aufnahmen) fuer diese Bots vorhanden sind.
+**Aktion:** `sync-recording` mit `force_resync: true` fuer Recording-ID `095908e4-22a7-4f44-b4c9-b07189a8e735` aufrufen. Das holt Video-URL und Transkript von Recall.ai, speichert es in der DB und startet die KI-Analyse.
 
-### Loesung: Diagnose-Edge-Function erstellen
+### 2. Nicht reparierbare Recordings aufraumen
 
-Da wir den RECALL_API_KEY nur serverseitig nutzen koennen, wird eine neue Edge Function `recall-bot-check` erstellt, die fuer eine gegebene Bot-ID die Recall.ai API abfragt und alle verfuegbaren Daten zurueckgibt.
+6 Recordings haben bei Recall.ai **keine Aufnahmen**, weil die Bots entweder:
+- aus dem Warteraum gekickt wurden (5x)
+- einen ungueltigen Meeting-Link hatten (1x)
 
-### Neue Datei: `supabase/functions/recall-bot-check/index.ts`
+Diese Recordings blockieren die Ansicht und zeigen leere Eintraege.
 
-Die Funktion:
-1. Nimmt eine `bot_id` entgegen (authentifiziert, nur fuer Admins)
-2. Ruft `GET https://eu-central-1.recall.ai/api/v1/bot/{bot_id}/` auf
-3. Gibt die vollstaendigen Bot-Daten zurueck: Status, Recordings, Video-URLs, Transkript-URLs, Teilnehmer
+**Aktion:** Status dieser 6 Recordings auf `"error"` setzen und einen beschreibenden Titel hinzufuegen, damit klar ist, warum kein Transkript vorhanden ist:
 
-```
-POST /recall-bot-check
-Body: { "bot_id": "b65530f7-..." }
-Response: { bot_data: { status_changes, recordings, meeting_participants, ... } }
-```
+| Recording ID | Neuer Titel |
+|---|---|
+| `b49363db-...` | "Bot aus Warteraum entfernt" |
+| `8ef3df81-...` | Behaelt "AH Lambeck Sven Krause Teil 1" (hat schon Titel) |
+| `a40679da-...` | "Bot aus Warteraum entfernt" |
+| `298d8ac7-...` | "Meeting-Link ungueltig" |
+| `89a1b149-...` | "Bot aus Warteraum entfernt" |
+| `fb309341-...` | "Bot Warteraum-Timeout" |
 
-### Ablauf nach Erstellung
+### 3. Laufendes Recording belassen
 
-1. Edge Function deployen
-2. Beide Bot-IDs nacheinander abfragen
-3. Ergebnisse auswerten:
-   - Gibt es Recordings/Videos beim Recall Bot?
-   - Sind die Medien abgelaufen (media_expired)?
-   - Gibt es Transkript-Daten?
-4. Falls Daten vorhanden: sync-recording ausfuehren oder fehlenden DB-Eintrag erstellen
-5. Falls keine Daten: dem User mitteilen, dass die Aufnahmen bei Recall.ai nicht mehr verfuegbar sind
+Recording `9d9bc207` (Bot `e083c609`) ist aktuell im Status "recording" - das Meeting laeuft gerade. Hier wird nichts geaendert.
 
-### Technische Details
+### 4. Geplantes Meeting belassen
 
-- Authentifizierung: Admin-only (ueber `has_role` Check)
-- API-Endpunkt: `https://eu-central-1.recall.ai/api/v1/bot/{bot_id}/`
-- Header: `Authorization: Token {RECALL_API_KEY}`
-- Zusaetzlich wird `/calendar/meetings/?bot_id={bot_id}` abgefragt, um Kalender-Zuordnung zu pruefen
+Recording `f96acac5` (Meeting am 23.02.2026) ist korrekt im Status "pending".
+
+### Technische Umsetzung
+
+1. **sync-recording aufrufen** fuer `095908e4` (ueber Edge Function curl)
+2. **SQL-Update** fuer die 6 nicht reparierbaren Recordings: Status auf `error`, Titel setzen
+3. Keine Code-Aenderungen noetig - nur Daten-Operationen
 
