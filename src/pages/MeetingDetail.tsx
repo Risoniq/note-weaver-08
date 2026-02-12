@@ -815,26 +815,6 @@ export default function MeetingDetail() {
               {getStatusLabel(recording.status)}
               {isSyncing && <RefreshCw className="h-3 w-3 ml-1.5 animate-spin inline" />}
             </Badge>
-            {/* Teilen-Button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowShareDialog(true)}
-              className="shrink-0 rounded-xl hover:bg-primary/10"
-              title="Meeting teilen"
-            >
-              <Share2 className="h-4 w-4" />
-            </Button>
-            {/* Löschen-Button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowDeleteConfirm(true)}
-              className="shrink-0 rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive"
-              title="Meeting löschen"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
           </div>
         </div>
 
@@ -1056,15 +1036,37 @@ export default function MeetingDetail() {
                     <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
                     {isSyncing ? 'Aktualisiere...' : 'Transkript neu laden'}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowReportModal(true)}
-                    className="rounded-xl"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Bericht herunterladen
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowShareDialog(true)}
+                      className="rounded-xl hover:bg-primary/10 transition-all"
+                      title="Meeting teilen"
+                    >
+                      <Share2 className="h-4 w-4 mr-2" />
+                      Teilen
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowReportModal(true)}
+                      className="rounded-xl"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Bericht herunterladen
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="rounded-xl text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      title="Meeting löschen"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Löschen
+                    </Button>
+                  </div>
                 </div>
 
               <Card className="glass-card border-0 rounded-3xl shadow-card animate-fade-in" style={{ animationDelay: '400ms' }}>
