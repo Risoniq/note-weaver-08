@@ -359,6 +359,7 @@ const Recordings = () => {
                 viewMode={isTeamlead ? viewMode : 'personal'}
                 searchQuery={recordingsSearchQuery}
                 selectedMember={isTeamlead && viewMode === 'team' ? selectedMember : 'all'}
+                memberEmails={isTeamlead && viewMode === 'team' ? memberEmails : undefined}
               />
             </div>
           </TabsContent>

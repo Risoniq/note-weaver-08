@@ -8,12 +8,13 @@ import { FolderOpen, Users } from "lucide-react";
 import { useImpersonation } from "@/contexts/ImpersonationContext";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { useTeamleadCheck } from "@/hooks/useTeamleadCheck";
-import { Badge } from "@/components/ui/badge";
+
 
 interface RecordingsListProps {
   viewMode?: 'personal' | 'team';
   searchQuery?: string;
   selectedMember?: string;
+  memberEmails?: Map<string, string>;
 }
 
 interface RecordingWithOwner extends Recording {
@@ -21,7 +22,7 @@ interface RecordingWithOwner extends Recording {
   is_own?: boolean;
 }
 
-export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', selectedMember = 'all' }: RecordingsListProps) => {
+export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', selectedMember = 'all', memberEmails }: RecordingsListProps) => {
   const [recordings, setRecordings] = useState<RecordingWithOwner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
@@ -142,9 +143,9 @@ export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', select
     return (
       <div className="w-full">
         <h2 className="text-xl font-semibold text-foreground mb-4">Aufnahmen</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="flex flex-col gap-3">
           {[...Array(3)].map((_, i) => (
-            <Skeleton key={i} className="h-36 rounded-xl" />
+            <Skeleton key={i} className="h-28 rounded-xl" />
           ))}
         </div>
       </div>
@@ -178,22 +179,14 @@ export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', select
         {isTeamView && <Users className="h-5 w-5" />}
         {isTeamView ? 'Team-Aufnahmen' : 'Aufnahmen'} ({filteredRecordings.length})
       </h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="flex flex-col gap-3">
         {filteredRecordings.map((recording) => (
-          <div key={recording.id} className="relative">
-            {isTeamView && recording.owner_email && !recording.is_own && (
-              <Badge 
-                variant="secondary" 
-                className="absolute top-2 right-2 z-10 text-xs"
-              >
-                {recording.owner_email.split('@')[0]}
-              </Badge>
-            )}
-            <RecordingCard
-              recording={recording}
-              onClick={() => navigate(`/meeting/${recording.id}`)}
-            />
-          </div>
+          <RecordingCard
+            key={recording.id}
+            recording={recording}
+            onClick={() => navigate(`/meeting/${recording.id}`)}
+            ownerEmail={isTeamView && recording.owner_email && !recording.is_own ? recording.owner_email : undefined}
+          />
         ))}
       </div>
     </div>

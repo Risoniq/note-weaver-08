@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Recording, getStatusLabel, getStatusColor } from "@/types/recording";
-import { Calendar, Clock, FileText, Target, CheckSquare, Loader2, Upload, RotateCcw } from "lucide-react";
+import { Calendar, Clock, FileText, Target, CheckSquare, Loader2, Upload, RotateCcw, User, Users as UsersIcon } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -11,32 +11,31 @@ interface RecordingCardProps {
   onClick: () => void;
   isDeleted?: boolean;
   onRestore?: (id: string) => void;
+  ownerEmail?: string;
 }
 
-export const RecordingCard = ({ recording, onClick, isDeleted, onRestore }: RecordingCardProps) => {
+export const RecordingCard = ({ recording, onClick, isDeleted, onRestore, ownerEmail }: RecordingCardProps) => {
   const formattedDate = format(new Date(recording.created_at), "dd. MMM yyyy, HH:mm", { locale: de });
   const duration = recording.duration ? `${Math.floor(recording.duration / 60)} Min` : null;
   
   const isAnalyzing = recording.status === 'processing';
   const hasActiveStatus = ['pending', 'joining', 'recording'].includes(recording.status);
   
-  // Erkennung von veralteten Meetings (älter als 4 Stunden mit aktivem Status)
-  const STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 Stunden
+  const STALE_THRESHOLD_MS = 4 * 60 * 60 * 1000;
   const isStale = hasActiveStatus && 
     (Date.now() - new Date(recording.created_at).getTime()) > STALE_THRESHOLD_MS;
   
-  // Nur als aktiv anzeigen, wenn nicht veraltet
   const isActive = hasActiveStatus && !isStale;
-  
-  // Effektiven Status für die Anzeige bestimmen
   const displayStatus = isStale ? 'timeout' : recording.status;
+
+  const participantCount = recording.participants?.length ?? 0;
   
   return (
     <Card 
-      className={`cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 ${isDeleted ? 'border-2 border-red-500 opacity-75' : 'hover:border-primary/50'}`}
+      className={`cursor-pointer transition-all hover:shadow-lg hover:-translate-y-0.5 ${isDeleted ? 'border-2 border-red-500 opacity-75' : 'hover:border-primary/50'}`}
       onClick={onClick}
     >
-      <CardContent className="p-5">
+      <CardContent className="p-4">
         {isDeleted && recording.deleted_at && (
           <div className="flex items-center justify-between mb-3 text-sm">
             <Badge variant="destructive" className="text-xs">
@@ -52,8 +51,8 @@ export const RecordingCard = ({ recording, onClick, isDeleted, onRestore }: Reco
             )}
           </div>
         )}
-        <div className="flex flex-col gap-3">
-          {/* Header */}
+        <div className="flex flex-col gap-2">
+          {/* Header row: title + status */}
           <div className="flex items-start justify-between gap-2">
             {isAnalyzing && !recording.title ? (
               <Skeleton className="h-5 w-3/4" />
@@ -62,7 +61,7 @@ export const RecordingCard = ({ recording, onClick, isDeleted, onRestore }: Reco
                 {recording.source === 'manual' && (
                   <Upload className="h-4 w-4 text-muted-foreground shrink-0" aria-label="Hochgeladene Datei" />
                 )}
-                <h3 className="font-semibold text-foreground line-clamp-2">
+                <h3 className="font-semibold text-foreground line-clamp-1">
                   {recording.title || `Meeting ${recording.meeting_id.slice(0, 8)}`}
                 </h3>
               </div>
@@ -73,8 +72,8 @@ export const RecordingCard = ({ recording, onClick, isDeleted, onRestore }: Reco
             </Badge>
           </div>
 
-          {/* Meta Info */}
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          {/* Meta row: date, duration, owner, participants */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <Calendar className="h-3.5 w-3.5" />
               <span>{formattedDate}</span>
@@ -87,9 +86,28 @@ export const RecordingCard = ({ recording, onClick, isDeleted, onRestore }: Reco
                 <span>{duration}</span>
               </div>
             ) : null}
+            {ownerEmail && (
+              <div className="flex items-center gap-1.5">
+                <User className="h-3.5 w-3.5" />
+                <span>{ownerEmail}</span>
+              </div>
+            )}
+            {participantCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <UsersIcon className="h-3.5 w-3.5" />
+                <span>{participantCount} Teilnehmer</span>
+              </div>
+            )}
           </div>
 
-          {/* Stats - Show placeholders when analyzing */}
+          {/* Summary preview */}
+          {recording.summary && recording.status === 'done' && (
+            <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+              {recording.summary}
+            </p>
+          )}
+
+          {/* Stats row */}
           {isAnalyzing ? (
             <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-border">
               <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
