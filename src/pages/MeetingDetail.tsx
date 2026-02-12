@@ -31,7 +31,8 @@ import {
   Replace,
   History,
   Download,
-  Trash2
+  Trash2,
+  Share2
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -46,6 +47,7 @@ import { EmailEditModal } from "@/components/meeting/EmailEditModal";
 import { ReportDownloadModal } from "@/components/meeting/ReportDownloadModal";
 import { DeepDiveModal } from "@/components/meeting/DeepDiveModal";
 import { ProjectAssignment } from "@/components/meeting/ProjectAssignment";
+import { ShareRecordingDialog } from "@/components/meeting/ShareRecordingDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { useImpersonation } from "@/contexts/ImpersonationContext";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
@@ -112,7 +114,7 @@ export default function MeetingDetail() {
   // Soft-Delete State
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  
+  const [showShareDialog, setShowShareDialog] = useState(false);
   // Auth für User-Email
   const { user } = useAuth();
   const { isAdmin } = useAdminCheck();
@@ -813,6 +815,16 @@ export default function MeetingDetail() {
               {getStatusLabel(recording.status)}
               {isSyncing && <RefreshCw className="h-3 w-3 ml-1.5 animate-spin inline" />}
             </Badge>
+            {/* Teilen-Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowShareDialog(true)}
+              className="shrink-0 rounded-xl hover:bg-primary/10"
+              title="Meeting teilen"
+            >
+              <Share2 className="h-4 w-4" />
+            </Button>
             {/* Löschen-Button */}
             <Button
               variant="ghost"
@@ -1607,6 +1619,15 @@ export default function MeetingDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      
+      {/* Share Dialog */}
+      {recording && (
+        <ShareRecordingDialog
+          open={showShareDialog}
+          onOpenChange={setShowShareDialog}
+          recordingId={recording.id}
+        />
+      )}
     </div>
   );
 }

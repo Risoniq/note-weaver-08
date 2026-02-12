@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Recording, getStatusLabel, getStatusColor } from "@/types/recording";
-import { Calendar, Clock, Loader2, Upload, RotateCcw, User, Users as UsersIcon } from "lucide-react";
+import { Calendar, Clock, Loader2, Upload, RotateCcw, User, Users as UsersIcon, Share2 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -12,9 +12,10 @@ interface RecordingCardProps {
   isDeleted?: boolean;
   onRestore?: (id: string) => void;
   ownerEmail?: string;
+  sharedByEmail?: string;
 }
 
-export const RecordingCard = ({ recording, onClick, isDeleted, onRestore, ownerEmail }: RecordingCardProps) => {
+export const RecordingCard = ({ recording, onClick, isDeleted, onRestore, ownerEmail, sharedByEmail }: RecordingCardProps) => {
   const formattedDate = format(new Date(recording.created_at), "dd. MMM yyyy, HH:mm", { locale: de });
   const duration = recording.duration ? `${Math.floor(recording.duration / 60)} Min` : null;
   
@@ -66,7 +67,13 @@ export const RecordingCard = ({ recording, onClick, isDeleted, onRestore, ownerE
                 </h3>
               </div>
             )}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              {sharedByEmail && (
+                <Badge className="bg-blue-500/15 text-blue-600 border border-blue-500/30 hover:bg-blue-500/20">
+                  <Share2 className="h-3 w-3 mr-1" />
+                  Geteilt von {sharedByEmail}
+                </Badge>
+              )}
               {ownerEmail && (
                 <Badge className="bg-primary/15 text-primary border border-primary/30 hover:bg-primary/20">
                   <User className="h-3 w-3 mr-1" />

@@ -116,3 +116,6 @@ verify_jwt = false
 
 [functions.recall-bot-check]
 verify_jwt = false
+
+[functions.share-recording]
+verify_jwt = false

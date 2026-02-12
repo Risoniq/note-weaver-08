@@ -20,6 +20,7 @@ interface RecordingsListProps {
 interface RecordingWithOwner extends Recording {
   owner_email?: string;
   is_own?: boolean;
+  shared_by_email?: string;
 }
 
 export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', selectedMember = 'all', memberEmails }: RecordingsListProps) => {
@@ -89,7 +90,43 @@ export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', select
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setRecordings(data as unknown as RecordingWithOwner[]);
+      
+      // Fetch shared_recordings to identify which were shared with this user
+      const { data: sharedData } = await supabase
+        .from('shared_recordings')
+        .select('recording_id, shared_by');
+      
+      // Resolve shared_by emails via edge function if there are shared recordings
+      const sharedMap = new Map<string, string>();
+      if (sharedData && sharedData.length > 0) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          // Get current user id to identify shared recordings
+          const currentUserId = session.user.id;
+          const sharedWithMe = (sharedData as any[]).filter(s => s.shared_by !== currentUserId);
+          
+          if (sharedWithMe.length > 0) {
+            // Resolve emails - use the share-recording list endpoint per unique shared_by
+            const uniqueSharers = [...new Set(sharedWithMe.map(s => s.shared_by))];
+            for (const sharerId of uniqueSharers) {
+              const recordingIds = sharedWithMe
+                .filter(s => s.shared_by === sharerId)
+                .map(s => s.recording_id);
+              // We just need to mark these recordings
+              for (const rid of recordingIds) {
+                sharedMap.set(rid, sharerId);
+              }
+            }
+          }
+        }
+      }
+
+      const enriched = (data as unknown as RecordingWithOwner[]).map(r => ({
+        ...r,
+        shared_by_email: sharedMap.has(r.id) ? 'Kollege' : undefined,
+      }));
+      
+      setRecordings(enriched);
     } catch (error) {
       console.error('Error fetching recordings:', error);
     } finally {
@@ -186,6 +223,7 @@ export const RecordingsList = ({ viewMode = 'personal', searchQuery = '', select
             recording={recording}
             onClick={() => navigate(`/meeting/${recording.id}`)}
             ownerEmail={isTeamView && recording.owner_email && !recording.is_own ? recording.owner_email : undefined}
+            sharedByEmail={recording.shared_by_email}
           />
         ))}
       </div>
