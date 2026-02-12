@@ -1,34 +1,30 @@
 
 
-## Owner-Badge neben Status anzeigen (tuerkis)
+## Aufnahmen-Karten: Einheitliche, kompakte Ansicht
 
-### Aenderung
+### Ziel
+Jede Aufnahme-Karte zeigt nur die wichtigsten Eckdaten - kein Inhalt (Summary, Woerter, Key Points, Action Items) mehr sichtbar.
 
-In `RecordingCard.tsx` wird die `ownerEmail` als tuerkisfarbener Badge direkt neben dem Status-Badge (rechts oben) angezeigt, statt in der Meta-Zeile darunter.
+### Was entfernt wird
 
-### Details
+- **Summary-Vorschau** (der 2-zeilige Text unter den Meta-Infos)
+- **Stats-Zeile** komplett (Woerter-Anzahl, Key Points, Action Items)
+- **"Meeting laeuft..." Zeile** bei aktiven Meetings
 
-**RecordingCard.tsx** - Eine Aenderung:
+### Was bleibt
 
-1. Die `ownerEmail`-Anzeige wird aus der Meta-Zeile (Datum/Dauer/Teilnehmer) entfernt
-2. Stattdessen wird sie als Badge mit `bg-primary/20 text-primary` (tuerkis, passend zur bestehenden Primaerfarbe des Projekts) neben dem Status-Badge im Header-Bereich platziert
-3. Das User-Icon bleibt erhalten, der Badge erscheint links vom Status-Badge
-
-Layout vorher:
+Jede Karte zeigt einheitlich:
 ```
-[Titel]                              [Status-Badge]
-[Datum] [Dauer] [Owner] [Teilnehmer]
-```
-
-Layout nachher:
-```
-[Titel]                   [Owner-Badge tuerkis] [Status-Badge]
-[Datum] [Dauer] [Teilnehmer]
+[Upload-Icon] [Titel]          [Owner-Badge tuerkis] [Status-Badge]
+[Kalender Datum]  [Uhr Dauer]  [Teilnehmer-Anzahl]
 ```
 
-### Technisch
+### Technische Aenderung
 
-- Farbe: `bg-primary/15 text-primary border-primary/30` - nutzt die bestehende tuerkise Primaerfarbe (HSL 187)
-- Nur sichtbar wenn `ownerEmail` gesetzt ist (Admin/Team-Ansicht)
-- Keine weiteren Dateien betroffen
+**RecordingCard.tsx** - Entfernen von:
+1. Den `summary`-Block (Zeilen mit `recording.summary && recording.status === 'done'`)
+2. Den gesamten Stats-Block (Woerter, Key Points, Action Items, Analyzing-Skeletons, "Meeting laeuft")
+3. Die nicht mehr benoetigten Imports: `FileText`, `Target`, `CheckSquare`, `Loader2` (Loader2 bleibt nur fuer den Status-Badge)
+
+Keine anderen Dateien betroffen.
 
