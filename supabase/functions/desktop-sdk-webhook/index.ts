@@ -92,6 +92,192 @@ Deno.serve(async (req) => {
 
       console.log("[desktop-sdk-webhook] Successfully saved desktop recording:", data.recording_id);
 
+      // === TRANSKRIPT + ANALYSE PIPELINE ===
+      const transcriptUrl = recording.media_shortcuts?.transcript?.data?.download_url || null;
+
+      if (transcriptUrl) {
+        console.log("[desktop-sdk-webhook] Transkript-URL gefunden, lade herunter...");
+        try {
+          const transcriptResponse = await fetch(transcriptUrl);
+          if (transcriptResponse.ok) {
+            const transcriptData = await transcriptResponse.json();
+            console.log("[desktop-sdk-webhook] Transkript heruntergeladen, Segmente:", Array.isArray(transcriptData) ? transcriptData.length : 'unbekannt');
+
+            // Format transcript segments to readable text
+            let formattedTranscript = '';
+            if (Array.isArray(transcriptData)) {
+              let lastSpeaker = '';
+              for (const seg of transcriptData) {
+                const speaker = seg.speaker || 'Unbekannt';
+                const text = (seg.words || []).map((w: { text: string }) => w.text).join(' ').trim();
+                if (!text) continue;
+                if (speaker !== lastSpeaker) {
+                  if (formattedTranscript) formattedTranscript += '\n\n';
+                  formattedTranscript += `${speaker}:\n${text}`;
+                  lastSpeaker = speaker;
+                } else {
+                  formattedTranscript += ' ' + text;
+                }
+              }
+            } else if (typeof transcriptData === 'string') {
+              formattedTranscript = transcriptData;
+            }
+
+            if (formattedTranscript) {
+              // Add Meeting-Info header
+              let ownerEmail = 'Unbekannt';
+              if (userId) {
+                try {
+                  const { data: userData } = await supabase.auth.admin.getUserById(userId);
+                  ownerEmail = userData?.user?.email || 'Unbekannt';
+                } catch (e) {
+                  console.log('[desktop-sdk-webhook] Could not fetch owner email:', e);
+                }
+              }
+
+              const transcriptHeader = `[Meeting-Info]\nUser-ID: ${userId || 'Unbekannt'}\nUser-Email: ${ownerEmail}\nRecording-ID: ${data.recording_id}\nErstellt: ${new Date().toISOString()}\n---\n\n`;
+              const fullTranscript = transcriptHeader + formattedTranscript;
+
+              // Fetch the recording row to get the DB id
+              const { data: dbRecording } = await supabase
+                .from("recordings")
+                .select("id")
+                .eq("recall_id", data.recording_id)
+                .single();
+
+              const recordingDbId = dbRecording?.id;
+
+              if (recordingDbId) {
+                // Save transcript to DB
+                await supabase
+                  .from("recordings")
+                  .update({ transcript_text: fullTranscript, status: "done" })
+                  .eq("id", recordingDbId);
+                console.log("[desktop-sdk-webhook] Transkript in DB gespeichert");
+
+                // Storage backup
+                try {
+                  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                  const fileName = `${userId || 'unknown'}/${recordingDbId}_${timestamp}.txt`;
+                  const transcriptBlob = new Blob([fullTranscript], { type: 'text/plain' });
+                  const transcriptArrayBuffer = await transcriptBlob.arrayBuffer();
+                  const transcriptUint8Array = new Uint8Array(transcriptArrayBuffer);
+
+                  const { error: uploadError } = await supabase.storage
+                    .from('transcript-backups')
+                    .upload(fileName, transcriptUint8Array, {
+                      contentType: 'text/plain; charset=utf-8',
+                      upsert: true,
+                    });
+
+                  if (uploadError) {
+                    console.error('[desktop-sdk-webhook] Storage-Backup Fehler:', uploadError);
+                  } else {
+                    console.log('[desktop-sdk-webhook] Storage-Backup gespeichert:', fileName);
+                  }
+                } catch (backupErr) {
+                  console.error('[desktop-sdk-webhook] Storage-Backup fehlgeschlagen:', backupErr);
+                }
+
+                // Trigger analyze-transcript
+                try {
+                  const analyzeResponse = await fetch(`${SUPABASE_URL}/functions/v1/analyze-transcript`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ recording_id: recordingDbId }),
+                  });
+                  if (analyzeResponse.ok) {
+                    console.log('[desktop-sdk-webhook] Analyse erfolgreich gestartet');
+                  } else {
+                    console.error('[desktop-sdk-webhook] Analyse fehlgeschlagen:', await analyzeResponse.text());
+                  }
+                } catch (analyzeErr) {
+                  console.error('[desktop-sdk-webhook] Analyse-Fehler:', analyzeErr);
+                }
+
+                // External export
+                const exportUrl = Deno.env.get('TRANSCRIPT_EXPORT_URL');
+                const exportSecret = Deno.env.get('TRANSCRIPT_EXPORT_SECRET');
+                if (exportUrl && exportSecret) {
+                  try {
+                    const meetingTitle = recording.title || `Desktop-Aufnahme ${new Date().toLocaleDateString("de-DE")}`;
+                    const meetingDate = new Date().toLocaleString('de-DE', { dateStyle: 'full', timeStyle: 'short' });
+                    const durationMinutes = recording.duration ? Math.round(recording.duration / 60) : null;
+
+                    const txtContent = `========================================\nMEETING TRANSKRIPT\n========================================\nTitel: ${meetingTitle}\nDatum: ${meetingDate}\nDauer: ${durationMinutes ? durationMinutes + ' Minuten' : 'Unbekannt'}\nRecording ID: ${recordingDbId}\nUser ID: ${userId || 'Unbekannt'}\n========================================\n\n${fullTranscript}`;
+
+                    const exportPayload = {
+                      recording_id: recordingDbId,
+                      user_id: userId,
+                      title: meetingTitle,
+                      safe_title: meetingTitle.replace(/[^a-zA-Z0-9äöüÄÖÜß\s-]/g, '').replace(/\s+/g, '_').substring(0, 100),
+                      transcript_txt: txtContent,
+                      created_at: new Date().toISOString(),
+                      duration: recording.duration,
+                      metadata: { summary: null, key_points: [], action_items: [], participants: recording.participants || [], word_count: null, video_url: videoUrl },
+                    };
+
+                    const exportResponse = await fetch(exportUrl, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'x-export-secret': exportSecret },
+                      body: JSON.stringify(exportPayload),
+                    });
+
+                    if (exportResponse.ok) {
+                      console.log('[desktop-sdk-webhook] Export erfolgreich');
+                    } else {
+                      console.error('[desktop-sdk-webhook] Export fehlgeschlagen:', exportResponse.status);
+                    }
+                  } catch (exportErr) {
+                    console.error('[desktop-sdk-webhook] Export-Fehler:', exportErr);
+                  }
+                }
+              }
+            }
+          } else {
+            console.error('[desktop-sdk-webhook] Transkript-Download fehlgeschlagen:', transcriptResponse.status);
+          }
+        } catch (transcriptErr) {
+          console.error('[desktop-sdk-webhook] Transkript-Abruf Fehler:', transcriptErr);
+        }
+      } else {
+        // Kein Transkript vorhanden → automatisch Recall Async Transcription starten
+        console.log("[desktop-sdk-webhook] Kein Transkript vorhanden, starte automatische Recall Async Transcription...");
+        try {
+          const autoTranscriptResponse = await fetch(
+            `https://eu-central-1.recall.ai/api/v1/recording/${data.recording_id}/create_transcript/`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Token ${RECALL_API_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                provider: { recallai_async: { language_code: "de" } },
+              }),
+            }
+          );
+
+          if (autoTranscriptResponse.ok) {
+            console.log("[desktop-sdk-webhook] Async Transcription gestartet");
+            // Update status to transcribing
+            await supabase
+              .from("recordings")
+              .update({ status: "transcribing" })
+              .eq("recall_id", data.recording_id);
+            console.log("[desktop-sdk-webhook] Status auf 'transcribing' gesetzt");
+          } else {
+            const errText = await autoTranscriptResponse.text();
+            console.error("[desktop-sdk-webhook] Async Transcription fehlgeschlagen:", autoTranscriptResponse.status, errText);
+          }
+        } catch (autoErr) {
+          console.error("[desktop-sdk-webhook] Async Transcription Fehler:", autoErr);
+        }
+      }
+
       return new Response(
         JSON.stringify({ success: true, recording_id: data.recording_id }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
