@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, FileText, Clock, Activity, Calendar, CheckCircle, XCircle, Trash2, Shield, Settings, Eye, Plus, UsersRound, Key } from 'lucide-react';
+import { ArrowLeft, Users, FileText, Clock, Activity, Calendar, CheckCircle, XCircle, Trash2, Shield, Settings, Eye, Plus, UsersRound, Key, ShieldCheck } from 'lucide-react';
 import { withTokenRefresh } from '@/lib/retryWithTokenRefresh';
+import { SecurityDashboard } from '@/components/admin/SecurityDashboard';
 import { useImpersonation } from '@/contexts/ImpersonationContext';
 import { AdminCreateMeetingDialog } from '@/components/admin/AdminCreateMeetingDialog';
 import { TeamCard, type TeamData } from '@/components/admin/TeamCard';
@@ -808,6 +809,10 @@ const Admin = () => {
                 <Key className="h-4 w-4" />
                 API-Keys
               </TabsTrigger>
+              <TabsTrigger value="security" className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4" />
+                Sicherheit
+              </TabsTrigger>
             </TabsList>
             {activeTab === 'teams' && (
               <Button onClick={() => { setEditingTeam(null); setTeamDialogOpen(true); }}>
@@ -1136,6 +1141,11 @@ const Admin = () => {
                 </Card>
               </div>
             )}
+          </TabsContent>
+
+          {/* Security Tab */}
+          <TabsContent value="security">
+            <SecurityDashboard />
           </TabsContent>
         </Tabs>
 

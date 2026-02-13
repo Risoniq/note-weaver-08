@@ -53,6 +53,114 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_logs: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          details: Json | null
+          event_type: string
+          id: string
+          ip_address: string | null
+          severity: string
+          target_id: string | null
+          target_type: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          details?: Json | null
+          event_type: string
+          id?: string
+          ip_address?: string | null
+          severity?: string
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          details?: Json | null
+          event_type?: string
+          id?: string
+          ip_address?: string | null
+          severity?: string
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Relationships: []
+      }
+      backup_integrity_checks: {
+        Row: {
+          backups_corrupted: number
+          backups_found: number
+          backups_missing: number
+          checked_at: string
+          details: Json | null
+          id: string
+          run_by: string | null
+          status: string
+          total_recordings: number
+        }
+        Insert: {
+          backups_corrupted?: number
+          backups_found?: number
+          backups_missing?: number
+          checked_at?: string
+          details?: Json | null
+          id?: string
+          run_by?: string | null
+          status?: string
+          total_recordings?: number
+        }
+        Update: {
+          backups_corrupted?: number
+          backups_found?: number
+          backups_missing?: number
+          checked_at?: string
+          details?: Json | null
+          id?: string
+          run_by?: string | null
+          status?: string
+          total_recordings?: number
+        }
+        Relationships: []
+      }
+      incident_alerts: {
+        Row: {
+          acknowledged: boolean
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          alert_type: string
+          created_at: string
+          details: Json | null
+          id: string
+          message: string
+          severity: string
+        }
+        Insert: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          alert_type: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          message: string
+          severity?: string
+        }
+        Update: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          alert_type?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          message?: string
+          severity?: string
+        }
+        Relationships: []
+      }
       project_members: {
         Row: {
           created_at: string
