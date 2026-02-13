@@ -85,6 +85,7 @@ export function useRecallCalendarMeetings() {
   const pendingFetchRef = useRef<boolean>(false);
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
   const prefsLoadedRef = useRef<boolean>(false);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
   // Get authenticated user
   useEffect(() => {
@@ -212,9 +213,14 @@ export function useRecallCalendarMeetings() {
         console.log('[useRecallCalendarMeetings] Loaded preferences:', data.preferences);
         setPreferences(data.preferences);
         prefsLoadedRef.current = true;
+        setPreferencesLoaded(true);
+      } else {
+        // No preferences found – confirm defaults are valid
+        setPreferencesLoaded(true);
       }
     } catch (err: any) {
       console.error('[useRecallCalendarMeetings] Error loading preferences:', err);
+      setPreferencesLoaded(true);
     }
   }, [authUser?.id]);
 
@@ -400,6 +406,7 @@ export function useRecallCalendarMeetings() {
     meetingsError,
     meetings,
     preferences,
+    preferencesLoaded,
     autoRefreshEnabled,
     setAutoRefreshEnabled,
     isRefreshingCalendar,
