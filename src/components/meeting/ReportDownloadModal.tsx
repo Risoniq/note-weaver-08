@@ -209,7 +209,7 @@ export function ReportDownloadModal({
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
-        backgroundColor: "#ffffff",
+        backgroundColor: "#0f1724",
         logging: false,
       });
 
