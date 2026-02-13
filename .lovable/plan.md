@@ -1,39 +1,66 @@
 
 
-## calendar_attendees als Fallback + Meeting neu erstellen
+## Risoniq-Branding und Dashboard-Farben fuer den PDF-Bericht
 
-### 1. calendar_attendees-Fallback in der Teilnehmer-Logik
+### Ziel
+Der PDF-Bericht (VisualReportView) erhaelt das Risoniq-Branding und wird farblich an die dunkle, futuristische Dashboard-Aesthetik angepasst. Orientierung: dunkler Hintergrund, Cyan/Teal-Akzente, Monospace-Zahlen, Glow-Effekte -- analog zu den Referenzbildern.
 
-**Problem:** Wenn `participants` leer ist, wird nur das Transkript als Fallback genutzt. Die `calendar_attendees` (aus dem Kalender-Event) enthalten oft bessere Namensdaten, werden aber ignoriert.
+### Aenderungen
 
-**Aenderungen:**
+**1. Risoniq-Logo als Asset einbinden**
+- Das Bild `Risoniq_Meeting_Hintergrund.jpg` wird in `src/assets/` kopiert
+- Daraus wird das Risoniq-Logo als SVG/Text-Element im Bericht-Header nachgebaut (orange/gold Wellenlinien + "RISONIQ"-Schriftzug), da ein Foto als Logo-Quelle im PDF unscharf wuerde
+- Alternative: Nur den Markennamen "RISONIQ" als gestylten Text mit passender Farbe (#e87722 Orange-Gold) einsetzen
 
-**`src/types/recording.ts`**
-- Feld `calendar_attendees` zum `Recording`-Interface hinzufuegen:
-  ```
-  calendar_attendees: { name: string; email: string }[] | null;
-  ```
+**2. `src/components/meeting/VisualReportView.tsx` -- Komplettes Redesign**
 
-**`src/utils/participantUtils.ts`**
-- `getConsistentParticipantCount` erweitern: Zwischen Schritt 1 (DB-participants) und Schritt 2 (Transkript) einen neuen Fallback einfuegen:
-  1. DB-Teilnehmer (participants)
-  2. **NEU: calendar_attendees** -- Namen aus dem Kalender-Event nutzen, Bots filtern
-  3. Transkript-Extraktion
-  4. Absoluter Fallback
-- Das Input-Interface um `calendar_attendees` erweitern
-- Source-Typ um `'calendar'` ergaenzen
+| Bereich | Aktuell | Neu |
+|---------|---------|-----|
+| Hintergrund | Weiss (#ffffff) | Dunkel (#0f1724) |
+| Textfarbe | Dunkel (#1a1a2e) | Hell (#e2e8f0) |
+| Header | Blauer Border, schwarzer Titel | Risoniq-Logo links, Titel rechts, Cyan-Akzentlinie |
+| KPI-Karten | Helle Cards, fetter schwarzer Text | Transparenter Hintergrund, duenne Cyan-Border, Monospace-Font, Glow-Effekt auf Zahlen |
+| Chart-Container | Heller Border | Dunkler Hintergrund (#1a2332), feine Border (#2d3748) |
+| Sektions-Ueberschriften | Schwarzer Text mit grauer Linie | Cyan (#0ea5e9) mit Glow, Uppercase-Tracking |
+| Action Items | Graue Checkboxen | Cyan-Checkboxen |
+| Footer | Grauer zentrierter Text | "Powered by RISONIQ" mit Logo-Farbe, Generierungsdatum |
 
-**`src/components/recordings/RecordingCard.tsx`**
-- Keine Aenderung noetig -- nutzt bereits `getConsistentParticipantCount(recording)`, und da das Recording-Objekt aus der DB `calendar_attendees` enthaelt, wird es automatisch durchgereicht.
+Farbpalette fuer den Bericht:
+- Hintergrund: `#0f1724` (Dashboard dark bg)
+- Sekundaer-BG: `#1a2332`
+- Primary/Akzent: `#0ea5e9` (Cyan/Teal -- Dashboard Primary)
+- Accent: `#e87722` (Risoniq Orange fuer Logo/Branding)
+- Text: `#e2e8f0` (hell)
+- Muted Text: `#94a3b8`
+- Borders: `#2d3748`
 
-### 2. Meeting 35f71338 neu erstellen
+KPI-Karten Stil:
+```
+Wert: font-family monospace, font-weight 300, color #0ea5e9, text-shadow 0 0 8px rgba(14,165,233,0.4)
+Label: uppercase, letter-spacing 0.15em, font-size 10px, color #94a3b8
+```
 
-Das Recording mit ID `35f71338-92d3-47b2-826b-6e3cfa9807c5` existiert nicht mehr in der Datenbank. Um es neu zu analysieren, muss es ueber das Admin-Dashboard ("Meeting erstellen") mit dem Transkript-Text neu angelegt werden. Das ist ein manueller Schritt -- sofern du das Transkript noch hast, kann ich dir dabei helfen es ueber die bestehende Admin-Funktion einzuspeisen.
+Header-Layout:
+```
+[RISONIQ]                     Meeting-Bericht
+ (orange)          Titel des Meetings (22px, hell)
+                   Datum (13px, muted)
+─────────────────────────────────────────── (cyan line)
+```
+
+Footer:
+```
+──────────────────────────────────────────
+Powered by RISONIQ  |  Generiert am 13.02.2026 14:30 Uhr
+```
+
+**3. html2canvas Anpassung in `ReportDownloadModal.tsx`**
+- `backgroundColor` von `#ffffff` auf `#0f1724` aendern, damit der dunkle Hintergrund korrekt gerendert wird
 
 ### Betroffene Dateien
 
 | Datei | Aenderung |
 |-------|-----------|
-| `src/types/recording.ts` | `calendar_attendees` Feld hinzufuegen |
-| `src/utils/participantUtils.ts` | calendar_attendees als Fallback-Stufe 2 einbauen |
+| `src/components/meeting/VisualReportView.tsx` | Komplettes Redesign: dunkles Theme, Risoniq-Branding, futuristische KPIs |
+| `src/components/meeting/ReportDownloadModal.tsx` | backgroundColor auf dunkel aendern |
 
