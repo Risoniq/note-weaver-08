@@ -46,9 +46,112 @@ serve(async (req) => {
       });
     }
 
-    const { bot_id } = await req.json();
+    const body = await req.json();
+    const { action, bot_id, date_from, date_to, user_email } = body;
+
+    // --- NEW: list-bots action ---
+    if (action === "list-bots") {
+      const allBots: any[] = [];
+      let nextUrl: string | null = null;
+
+      // Build initial URL
+      const initialUrl = new URL("https://eu-central-1.recall.ai/api/v1/bot/");
+      if (date_from) initialUrl.searchParams.append("created_after", date_from);
+      if (date_to) initialUrl.searchParams.append("created_before", date_to);
+      initialUrl.searchParams.append("ordering", "-created_at");
+
+      nextUrl = initialUrl.toString();
+
+      // Paginate through all results
+      while (nextUrl) {
+        const res = await fetch(nextUrl, {
+          headers: { Authorization: `Token ${recallApiKey}` },
+        });
+        if (!res.ok) {
+          const errText = await res.text();
+          return new Response(
+            JSON.stringify({ error: "Recall API error", status: res.status, details: errText }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        const data = await res.json();
+        if (data.results) allBots.push(...data.results);
+        nextUrl = data.next || null;
+      }
+
+      // Optional: filter by user_email -> find recall_user_id
+      let filteredBots = allBots;
+      let resolvedUserId: string | null = null;
+
+      if (user_email) {
+        // Look up supabase user by email
+        const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
+        const targetUser = authUsers?.users?.find((u: any) => u.email === user_email);
+
+        if (targetUser) {
+          resolvedUserId = targetUser.id;
+          // Get recall_user_id from recall_calendar_users
+          const { data: calUser } = await supabaseAdmin
+            .from("recall_calendar_users")
+            .select("recall_user_id")
+            .eq("supabase_user_id", targetUser.id)
+            .maybeSingle();
+
+          if (calUser?.recall_user_id) {
+            // Filter bots by metadata or meeting_participants matching this user
+            filteredBots = allBots.filter((bot: any) => {
+              const meta = bot.metadata || {};
+              if (meta.user_id === targetUser.id) return true;
+              if (meta.supabase_user_id === targetUser.id) return true;
+              // Check calendar_user in metadata
+              if (meta.calendar_user_id === calUser.recall_user_id) return true;
+              return false;
+            });
+          }
+        }
+      }
+
+      // Cross-reference with DB
+      const botIds = filteredBots.map((b: any) => b.id);
+      let existingBotIds: Set<string> = new Set();
+
+      if (botIds.length > 0) {
+        const { data: existingRecs } = await supabaseAdmin
+          .from("recordings")
+          .select("recall_bot_id")
+          .in("recall_bot_id", botIds);
+        if (existingRecs) {
+          existingBotIds = new Set(existingRecs.map((r: any) => r.recall_bot_id));
+        }
+      }
+
+      const result = filteredBots.map((bot: any) => ({
+        id: bot.id,
+        status: bot.status_changes?.[bot.status_changes.length - 1]?.code || "unknown",
+        meeting_url: bot.meeting_url,
+        created_at: bot.created_at,
+        metadata: bot.metadata,
+        has_db_entry: existingBotIds.has(bot.id),
+        video_url: bot.video_url || null,
+        status_changes: bot.status_changes,
+      }));
+
+      return new Response(
+        JSON.stringify({
+          action: "list-bots",
+          total_from_recall: allBots.length,
+          filtered_count: filteredBots.length,
+          resolved_user_id: resolvedUserId,
+          user_email: user_email || null,
+          bots: result,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // --- EXISTING: single bot check ---
     if (!bot_id) {
-      return new Response(JSON.stringify({ error: "bot_id erforderlich" }), {
+      return new Response(JSON.stringify({ error: "bot_id oder action erforderlich" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -86,8 +189,7 @@ serve(async (req) => {
     }
 
     // 3. Check DB for this bot
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: dbRecording } = await supabase
+    const { data: dbRecording } = await supabaseAdmin
       .from("recordings")
       .select("id, title, status, video_url, transcript_text, created_at, user_id")
       .eq("recall_bot_id", bot_id)
