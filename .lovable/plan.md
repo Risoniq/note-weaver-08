@@ -1,90 +1,83 @@
 
 
-## Bericht-Export als visuellen Report (statt TXT)
+## Problem: Meeting-Bots werden faelschlicherweise als "abgelehnt" markiert
 
-### Ziel
-Der "Bericht herunterladen" Button soll nicht mehr eine reine TXT/Markdown-Datei erzeugen, sondern einen visuell aufbereiteten Report im gleichen Design wie die Dashboard-Analyse -- mit Pie-Charts, KPI-Karten, farbiger Darstellung und professionellem Layout. Der Report wird als PDF heruntergeladen.
+### Ursache
 
-### Ansatz
-Ein neues Browser-Fenster mit einer druckoptimierten HTML-Seite oeffnen, die alle Analyse-Visualisierungen rendert. Der User kann dann ueber den Browser-Druckdialog als PDF speichern. Zusaetzlich wird `html2canvas` + `jsPDF` eingebaut fuer einen direkten PDF-Download.
+Die `sync-recording` Edge Function bestimmt den Bot-Status ausschliesslich anhand des **letzten Eintrags** im `status_changes` Array von Recall.ai. Wenn ein Bot zwischenzeitlich den Status `bot_kicked_from_waiting_room` erhaelt (z.B. weil er kurz im Warteraum war), wird das Recording dauerhaft als "abgelehnt" markiert -- selbst wenn der Bot tatsaechlich im Meeting war und Aufnahmen existieren.
 
-### Neue Abhaengigkeiten
-- `html2canvas` -- Rendert HTML-Elemente als Canvas/Bild
-- `jspdf` -- Erzeugt PDF-Dateien im Browser
+**Kernproblem**: Es gibt keine Pruefung, ob trotz eines Fehler-Status tatsaechlich Recordings/Transkripte bei Recall.ai vorhanden sind.
+
+### Loesung
+
+Die Status-Logik wird grundlegend ueberarbeitet: **Recordings haben Vorrang vor Status-Codes.** Wenn bei Recall.ai Aufnahmen existieren, wird der Bot als erfolgreich behandelt, unabhaengig vom letzten Status-Eintrag.
 
 ### Aenderungen
 
-**1. Neue Komponente: `src/components/meeting/VisualReportView.tsx`**
-- Rendert eine druckoptimierte Version der Meeting-Analyse
-- Enthaelt:
-  - Header mit Titel, Datum, Dauer, Teilnehmeranzahl
-  - KPI-Karten (Teilnehmer, Key Points, Action Items, Woerter)
-  - Sprechanteile als Pie-Chart (mit Recharts, gleich wie DeepDiveModal)
-  - Business vs. Small Talk Pie-Chart
-  - Zusammenfassung als formatierter Text-Block
-  - Key Points als nummerierte Liste mit farbigen Markierungen
-  - Action Items als Checkliste
-  - Optional: Transkript-Auszug
-- Nutzt die bestehende `performDeepDiveAnalysis()` Funktion fuer die Datenaufbereitung
-- Styling: Print-optimierte CSS-Klassen, helle Farben fuer guten Druck
+**1. `supabase/functions/sync-recording/index.ts` -- Status-Logik ueberarbeiten**
 
-**2. Datei: `src/components/meeting/ReportDownloadModal.tsx` -- Erweitern**
-- Neues Format "PDF (Visueller Bericht)" als Option neben TXT und Markdown
-- Bei Auswahl von PDF:
-  - Rendert `VisualReportView` unsichtbar im DOM
-  - Nutzt `html2canvas` um das gerenderte HTML als Bild zu erfassen
-  - Fuegt das Bild via `jsPDF` in ein PDF-Dokument ein
-  - Laedt die PDF-Datei herunter
-- Die bestehenden Content-Toggles (Zusammenfassung, Key Points, etc.) bleiben erhalten und steuern auch den visuellen Report
-
-**3. Datei: `src/pages/MeetingDetail.tsx` -- Minimale Anpassung**
-- Uebergibt zusaetzlich `transcript_text` und `user_email` an das `ReportDownloadModal`, damit die Deep-Dive-Analyse berechnet werden kann
-
-### Visuelles Layout des Reports
-
-```text
-+--------------------------------------------------+
-|  MEETING-BERICHT                                  |
-|  "Stellantis Training & Projekt-Updates"          |
-|  09. Februar 2026, 13:49 Uhr                     |
-+--------------------------------------------------+
-|                                                    |
-|  [4 Teilnehmer]  [6 Key Points]  [3 To-Dos]      |
-|  [1.234 Woerter] [23 Min]                         |
-|                                                    |
-+------------------------+--------------------------+
-|  Sprechanteile         |  Business vs. Small Talk |
-|  [Pie Chart]           |  [Pie Chart]             |
-|  - Sprecher 1: 40%     |  Business: 85%           |
-|  - Sprecher 2: 35%     |  Small Talk: 15%         |
-|  - Sprecher 3: 25%     |                          |
-+------------------------+--------------------------+
-|                                                    |
-|  ZUSAMMENFASSUNG                                   |
-|  Lorem ipsum dolor sit amet...                     |
-|                                                    |
-|  KEY POINTS                                        |
-|  1. Punkt eins                                     |
-|  2. Punkt zwei                                     |
-|                                                    |
-|  ACTION ITEMS                                      |
-|  [ ] Aufgabe eins                                  |
-|  [ ] Aufgabe zwei                                  |
-|                                                    |
-+--------------------------------------------------+
-|  Generiert am 13.02.2026                          |
-+--------------------------------------------------+
+Aktuell (Zeilen 165-196):
+```
+const latestStatus = botData.status_changes?.[last]?.code
+if (latestSubCode === 'bot_kicked_from_waiting_room') {
+  status = 'waiting_room_rejected'  // ← Problem!
+}
 ```
 
-### Technische Details
+Neu:
+- Nach dem Status-Mapping wird geprueft, ob `botData.recordings` existiert und Eintraege hat
+- Wenn Recordings vorhanden sind UND der Status ein Fehler-Status ist (`waiting_room_rejected`, `waiting_room_timeout`, `error`), wird der Status auf `done` oder `processing` korrigiert
+- Zusaetzlich: Pruefen ob der Bot jemals `in_call_recording` im status_changes Array hatte (= war tatsaechlich im Meeting)
+- Logging wird erweitert, um das Ueberschreiben des Status zu dokumentieren
 
-| Aspekt | Detail |
-|--------|--------|
-| Neue Pakete | `html2canvas`, `jspdf` |
-| Neue Datei | `src/components/meeting/VisualReportView.tsx` |
-| Geaenderte Dateien | `ReportDownloadModal.tsx`, `MeetingDetail.tsx` |
-| Datenquelle | `performDeepDiveAnalysis()` aus `@/utils/deepDiveAnalysis` |
-| Charts | Recharts PieChart (SVG-basiert, wird von html2canvas unterstuetzt) |
-| PDF-Groesse | A4 Hochformat |
-| Fallback | TXT/MD Export bleibt weiterhin verfuegbar |
+Neue Logik:
+```
+// 1. Normales Status-Mapping (wie bisher)
+// 2. KORREKTUR: Wenn Recordings existieren, hat der Bot erfolgreich aufgenommen
+if (['waiting_room_rejected', 'waiting_room_timeout', 'error'].includes(status)) {
+  const hasRecordings = botData.recordings?.length > 0
+  const wasInCall = botData.status_changes?.some(
+    s => ['in_call_recording', 'in_call_not_recording', 'recording_done', 'done'].includes(s.code)
+  )
+  if (hasRecordings || wasInCall) {
+    console.log(`Status-Korrektur: ${status} -> done (Recordings vorhanden: ${hasRecordings}, War im Call: ${wasInCall})`)
+    status = 'done'
+  }
+}
+```
+
+**2. `supabase/functions/sync-recording/index.ts` -- Erweiterte Status-Historie-Analyse**
+
+Statt nur den letzten Eintrag zu pruefen, wird die gesamte Status-Historie analysiert:
+- War der Bot jemals `in_call_recording`? Dann war er im Meeting
+- Hat der Bot `call_ended` oder `recording_done`? Dann ist die Aufnahme fertig
+- Nur wenn der Bot **nie** ueber `in_waiting_room` hinausgekommen ist, wird `waiting_room_rejected` gesetzt
+
+**3. `supabase/functions/sync-recording/index.ts` -- Robusteres Done-Check**
+
+Aktuell wird `status === 'done'` als Bedingung fuer Media-Extraktion verwendet (Zeile 288). Neu wird auch bei korrigierten Status (`waiting_room_rejected` -> `done`) die Media-Extraktion ausgefuehrt.
+
+**4. `supabase/functions/desktop-sdk-webhook/index.ts` -- Gleiche Korrektur**
+
+Falls der Desktop SDK Webhook aehnliche Status-Probleme hat, wird dort die gleiche Recording-Vorrang-Logik eingebaut.
+
+**5. `src/components/RecordingViewer.tsx` -- Polling bei Fehler-Status nicht sofort stoppen**
+
+Aktuell stoppt das Polling bei `waiting_room_rejected` (Zeile 219). Neu:
+- Bei Fehler-Status wird noch 2-3 weitere Polling-Zyklen durchgefuehrt, bevor endgueltig aufgehoert wird
+- Falls sich der Status durch die Backend-Korrektur aendert, wird die Aufnahme normal weiterverarbeitet
+
+### Zusammenfassung der Dateien
+
+| Datei | Aenderung |
+|-------|-----------|
+| `supabase/functions/sync-recording/index.ts` | Status-Korrektur wenn Recordings existieren; Status-Historie-Analyse |
+| `supabase/functions/desktop-sdk-webhook/index.ts` | Gleiche Recording-Vorrang-Logik |
+| `src/components/RecordingViewer.tsx` | Polling bei Fehler-Status nicht sofort stoppen |
+
+### Erwartetes Ergebnis
+
+- Bots die tatsaechlich im Meeting waren und Aufnahmen haben, werden korrekt als "done" markiert
+- Transkripte und Analysen werden auch bei zwischenzeitlichem Waiting-Room-Status erstellt
+- Nur Bots die wirklich nie ins Meeting gekommen sind, werden als "abgelehnt" angezeigt
 
