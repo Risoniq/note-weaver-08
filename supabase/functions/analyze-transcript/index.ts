@@ -198,10 +198,15 @@ ${numbering.keyPoints}. Die 3-5 wichtigsten Punkte als Liste
 ${numbering.actionItems}. Konkrete Action Items mit Verantwortlichen
 
 WICHTIGE REGELN FÜR ACTION ITEMS:
+- Extrahiere NUR explizit formulierte Aufgaben, Zusagen oder Vereinbarungen aus dem Transkript
+- Eine Aufgabe muss klar als solche erkennbar sein (z.B. "ich kümmere mich um...", "bitte schick mir...", "wir müssen noch...", "bis nächste Woche...")
+- Allgemeine Überlegungen, Wünsche oder vage Absichten ("man könnte mal...", "wäre schön wenn...") sind KEINE Action Items
 - Extrahiere die Namen der verantwortlichen Personen DIREKT aus dem Transkript (z.B. "Speaker 1", "Max", "Anna", etc.)
 - Wenn eine Person eine Aufgabe übernimmt oder zugewiesen bekommt, nutze deren Namen aus dem Transkript
 - Wenn im Transkript keine konkrete Person genannt wird, die die Aufgabe übernimmt, schreibe "Verantwortlicher: Nicht zugewiesen" statt "Unbekannt"
 - Format für Action Items: "Aufgabenbeschreibung (Verantwortlicher: [Name aus Transkript])"
+- Sei STRIKT und KONSISTENT: Bei identischem Transkript müssen immer die gleichen Action Items extrahiert werden
+- Im Zweifel WENIGER Action Items extrahieren - nur eindeutige Aufgaben zählen
 ${needsTitle ? `
 WICHTIGE REGELN FÜR DEN TITEL:
 - Der Titel MUSS das SPEZIFISCHE Thema des Meetings widerspiegeln, NICHT nur die Meeting-Art
@@ -232,6 +237,7 @@ ${jsonFormat}`;
       },
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
+        temperature: 0,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Analysiere dieses Meeting-Transkript:\n\n${transcript}` }
