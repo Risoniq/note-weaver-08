@@ -658,7 +658,7 @@ const Settings = () => {
                   <Label>Automatisch beitreten</Label>
                   <p className="text-sm text-muted-foreground">Bot tritt automatisch bei Meeting-Start bei</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch />
               </div>
               <Separator />
               <div className="flex items-center justify-between">
