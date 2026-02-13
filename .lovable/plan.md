@@ -1,66 +1,24 @@
 
+# Einheitliches Design fuer "Projekt zuordnen" und "Mit Team teilen"
 
-## Konsistente To-Do-Extraktion bei Transkript-Neuanalyse
+## Problem
+Beide Elemente verwenden aktuell die Standard-Farben ihrer Komponenten, die zu einem blassen/grauen Text fuehren. Sie sollen stattdessen `text-foreground` verwenden (schwarz im Light-Mode, weiss im Dark-Mode), passend zur Ueberschrift.
 
-### Problem
+## Aenderungen
 
-Der KI-Prompt in `analyze-transcript` gibt keine klare Anweisung zur exakten Anzahl und Auswahl der Action Items. Die Formulierung "Konkrete Action Items mit Verantwortlichen" laesst dem Modell zu viel Spielraum:
-- Mal werden implizite Aufgaben als To-Dos interpretiert, mal nicht
-- Allgemeine Aussagen ("wir sollten mal...") werden inkonsistent als Action Item gewertet
-- Die Temperatur des Modells fuehrt zu unterschiedlichen Ergebnissen
+### 1. ProjectAssignment.tsx (Zeile 84)
+- SelectTrigger: Klasse `text-foreground` hinzufuegen, damit der Placeholder-Text "Projekt zuordnen..." in schwarz/weiss erscheint.
 
-### Loesung
+### 2. TeamShareDropdown.tsx (Zeile 162 + 183)
+- Users-Icon: Farbe von `text-muted-foreground` auf `text-foreground` aendern (wie beim FolderKanban-Icon).
+- Button "Mit Team teilen...": Klasse `text-foreground` hinzufuegen fuer einheitlichen Kontrast.
 
-Den System-Prompt in `supabase/functions/analyze-transcript/index.ts` praezisieren, um die Extraktion deterministischer zu machen.
+## Technische Details
 
-### Aenderung
-
-**Datei:** `supabase/functions/analyze-transcript/index.ts` (Zeilen 198-204)
-
-Der Abschnitt fuer Action Items wird wie folgt verschaerft:
-
-Vorher:
-```
-Konkrete Action Items mit Verantwortlichen
-
-WICHTIGE REGELN FUER ACTION ITEMS:
-- Extrahiere die Namen der verantwortlichen Personen DIREKT aus dem Transkript
-- Wenn eine Person eine Aufgabe uebernimmt oder zugewiesen bekommt, nutze deren Namen
-- Wenn im Transkript keine konkrete Person genannt wird, schreibe "Verantwortlicher: Nicht zugewiesen"
-- Format fuer Action Items: "Aufgabenbeschreibung (Verantwortlicher: [Name])"
-```
-
-Nachher:
-```
-Konkrete Action Items mit Verantwortlichen
-
-WICHTIGE REGELN FUER ACTION ITEMS:
-- Extrahiere NUR explizit formulierte Aufgaben, Zusagen oder Vereinbarungen aus dem Transkript
-- Eine Aufgabe muss klar als solche erkennbar sein (z.B. "ich kuemmere mich um...", "bitte schick mir...", "wir muessen noch...", "bis naechste Woche...")
-- Allgemeine Ueberlegungen, Wuensche oder vage Absichten ("man koennte mal...", "waere schoen wenn...") sind KEINE Action Items
-- Extrahiere die Namen der verantwortlichen Personen DIREKT aus dem Transkript (z.B. "Speaker 1", "Max", "Anna", etc.)
-- Wenn eine Person eine Aufgabe uebernimmt oder zugewiesen bekommt, nutze deren Namen aus dem Transkript
-- Wenn im Transkript keine konkrete Person genannt wird, die die Aufgabe uebernimmt, schreibe "Verantwortlicher: Nicht zugewiesen" statt "Unbekannt"
-- Format fuer Action Items: "Aufgabenbeschreibung (Verantwortlicher: [Name aus Transkript])"
-- Sei STRIKT und KONSISTENT: Bei identischem Transkript muessen immer die gleichen Action Items extrahiert werden
-- Im Zweifel WENIGER Action Items extrahieren - nur eindeutige Aufgaben zaehlen
-```
-
-Zusaetzlich wird dem API-Aufruf der Parameter `temperature: 0` hinzugefuegt (Zeile ~232), um die Ausgabe des Modells deterministischer zu machen:
-
-```typescript
-body: JSON.stringify({
-  model: 'google/gemini-2.5-flash',
-  temperature: 0,    // NEU: Deterministische Ausgabe
-  messages: [...]
-})
-```
-
-### Zusammenfassung der Aenderungen
-
-| Was | Wo | Warum |
+| Datei | Zeile | Aenderung |
 |---|---|---|
-| Strengere Prompt-Regeln | System-Prompt, Zeilen 198-204 | Nur explizite Aufgaben, keine vagen Absichten |
-| `temperature: 0` | API-Aufruf, Zeile ~232 | Gleicher Input = gleicher Output |
+| `src/components/meeting/ProjectAssignment.tsx` | 84 | `className="h-7 w-auto min-w-[140px] text-xs border-dashed text-foreground"` |
+| `src/components/meeting/TeamShareDropdown.tsx` | 162 | `text-muted-foreground` ersetzen durch `text-foreground` |
+| `src/components/meeting/TeamShareDropdown.tsx` | 183 | `className="h-7 text-xs border-dashed gap-1 text-foreground"` |
 
-Diese zwei Aenderungen zusammen sorgen dafuer, dass bei wiederholter Analyse desselben Transkripts konsistente To-Dos extrahiert werden.
+Keine neuen Abhaengigkeiten oder Datenbankänderungen noetig.
