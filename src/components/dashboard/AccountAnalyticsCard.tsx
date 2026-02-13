@@ -107,23 +107,23 @@ export const AccountAnalyticsCard = () => {
         {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{analytics.totalMeetings}</span>
-            <span className="text-muted-foreground">Meetings</span>
+            <Users className="h-3 w-3 text-muted-foreground/50" />
+            <span className="font-mono font-light text-lg text-primary drop-shadow-[0_0_4px_hsl(var(--primary)/0.2)]">{analytics.totalMeetings}</span>
+            <span className="uppercase tracking-widest text-[10px] text-muted-foreground">Meetings</span>
           </div>
           <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{formatDuration(analytics.totalDurationMinutes)}</span>
+            <Clock className="h-3 w-3 text-muted-foreground/50" />
+            <span className="font-mono font-light text-lg text-primary drop-shadow-[0_0_4px_hsl(var(--primary)/0.2)]">{formatDuration(analytics.totalDurationMinutes)}</span>
           </div>
           <div className="flex items-center gap-2">
-            <CheckSquare className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{analytics.totalActionItems}</span>
-            <span className="text-muted-foreground">To-Dos</span>
+            <CheckSquare className="h-3 w-3 text-muted-foreground/50" />
+            <span className="font-mono font-light text-lg text-primary drop-shadow-[0_0_4px_hsl(var(--primary)/0.2)]">{analytics.totalActionItems}</span>
+            <span className="uppercase tracking-widest text-[10px] text-muted-foreground">To-Dos</span>
           </div>
           <div className="flex items-center gap-2">
-            <Lightbulb className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{analytics.totalKeyPoints}</span>
-            <span className="text-muted-foreground">Key Points</span>
+            <Lightbulb className="h-3 w-3 text-muted-foreground/50" />
+            <span className="font-mono font-light text-lg text-primary drop-shadow-[0_0_4px_hsl(var(--primary)/0.2)]">{analytics.totalKeyPoints}</span>
+            <span className="uppercase tracking-widest text-[10px] text-muted-foreground">Key Points</span>
           </div>
         </div>
 

@@ -94,7 +94,7 @@ export const AccountAnalyticsModal = ({
                   {speakerChartData.map((s, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs">
                       <div className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
-                      <span className="truncate">{s.name} {s.value}%</span>
+                      <span className="truncate">{s.name} <span className="font-mono font-light">{s.value}%</span></span>
                     </div>
                   ))}
                 </div>
@@ -115,11 +115,11 @@ export const AccountAnalyticsModal = ({
                 <div className="flex flex-col gap-1 mt-1">
                   <div className="flex items-center gap-2 text-xs">
                     <div className="w-2 h-2 rounded-full bg-[hsl(210,80%,55%)]" />
-                    <span>Business {analytics.aggregatedContentBreakdown.business}%</span>
+                    <span>Business <span className="font-mono font-light">{analytics.aggregatedContentBreakdown.business}%</span></span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <div className="w-2 h-2 rounded-full bg-[hsl(45,80%,55%)]" />
-                    <span>Small Talk {analytics.aggregatedContentBreakdown.smallTalk}%</span>
+                    <span>Small Talk <span className="font-mono font-light">{analytics.aggregatedContentBreakdown.smallTalk}%</span></span>
                   </div>
                 </div>
               </div>
@@ -142,15 +142,15 @@ export const AccountAnalyticsModal = ({
                 <div className="flex flex-col gap-1 mt-1 text-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">To-Dos zugeordnet</span>
-                    <span className="font-medium">{eff.assignedPercentage}%</span>
+                    <span className="font-mono font-light text-primary drop-shadow-[0_0_4px_hsl(var(--primary)/0.2)]">{eff.assignedPercentage}%</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Follow-Ups</span>
-                    <span className="font-medium">{eff.followUpPercentage}%</span>
+                    <span className="font-mono font-light text-primary drop-shadow-[0_0_4px_hsl(var(--primary)/0.2)]">{eff.followUpPercentage}%</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Nächste Schritte</span>
-                    <span className="font-medium">{eff.nextStepsPercentage}%</span>
+                    <span className="font-mono font-light text-primary drop-shadow-[0_0_4px_hsl(var(--primary)/0.2)]">{eff.nextStepsPercentage}%</span>
                   </div>
                 </div>
               </div>
@@ -274,9 +274,9 @@ const StatCard = ({
   value: string | number;
   label: string;
 }) => (
-  <div className="bg-muted/30 rounded-xl p-3 text-center">
-    <div className="flex justify-center text-primary mb-1">{icon}</div>
-    <p className="text-xl font-semibold">{value}</p>
-    <p className="text-xs text-muted-foreground">{label}</p>
+  <div className="rounded-xl p-3 text-center border border-border/40 bg-transparent">
+    <div className="flex justify-center text-muted-foreground/40 mb-1">{icon}</div>
+    <p className="text-2xl font-light font-mono tracking-wider text-primary drop-shadow-[0_0_6px_hsl(var(--primary)/0.3)]">{value}</p>
+    <p className="uppercase tracking-[0.15em] text-[10px] text-muted-foreground mt-1">{label}</p>
   </div>
 );

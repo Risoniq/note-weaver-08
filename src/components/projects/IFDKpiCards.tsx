@@ -21,12 +21,12 @@ export function IFDKpiCards({ recordings }: Props) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       {kpis.map((kpi) => (
-        <Card key={kpi.label}>
+        <Card key={kpi.label} className="border-border/40 bg-transparent">
           <CardContent className="p-4 flex items-center gap-3">
-            <kpi.icon className={`h-8 w-8 ${kpi.color}`} />
+            <kpi.icon className={`h-5 w-5 ${kpi.color} opacity-50`} />
             <div>
-              <p className="text-2xl font-bold">{kpi.value}</p>
-              <p className="text-xs text-muted-foreground">{kpi.label}</p>
+              <p className="text-2xl font-light font-mono tracking-wider text-primary drop-shadow-[0_0_6px_hsl(var(--primary)/0.3)]">{kpi.value}</p>
+              <p className="uppercase tracking-[0.15em] text-[10px] text-muted-foreground mt-0.5">{kpi.label}</p>
             </div>
           </CardContent>
         </Card>
