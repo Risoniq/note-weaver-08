@@ -146,15 +146,15 @@ export const MeetingChatWidget = () => {
     streamChat(input.trim());
     setInput("");
   };
-  return <div className="rounded-xl p-4 bg-secondary-foreground">
-      <h3 className="font-medium mb-3 flex items-center gap-2 text-primary-foreground">
+  return <div className="rounded-xl p-4 bg-muted">
+      <h3 className="font-medium mb-3 flex items-center gap-2 text-foreground">
         <MessageCircle className="h-4 w-4 text-primary" />
         Fragen zu deinen Meetings
       </h3>
       
       {/* Messages Area */}
       <ScrollArea className="h-48 mb-3 pr-2" ref={scrollRef}>
-        {messages.length === 0 ? <div className="text-center text-primary-foreground text-sm py-8">
+        {messages.length === 0 ? <div className="text-center text-muted-foreground text-sm py-8">
             <p>Stelle Fragen zu deinen Meetings:</p>
             <p className="text-xs mt-2 opacity-70">
               z.B. "Was waren die wichtigsten Action Items?" oder "Welche offenen Themen gibt es?"
@@ -170,7 +170,7 @@ export const MeetingChatWidget = () => {
 
       {/* Input Form */}
       <form onSubmit={handleSubmit} className="flex gap-2">
-        <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Frag etwas über deine Meetings..." disabled={isLoading} className="flex-1 bg-background/50" />
+        <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Frag etwas über deine Meetings..." disabled={isLoading} className="flex-1 bg-background/70" />
         <VoiceInputButton 
           onTranscript={(text) => setInput(prev => prev ? `${prev} ${text}` : text)}
           disabled={isLoading}
