@@ -45,7 +45,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           <div className="p-2 rounded-xl bg-primary/10">
             <Mic className="h-5 w-5 text-primary" />
           </div>
-          <span className="font-semibold text-lg hidden sm:block">Meeting Recorder</span>
+          <span className="font-semibold text-lg hidden sm:block text-muted-foreground">Meeting Recorder</span>
         </div>
 
         {/* Navigation */}
