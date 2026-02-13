@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Recording, getStatusLabel, getStatusColor } from "@/types/recording";
 import { Calendar, Clock, Loader2, Upload, RotateCcw, User, Users as UsersIcon, Share2 } from "lucide-react";
+import { getConsistentParticipantCount } from "@/utils/participantUtils";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
@@ -29,7 +30,9 @@ export const RecordingCard = ({ recording, onClick, isDeleted, onRestore, ownerE
   const isActive = hasActiveStatus && !isStale;
   const displayStatus = isStale ? 'timeout' : recording.status;
 
-  const participantCount = recording.participants?.length ?? 0;
+  const participantResult = getConsistentParticipantCount(recording);
+  const participantCount = participantResult.count;
+  const participantNames = participantResult.names;
   
   return (
     <Card 
@@ -104,7 +107,11 @@ export const RecordingCard = ({ recording, onClick, isDeleted, onRestore, ownerE
             {participantCount > 0 && (
               <div className="flex items-center gap-1.5">
                 <UsersIcon className="h-3.5 w-3.5" />
-                <span>{participantCount} Teilnehmer</span>
+                <span className="truncate max-w-[400px]">
+                  {participantNames.length > 0
+                    ? participantNames.join(', ')
+                    : `${participantCount} Teilnehmer`}
+                </span>
               </div>
             )}
           </div>
