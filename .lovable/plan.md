@@ -1,38 +1,90 @@
 
 
-## recall-bot-check um "list-bots" Action erweitern
+## Bericht-Export als visuellen Report (statt TXT)
 
 ### Ziel
+Der "Bericht herunterladen" Button soll nicht mehr eine reine TXT/Markdown-Datei erzeugen, sondern einen visuell aufbereiteten Report im gleichen Design wie die Dashboard-Analyse -- mit Pie-Charts, KPI-Karten, farbiger Darstellung und professionellem Layout. Der Report wird als PDF heruntergeladen.
 
-Eine neue Action `list-bots` in der bestehenden `recall-bot-check` Edge Function, die alle Bots eines bestimmten Zeitraums von der Recall.ai API abruft. Damit koennen wir Bots vom 10.02.2026 fuer as@ec-pd.com finden, auch wenn kein Eintrag in der lokalen Datenbank existiert.
+### Ansatz
+Ein neues Browser-Fenster mit einer druckoptimierten HTML-Seite oeffnen, die alle Analyse-Visualisierungen rendert. Der User kann dann ueber den Browser-Druckdialog als PDF speichern. Zusaetzlich wird `html2canvas` + `jsPDF` eingebaut fuer einen direkten PDF-Download.
 
-### Aenderung
+### Neue Abhaengigkeiten
+- `html2canvas` -- Rendert HTML-Elemente als Canvas/Bild
+- `jspdf` -- Erzeugt PDF-Dateien im Browser
 
-**Datei: `supabase/functions/recall-bot-check/index.ts`**
+### Aenderungen
 
-Die Edge Function wird um eine Action-basierte Struktur erweitert:
+**1. Neue Komponente: `src/components/meeting/VisualReportView.tsx`**
+- Rendert eine druckoptimierte Version der Meeting-Analyse
+- Enthaelt:
+  - Header mit Titel, Datum, Dauer, Teilnehmeranzahl
+  - KPI-Karten (Teilnehmer, Key Points, Action Items, Woerter)
+  - Sprechanteile als Pie-Chart (mit Recharts, gleich wie DeepDiveModal)
+  - Business vs. Small Talk Pie-Chart
+  - Zusammenfassung als formatierter Text-Block
+  - Key Points als nummerierte Liste mit farbigen Markierungen
+  - Action Items als Checkliste
+  - Optional: Transkript-Auszug
+- Nutzt die bestehende `performDeepDiveAnalysis()` Funktion fuer die Datenaufbereitung
+- Styling: Print-optimierte CSS-Klassen, helle Farben fuer guten Druck
 
-- **Bestehende Logik** (wenn `bot_id` uebergeben wird): bleibt unveraendert
-- **Neue Action `list-bots`**: Wenn `action: "list-bots"` mit optionalen `date_from`, `date_to` und `user_email` Parametern uebergeben wird:
-  1. Ruft `GET https://eu-central-1.recall.ai/api/v1/bot/` auf, mit Query-Parametern fuer Zeitfilter (`created_after`, `created_before`) - paginiert ueber alle Ergebnisse
-  2. Optional: Filtert nach `meeting_url` oder Metadaten, die auf den User hinweisen
-  3. Fuer jeden gefundenen Bot wird geprueft, ob ein passender `recordings`-Eintrag in der DB existiert
-  4. Gibt eine Liste aller gefundenen Bots zurueck mit Status, Meeting-URL, created_at und ob ein DB-Eintrag existiert
+**2. Datei: `src/components/meeting/ReportDownloadModal.tsx` -- Erweitern**
+- Neues Format "PDF (Visueller Bericht)" als Option neben TXT und Markdown
+- Bei Auswahl von PDF:
+  - Rendert `VisualReportView` unsichtbar im DOM
+  - Nutzt `html2canvas` um das gerenderte HTML als Bild zu erfassen
+  - Fuegt das Bild via `jsPDF` in ein PDF-Dokument ein
+  - Laedt die PDF-Datei herunter
+- Die bestehenden Content-Toggles (Zusammenfassung, Key Points, etc.) bleiben erhalten und steuern auch den visuellen Report
 
-### Ablauf nach Implementierung
+**3. Datei: `src/pages/MeetingDetail.tsx` -- Minimale Anpassung**
+- Uebergibt zusaetzlich `transcript_text` und `user_email` an das `ReportDownloadModal`, damit die Deep-Dive-Analyse berechnet werden kann
 
-1. Edge Function deployen
-2. Function mit `action: "list-bots"`, `date_from: "2026-02-10T00:00:00Z"`, `date_to: "2026-02-10T23:59:59Z"` aufrufen
-3. Ergebnisse pruefen - wenn ein Bot gefunden wird, kann dessen `bot_id` verwendet werden um ueber `sync-recording` die Daten wiederherzustellen
+### Visuelles Layout des Reports
+
+```text
++--------------------------------------------------+
+|  MEETING-BERICHT                                  |
+|  "Stellantis Training & Projekt-Updates"          |
+|  09. Februar 2026, 13:49 Uhr                     |
++--------------------------------------------------+
+|                                                    |
+|  [4 Teilnehmer]  [6 Key Points]  [3 To-Dos]      |
+|  [1.234 Woerter] [23 Min]                         |
+|                                                    |
++------------------------+--------------------------+
+|  Sprechanteile         |  Business vs. Small Talk |
+|  [Pie Chart]           |  [Pie Chart]             |
+|  - Sprecher 1: 40%     |  Business: 85%           |
+|  - Sprecher 2: 35%     |  Small Talk: 15%         |
+|  - Sprecher 3: 25%     |                          |
++------------------------+--------------------------+
+|                                                    |
+|  ZUSAMMENFASSUNG                                   |
+|  Lorem ipsum dolor sit amet...                     |
+|                                                    |
+|  KEY POINTS                                        |
+|  1. Punkt eins                                     |
+|  2. Punkt zwei                                     |
+|                                                    |
+|  ACTION ITEMS                                      |
+|  [ ] Aufgabe eins                                  |
+|  [ ] Aufgabe zwei                                  |
+|                                                    |
++--------------------------------------------------+
+|  Generiert am 13.02.2026                          |
++--------------------------------------------------+
+```
 
 ### Technische Details
 
 | Aspekt | Detail |
 |--------|--------|
-| Datei | `supabase/functions/recall-bot-check/index.ts` |
-| Recall API | `GET /api/v1/bot/?created_after=...&created_before=...` |
-| Auth | Weiterhin nur fuer Admins |
-| Paginierung | Recall API gibt `next`-URL zurueck, wird automatisch durchlaufen |
-| DB-Abgleich | Fuer jeden Bot wird `recordings.recall_bot_id` geprueft |
-| User-Filter | Optional: `recall_calendar_users` nach `user_email` abfragen, um `recall_user_id` zu erhalten und Bots zu filtern |
+| Neue Pakete | `html2canvas`, `jspdf` |
+| Neue Datei | `src/components/meeting/VisualReportView.tsx` |
+| Geaenderte Dateien | `ReportDownloadModal.tsx`, `MeetingDetail.tsx` |
+| Datenquelle | `performDeepDiveAnalysis()` aus `@/utils/deepDiveAnalysis` |
+| Charts | Recharts PieChart (SVG-basiert, wird von html2canvas unterstuetzt) |
+| PDF-Groesse | A4 Hochformat |
+| Fallback | TXT/MD Export bleibt weiterhin verfuegbar |
 
