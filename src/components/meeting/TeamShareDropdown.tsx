@@ -159,7 +159,7 @@ export function TeamShareDropdown({ recordingId }: TeamShareDropdownProps) {
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+      <Users className="h-4 w-4 text-foreground shrink-0" />
 
       {sharedUsers.map((s) => (
         <Badge
@@ -180,7 +180,7 @@ export function TeamShareDropdown({ recordingId }: TeamShareDropdownProps) {
       {teamMembers.length > 0 && (
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 text-xs border-dashed gap-1">
+            <Button variant="outline" size="sm" className="h-7 text-xs border-dashed gap-1 text-foreground">
               <UserPlus className="h-3 w-3" />
               Mit Team teilen...
             </Button>
