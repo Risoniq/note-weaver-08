@@ -195,7 +195,31 @@ Deno.serve(async (req) => {
       console.log('Wartebereich-Timeout erreicht')
     }
     
-    console.log(`Bot Status (mapped): ${status}`)
+    console.log(`Bot Status (mapped, vor Korrektur): ${status}`)
+    
+    // === STATUS-KORREKTUR: Recordings haben Vorrang vor Fehler-Status ===
+    // Wenn der letzte Status ein Fehler ist, aber der Bot tatsächlich im Meeting war
+    // oder Recordings existieren, wird der Status korrigiert.
+    if (['waiting_room_rejected', 'waiting_room_timeout', 'error'].includes(status)) {
+      const hasRecordings = botData.recordings?.length > 0
+      const statusHistory = botData.status_changes || []
+      const successCodes = ['in_call_recording', 'in_call_not_recording', 'recording_done', 'call_ended', 'done', 'analysis_done']
+      const wasInCall = statusHistory.some(
+        (s: { code?: string }) => successCodes.includes(s.code || '')
+      )
+      
+      if (hasRecordings || wasInCall) {
+        console.log(`STATUS-KORREKTUR: ${status} -> done (Recordings vorhanden: ${hasRecordings}, War im Call: ${wasInCall})`)
+        console.log(`Status-Historie: ${statusHistory.map((s: { code?: string }) => s.code).join(' -> ')}`)
+        status = 'done'
+      } else {
+        // Bot kam nie über den Warteraum hinaus - Status bleibt als Fehler
+        console.log(`Kein Recording und nie im Call - Fehler-Status '${status}' bleibt bestehen`)
+        console.log(`Status-Historie: ${statusHistory.map((s: { code?: string }) => s.code).join(' -> ')}`)
+      }
+    }
+    
+    console.log(`Bot Status (final): ${status}`)
 
     // 7. Daten vorbereiten für Update
     const updates: Record<string, unknown> = { status: status }

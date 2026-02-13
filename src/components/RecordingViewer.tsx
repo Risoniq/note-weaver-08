@@ -25,6 +25,10 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
   const [recording, setRecording] = useState<Recording | null>(null);
   const [status, setStatus] = useState<string>("pending");
   const [isLoading, setIsLoading] = useState(true);
+  const [errorPollCount, setErrorPollCount] = useState(0);
+
+  const ERROR_STATUSES = ["waiting_room_rejected", "waiting_room_timeout", "error"];
+  const MAX_ERROR_POLLS = 3; // Weitere Polling-Zyklen nach Fehler-Status
 
   useEffect(() => {
     const checkStatus = async () => {
@@ -40,7 +44,20 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
         }
 
         if (syncData?.status) {
-          setStatus(syncData.status);
+          const newStatus = syncData.status;
+          
+          // Wenn Status von Fehler zu Nicht-Fehler wechselt, Counter zurücksetzen
+          if (ERROR_STATUSES.includes(status) && !ERROR_STATUSES.includes(newStatus)) {
+            console.log(`Status korrigiert: ${status} -> ${newStatus}`);
+            setErrorPollCount(0);
+          }
+          
+          // Bei Fehler-Status: Counter hochzählen
+          if (ERROR_STATUSES.includes(newStatus)) {
+            setErrorPollCount(prev => prev + 1);
+          }
+          
+          setStatus(newStatus);
         }
 
         // If done, fetch recording data from table
@@ -68,14 +85,18 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
     checkStatus();
 
     // Poll every 5 seconds if not done
+    // Bei Fehler-Status: weiter pollen bis MAX_ERROR_POLLS erreicht
     const interval = setInterval(() => {
-      if (status !== "done") {
+      const isErrorStatus = ERROR_STATUSES.includes(status);
+      const shouldStopErrorPolling = isErrorStatus && errorPollCount >= MAX_ERROR_POLLS;
+      
+      if (status !== "done" && !shouldStopErrorPolling) {
         checkStatus();
       }
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [recordingId, status]);
+  }, [recordingId, status, errorPollCount]);
 
   const getStatusBadge = () => {
     switch (status) {
