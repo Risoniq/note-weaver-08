@@ -1,17 +1,17 @@
 
 
-## Favicon austauschen
+## Seitentitel aendern
 
 ### Aenderung
 
-1. Das hochgeladene Bild `user-uploads://Risoniq_Logo_pos_icon.png` in das public-Verzeichnis kopieren als `public/favicon.png`
-2. In `index.html` den bestehenden Favicon-Verweis durch einen Link auf die neue PNG-Datei ersetzen:
-   - `<link rel="icon" href="/favicon.png" type="image/png">`
+In `index.html` den Titel und die Open-Graph-Meta-Tags von "Lovable App" auf "NotetakerPro" aendern:
+
+- `<title>NotetakerPro</title>`
+- `<meta property="og:title" content="NotetakerPro" />`
 
 ### Betroffene Dateien
 
 | Datei | Aenderung |
 |-------|-----------|
-| `public/favicon.png` | Neue Datei (Kopie des Uploads) |
-| `index.html` | Favicon-Link aktualisieren |
+| `index.html` | Titel und og:title auf "NotetakerPro" setzen |
 
