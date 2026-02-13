@@ -81,7 +81,7 @@ export function ProjectAssignment({ recordingId }: ProjectAssignmentProps) {
 
       {availableProjects.length > 0 && (
         <Select onValueChange={handleAssign} value="">
-          <SelectTrigger className="h-7 w-auto min-w-[140px] text-xs border-dashed text-foreground">
+          <SelectTrigger className="h-7 w-auto min-w-[140px] text-xs border-dashed text-foreground data-[placeholder]:text-foreground">
             <SelectValue placeholder="Projekt zuordnen..." />
           </SelectTrigger>
           <SelectContent>
