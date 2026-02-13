@@ -550,6 +550,35 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (action === 'get_preferences') {
+      const { data, error } = await supabase
+        .from('recall_calendar_users')
+        .select('recording_preferences')
+        .eq('supabase_user_id', supabaseUserId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[get_preferences] Error:', error);
+        throw new Error('Failed to load preferences');
+      }
+
+      const defaults = {
+        record_all: true,
+        record_only_owned: false,
+        record_external: true,
+        auto_record: false,
+      };
+
+      const prefs = data?.recording_preferences
+        ? { ...defaults, ...(data.recording_preferences as Record<string, unknown>) }
+        : defaults;
+
+      return new Response(
+        JSON.stringify({ success: true, preferences: prefs }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (action === 'update_recording') {
       if (!meeting_id) {
         throw new Error('meeting_id is required');

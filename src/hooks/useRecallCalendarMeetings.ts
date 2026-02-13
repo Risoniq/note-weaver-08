@@ -84,6 +84,7 @@ export function useRecallCalendarMeetings() {
   const lastFetchRef = useRef<number>(0);
   const pendingFetchRef = useRef<boolean>(false);
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
+  const prefsLoadedRef = useRef<boolean>(false);
 
   // Get authenticated user
   useEffect(() => {
@@ -192,6 +193,31 @@ export function useRecallCalendarMeetings() {
     }
   }, [authUser?.id]);
 
+  // Load saved preferences from database on mount
+  const loadPreferences = useCallback(async () => {
+    if (!authUser?.id || prefsLoadedRef.current) return;
+
+    try {
+      console.log('[useRecallCalendarMeetings] Loading saved preferences...');
+      const { data, error: funcError } = await withTokenRefresh(
+        () => supabase.functions.invoke('recall-calendar-meetings', {
+          body: { action: 'get_preferences', supabase_user_id: authUser.id },
+        }),
+        { maxRetries: 1 }
+      );
+
+      if (funcError) throw funcError;
+
+      if (data.success && data.preferences) {
+        console.log('[useRecallCalendarMeetings] Loaded preferences:', data.preferences);
+        setPreferences(data.preferences);
+        prefsLoadedRef.current = true;
+      }
+    } catch (err: any) {
+      console.error('[useRecallCalendarMeetings] Error loading preferences:', err);
+    }
+  }, [authUser?.id]);
+
   // Execute pending fetch when authUser becomes available
   useEffect(() => {
     if (authUser?.id && pendingFetchRef.current) {
@@ -200,6 +226,13 @@ export function useRecallCalendarMeetings() {
       fetchMeetings();
     }
   }, [authUser?.id, fetchMeetings]);
+
+  // Load preferences when authUser becomes available
+  useEffect(() => {
+    if (authUser?.id) {
+      loadPreferences();
+    }
+  }, [authUser?.id, loadPreferences]);
 
   const updateMeetingRecording = useCallback(async (meetingId: string, shouldRecord: boolean) => {
     if (!authUser?.id) return;
