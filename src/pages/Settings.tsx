@@ -30,7 +30,7 @@ const Settings = () => {
   const { isAdmin } = useAdminCheck();
   
   // Calendar hooks
-  const { preferences, updatePreferences, fetchMeetings } = useRecallCalendarMeetings();
+  const { preferences, updatePreferences, fetchMeetings, preferencesLoaded } = useRecallCalendarMeetings();
   const google = useGoogleRecallCalendar();
   const microsoft = useMicrosoftRecallCalendar();
   const handleLogout = async () => {
@@ -713,49 +713,57 @@ const Settings = () => {
               <CardDescription>Konfiguriere, welche Meetings automatisch aufgezeichnet werden sollen</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex items-center justify-between" data-tour="auto-record">
-                <div className="space-y-0.5">
-                  <Label>Automatische Aufnahme</Label>
-                  <p className="text-sm text-muted-foreground">Bot tritt automatisch allen Meetings bei</p>
+              {!preferencesLoaded ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
-                <Switch
-                  checked={preferences.auto_record}
-                  onCheckedChange={(checked) => updatePreferences({ auto_record: checked })}
-                />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Alle Meetings aufnehmen</Label>
-                  <p className="text-sm text-muted-foreground">Auch Meetings, zu denen du eingeladen wurdest</p>
-                </div>
-                <Switch
-                  checked={preferences.record_all}
-                  onCheckedChange={(checked) => updatePreferences({ record_all: checked })}
-                />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Nur eigene Meetings</Label>
-                  <p className="text-sm text-muted-foreground">Nur Meetings aufnehmen, die du organisiert hast</p>
-                </div>
-                <Switch
-                  checked={preferences.record_only_owned}
-                  onCheckedChange={(checked) => updatePreferences({ record_only_owned: checked })}
-                />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Externe Meetings aufnehmen</Label>
-                  <p className="text-sm text-muted-foreground">Meetings mit externen Teilnehmern aufnehmen</p>
-                </div>
-                <Switch
-                  checked={preferences.record_external}
-                  onCheckedChange={(checked) => updatePreferences({ record_external: checked })}
-                />
-              </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between" data-tour="auto-record">
+                    <div className="space-y-0.5">
+                      <Label>Automatische Aufnahme</Label>
+                      <p className="text-sm text-muted-foreground">Bot tritt automatisch allen Meetings bei</p>
+                    </div>
+                    <Switch
+                      checked={preferences.auto_record}
+                      onCheckedChange={(checked) => updatePreferences({ auto_record: checked })}
+                    />
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>Alle Meetings aufnehmen</Label>
+                      <p className="text-sm text-muted-foreground">Auch Meetings, zu denen du eingeladen wurdest</p>
+                    </div>
+                    <Switch
+                      checked={preferences.record_all}
+                      onCheckedChange={(checked) => updatePreferences({ record_all: checked })}
+                    />
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>Nur eigene Meetings</Label>
+                      <p className="text-sm text-muted-foreground">Nur Meetings aufnehmen, die du organisiert hast</p>
+                    </div>
+                    <Switch
+                      checked={preferences.record_only_owned}
+                      onCheckedChange={(checked) => updatePreferences({ record_only_owned: checked })}
+                    />
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>Externe Meetings aufnehmen</Label>
+                      <p className="text-sm text-muted-foreground">Meetings mit externen Teilnehmern aufnehmen</p>
+                    </div>
+                    <Switch
+                      checked={preferences.record_external}
+                      onCheckedChange={(checked) => updatePreferences({ record_external: checked })}
+                    />
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
