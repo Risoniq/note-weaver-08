@@ -1,49 +1,39 @@
 
 
-## Metriken minimalistischer und futuristischer gestalten
+## calendar_attendees als Fallback + Meeting neu erstellen
 
-### Ziel
-Die Statistik-Karten und Metriken in der Account-Analyse (Card + Modal) erhalten ein minimalistisches, futuristisches Design mit Monospace-Zahlen, subtilen Glow-Effekten und reduzierter visueller Dichte.
+### 1. calendar_attendees-Fallback in der Teilnehmer-Logik
 
-### Aenderungen
+**Problem:** Wenn `participants` leer ist, wird nur das Transkript als Fallback genutzt. Die `calendar_attendees` (aus dem Kalender-Event) enthalten oft bessere Namensdaten, werden aber ignoriert.
 
-**1. `src/components/dashboard/AccountAnalyticsModal.tsx` -- StatCard futuristisch**
-- StatCard-Komponente ueberarbeiten:
-  - Monospace-Font fuer Zahlenwerte (`font-mono tracking-wider`)
-  - Groessere, duennere Zahlen (`text-2xl font-light` statt `text-xl font-semibold`)
-  - Subtiler Glow-Effekt auf dem Wert (`text-primary drop-shadow-[0_0_6px_rgba(var(--primary-rgb),0.3)]`)
-  - Icon entfernen oder stark verkleinern (nur als dezenter Akzent)
-  - Labels in Uppercase-Tracking (`uppercase tracking-[0.15em] text-[10px]`)
-  - Hintergrund: transparent mit feiner Borderlinie statt `bg-muted/30`
-- Pie-Chart-Sektionen: Labels in Monospace, Prozente mit Glow
-- Effektivitaets-Metriken: Prozentwerte in Monospace mit leichtem Farbakzent
+**Aenderungen:**
 
-**2. `src/components/dashboard/AccountAnalyticsCard.tsx` -- Mini-Stats futuristisch**
-- Stats Grid: Zahlen in `font-mono font-light text-lg` statt `font-medium`
-- Labels in `uppercase tracking-widest text-[10px]`
-- Icons noch kleiner oder durch minimale Linien-Akzente ersetzen
+**`src/types/recording.ts`**
+- Feld `calendar_attendees` zum `Recording`-Interface hinzufuegen:
+  ```
+  calendar_attendees: { name: string; email: string }[] | null;
+  ```
 
-**3. `src/components/projects/IFDKpiCards.tsx` -- Projekt-KPIs angleichen**
-- Gleicher futuristischer Stil: Monospace-Zahlen, Uppercase-Labels, reduzierte Icon-Groesse
+**`src/utils/participantUtils.ts`**
+- `getConsistentParticipantCount` erweitern: Zwischen Schritt 1 (DB-participants) und Schritt 2 (Transkript) einen neuen Fallback einfuegen:
+  1. DB-Teilnehmer (participants)
+  2. **NEU: calendar_attendees** -- Namen aus dem Kalender-Event nutzen, Bots filtern
+  3. Transkript-Extraktion
+  4. Absoluter Fallback
+- Das Input-Interface um `calendar_attendees` erweitern
+- Source-Typ um `'calendar'` ergaenzen
 
-### Visuelles Konzept
+**`src/components/recordings/RecordingCard.tsx`**
+- Keine Aenderung noetig -- nutzt bereits `getConsistentParticipantCount(recording)`, und da das Recording-Objekt aus der DB `calendar_attendees` enthaelt, wird es automatisch durchgereicht.
 
-```
-Aktuell:                          Neu (futuristisch):
-+------------------+              +------------------+
-|    [Icon]        |              |                  |
-|    42            |              |      42          |
-|   Meetings       |              |   MEETINGS       |
-+------------------+              +------------------+
-  (bg-muted, bold)                 (transparent, mono,
-                                    thin, glow, uppercase)
-```
+### 2. Meeting 35f71338 neu erstellen
+
+Das Recording mit ID `35f71338-92d3-47b2-826b-6e3cfa9807c5` existiert nicht mehr in der Datenbank. Um es neu zu analysieren, muss es ueber das Admin-Dashboard ("Meeting erstellen") mit dem Transkript-Text neu angelegt werden. Das ist ein manueller Schritt -- sofern du das Transkript noch hast, kann ich dir dabei helfen es ueber die bestehende Admin-Funktion einzuspeisen.
 
 ### Betroffene Dateien
 
 | Datei | Aenderung |
 |-------|-----------|
-| `src/components/dashboard/AccountAnalyticsModal.tsx` | StatCard futuristisch, Pie-Chart Labels minimalistisch |
-| `src/components/dashboard/AccountAnalyticsCard.tsx` | Stats Grid futuristisch |
-| `src/components/projects/IFDKpiCards.tsx` | KPI-Karten im gleichen Stil |
+| `src/types/recording.ts` | `calendar_attendees` Feld hinzufuegen |
+| `src/utils/participantUtils.ts` | calendar_attendees als Fallback-Stufe 2 einbauen |
 
