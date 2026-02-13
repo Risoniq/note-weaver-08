@@ -643,7 +643,7 @@ export default function MeetingDetail() {
           <Button 
             variant="ghost" 
             size="icon"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/recordings')}
             className="shrink-0 rounded-xl hover:bg-white/50 transition-all"
           >
             <ArrowLeft className="h-5 w-5" />
