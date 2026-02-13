@@ -88,14 +88,8 @@ Deno.serve(async (req) => {
         const fileNames = new Set((files || []).map(f => f.name));
 
         for (const rec of recs) {
-          // Check common backup file patterns
-          const possibleNames = [
-            `${rec.id}.txt`,
-            `${rec.id}.json`,
-            `meeting_${rec.id}.txt`,
-          ];
-
-          const found = possibleNames.some(name => fileNames.has(name));
+          // Prefix-based match: any file starting with the recording ID counts
+          const found = (files || []).some(f => f.name.startsWith(rec.id));
 
           if (found) {
             backupsFound++;

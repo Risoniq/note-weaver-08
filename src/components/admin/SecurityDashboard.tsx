@@ -10,11 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
+import { Progress } from '@/components/ui/progress';
 import {
   Shield, FileSearch, AlertTriangle, Bell, BellOff, CheckCircle2,
   XCircle, RefreshCw, Loader2, Clock, Download, ChevronDown, ChevronUp,
   Phone, LogIn, LogOut, Share2, Trash2, UserPlus, UserMinus, Settings,
-  HardDrive,
+  HardDrive, Wrench,
 } from 'lucide-react';
 
 interface AuditLog {
@@ -100,6 +101,9 @@ export function SecurityDashboard() {
   const [eventFilter, setEventFilter] = useState<string>('all');
   const [runningCheck, setRunningCheck] = useState(false);
   const [expandedAlert, setExpandedAlert] = useState<string | null>(null);
+  const [repairingBackups, setRepairingBackups] = useState(false);
+  const [repairProgress, setRepairProgress] = useState(0);
+  const [repairStatus, setRepairStatus] = useState<string | null>(null);
 
   const fetchAuditLogs = useCallback(async () => {
     setLoading(true);
@@ -191,6 +195,51 @@ export function SecurityDashboard() {
       toast.error('Fehler bei der Backup-Prüfung');
     } finally {
       setRunningCheck(false);
+    }
+  };
+
+  const handleCreateMissingBackups = async () => {
+    setRepairingBackups(true);
+    setRepairProgress(0);
+    setRepairStatus('Starte Backup-Reparatur...');
+    let offset = 0;
+    const batchSize = 20;
+    let totalCreated = 0;
+    let totalSkipped = 0;
+    let totalErrors = 0;
+
+    try {
+      while (true) {
+        const res = await withTokenRefresh(() =>
+          supabase.functions.invoke('repair-all-recordings', {
+            body: { action: 'create-missing-backups', batch_size: batchSize, offset },
+          })
+        );
+
+        if (!res.data?.success) {
+          toast.error(res.data?.error || 'Fehler bei der Backup-Reparatur');
+          break;
+        }
+
+        totalCreated += res.data.created || 0;
+        totalSkipped += res.data.skipped || 0;
+        totalErrors += res.data.errors || 0;
+        const total = res.data.total || 1;
+        const processed = Math.min(offset + batchSize, total);
+        setRepairProgress(Math.round((processed / total) * 100));
+        setRepairStatus(`${processed} von ${total} geprüft – ${totalCreated} erstellt, ${totalSkipped} übersprungen`);
+
+        if (res.data.done) break;
+        offset = res.data.nextOffset;
+      }
+
+      toast.success(`Backup-Reparatur abgeschlossen: ${totalCreated} erstellt, ${totalSkipped} übersprungen, ${totalErrors} Fehler`);
+      // Auto-run integrity check after repair
+      handleRunBackupCheck();
+    } catch {
+      toast.error('Fehler bei der Backup-Reparatur');
+    } finally {
+      setRepairingBackups(false);
     }
   };
 
@@ -457,14 +506,35 @@ export function SecurityDashboard() {
               <h3 className="text-lg font-semibold">Backup-Integritätsprüfung</h3>
               <p className="text-sm text-muted-foreground">Automatische Prüfung ob Transkript-Backups vollständig und lesbar sind</p>
             </div>
-            <Button onClick={handleRunBackupCheck} disabled={runningCheck}>
-              {runningCheck ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Prüfung läuft...</>
-              ) : (
-                <><RefreshCw className="h-4 w-4 mr-2" /> Prüfung starten</>
-              )}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={handleCreateMissingBackups} disabled={repairingBackups || runningCheck}>
+                {repairingBackups ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Reparatur läuft...</>
+                ) : (
+                  <><Wrench className="h-4 w-4 mr-2" /> Fehlende Backups erstellen</>
+                )}
+              </Button>
+              <Button onClick={handleRunBackupCheck} disabled={runningCheck || repairingBackups}>
+                {runningCheck ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Prüfung läuft...</>
+                ) : (
+                  <><RefreshCw className="h-4 w-4 mr-2" /> Prüfung starten</>
+                )}
+              </Button>
+            </div>
           </div>
+
+          {repairingBackups && (
+            <Card>
+              <CardContent className="pt-4 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{repairStatus}</span>
+                  <span className="font-medium">{repairProgress}%</span>
+                </div>
+                <Progress value={repairProgress} className="h-2" />
+              </CardContent>
+            </Card>
+          )}
 
           {loading ? (
             <div className="space-y-3">
