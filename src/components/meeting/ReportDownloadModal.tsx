@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,11 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Download, FileText, Settings } from "lucide-react";
+import { Download, FileText, Settings, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
+import { VisualReportView } from "./VisualReportView";
+import { createRoot } from "react-dom/client";
 
 interface ReportDownloadModalProps {
   open: boolean;
@@ -40,17 +42,17 @@ interface ReportDownloadModalProps {
     meeting_url?: string | null;
   };
   followUpEmail?: string;
+  userEmail?: string | null;
 }
 
 interface ReportOptions {
-  format: "txt" | "md";
+  format: "txt" | "md" | "pdf";
   includeSummary: boolean;
   includeKeyPoints: boolean;
   includeActionItems: boolean;
   includeTranscript: boolean;
   includeParticipants: boolean;
   includeEmail: boolean;
-  // Admin options
   includeMetadata: boolean;
   includeDebugInfo: boolean;
   includeRawData: boolean;
@@ -61,18 +63,19 @@ export function ReportDownloadModal({
   onOpenChange,
   recording,
   followUpEmail,
+  userEmail,
 }: ReportDownloadModalProps) {
   const { isAdmin } = useAdminCheck();
-  
+  const [isGenerating, setIsGenerating] = useState(false);
+
   const [options, setOptions] = useState<ReportOptions>({
-    format: "txt",
+    format: "pdf",
     includeSummary: true,
     includeKeyPoints: true,
     includeActionItems: true,
     includeTranscript: true,
     includeParticipants: true,
     includeEmail: false,
-    // Admin options default off
     includeMetadata: false,
     includeDebugInfo: false,
     includeRawData: false,
@@ -85,7 +88,7 @@ export function ReportDownloadModal({
     setOptions((prev) => ({ ...prev, [key]: value }));
   };
 
-  const generateReport = (): string => {
+  const generateTextReport = (): string => {
     const lines: string[] = [];
     const title = recording.title || `Meeting ${recording.id.slice(0, 8)}`;
     const date = format(new Date(recording.created_at), "dd. MMMM yyyy, HH:mm 'Uhr'", { locale: de });
@@ -93,19 +96,13 @@ export function ReportDownloadModal({
     const heading = (text: string) =>
       options.format === "md" ? `## ${text}` : `\n${text}\n${"─".repeat(text.length)}`;
 
-    // Header
     if (options.format === "md") {
-      lines.push(`# ${title}`);
-      lines.push(`*Datum: ${date}*`);
+      lines.push(`# ${title}`, `*Datum: ${date}*`);
     } else {
-      lines.push("═".repeat(50));
-      lines.push(title.toUpperCase());
-      lines.push(`Datum: ${date}`);
-      lines.push("═".repeat(50));
+      lines.push("═".repeat(50), title.toUpperCase(), `Datum: ${date}`, "═".repeat(50));
     }
     lines.push("");
 
-    // Participants
     if (options.includeParticipants && recording.participants?.length) {
       lines.push(heading("Teilnehmer"));
       recording.participants.forEach((p, i) => {
@@ -114,14 +111,10 @@ export function ReportDownloadModal({
       lines.push("");
     }
 
-    // Summary
     if (options.includeSummary && recording.summary) {
-      lines.push(heading("Zusammenfassung"));
-      lines.push(recording.summary);
-      lines.push("");
+      lines.push(heading("Zusammenfassung"), recording.summary, "");
     }
 
-    // Key Points
     if (options.includeKeyPoints && recording.key_points?.length) {
       lines.push(heading("Key Points"));
       recording.key_points.forEach((point, i) => {
@@ -130,7 +123,6 @@ export function ReportDownloadModal({
       lines.push("");
     }
 
-    // Action Items
     if (options.includeActionItems && recording.action_items?.length) {
       lines.push(heading("To-Dos / Action Items"));
       recording.action_items.forEach((item) => {
@@ -139,71 +131,133 @@ export function ReportDownloadModal({
       lines.push("");
     }
 
-    // Follow-Up Email
     if (options.includeEmail && followUpEmail) {
-      lines.push(heading("Follow-Up E-Mail"));
-      lines.push(followUpEmail);
-      lines.push("");
+      lines.push(heading("Follow-Up E-Mail"), followUpEmail, "");
     }
 
-    // Transcript
     if (options.includeTranscript && recording.transcript_text) {
-      lines.push(separator);
-      lines.push(heading("Vollständiges Transkript"));
-      lines.push("");
-      // Remove metadata header if present
+      lines.push(separator, heading("Vollständiges Transkript"), "");
       const transcript = recording.transcript_text;
-      const separatorIndex = transcript.indexOf("---");
-      const cleanTranscript = separatorIndex !== -1 
-        ? transcript.substring(separatorIndex + 3).trim() 
-        : transcript;
-      lines.push(cleanTranscript);
-      lines.push("");
+      const sepIdx = transcript.indexOf("---");
+      lines.push(sepIdx !== -1 ? transcript.substring(sepIdx + 3).trim() : transcript, "");
     }
 
-    // Admin: Metadata
     if (options.includeMetadata && isAdmin) {
-      lines.push(separator);
-      lines.push(heading("Metadaten (Admin)"));
-      lines.push(`Recording ID: ${recording.id}`);
-      lines.push(`Created: ${recording.created_at}`);
+      lines.push(separator, heading("Metadaten (Admin)"));
+      lines.push(`Recording ID: ${recording.id}`, `Created: ${recording.created_at}`);
       lines.push(`Duration: ${recording.duration ? Math.floor(recording.duration / 60) : 0} Minuten`);
       lines.push(`Word Count: ${recording.word_count || 0}`);
-      if (recording.meeting_url) {
-        lines.push(`Meeting URL: ${recording.meeting_url}`);
-      }
+      if (recording.meeting_url) lines.push(`Meeting URL: ${recording.meeting_url}`);
       lines.push("");
     }
 
-    // Admin: Debug Info
     if (options.includeDebugInfo && isAdmin) {
       lines.push(heading("Debug Info (Admin)"));
       lines.push(`Participants Count: ${recording.participants?.length || 0}`);
       lines.push(`Key Points Count: ${recording.key_points?.length || 0}`);
       lines.push(`Action Items Count: ${recording.action_items?.length || 0}`);
       lines.push(`Has Transcript: ${!!recording.transcript_text}`);
-      lines.push(`Transcript Length: ${recording.transcript_text?.length || 0} chars`);
-      lines.push("");
+      lines.push(`Transcript Length: ${recording.transcript_text?.length || 0} chars`, "");
     }
 
-    // Admin: Raw Data
     if (options.includeRawData && isAdmin) {
-      lines.push(heading("Rohdaten (Admin)"));
-      lines.push("```json");
-      lines.push(JSON.stringify(recording, null, 2));
-      lines.push("```");
-      lines.push("");
+      lines.push(heading("Rohdaten (Admin)"), "```json", JSON.stringify(recording, null, 2), "```", "");
     }
 
-    // Footer
-    lines.push(separator);
-    lines.push(`Generiert am: ${format(new Date(), "dd.MM.yyyy HH:mm 'Uhr'", { locale: de })}`);
-
+    lines.push(separator, `Generiert am: ${format(new Date(), "dd.MM.yyyy HH:mm 'Uhr'", { locale: de })}`);
     return lines.join("\n");
   };
 
+  const handleDownloadPDF = useCallback(async () => {
+    setIsGenerating(true);
+    try {
+      // Create off-screen container
+      const container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.left = "-9999px";
+      container.style.top = "0";
+      document.body.appendChild(container);
+
+      // Render visual report into container
+      const root = createRoot(container);
+      root.render(
+        <VisualReportView
+          recording={recording}
+          userEmail={userEmail || null}
+          options={{
+            includeSummary: options.includeSummary,
+            includeKeyPoints: options.includeKeyPoints,
+            includeActionItems: options.includeActionItems,
+            includeTranscript: options.includeTranscript,
+            includeParticipants: options.includeParticipants,
+          }}
+        />
+      );
+
+      // Wait for Recharts SVGs to render
+      await new Promise((r) => setTimeout(r, 1000));
+
+      const element = container.querySelector("#visual-report-container") as HTMLElement;
+      if (!element) {
+        toast.error("Report konnte nicht generiert werden");
+        return;
+      }
+
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      // Handle multi-page if content is longer than A4
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const fileName = `meeting-bericht-${recording.id.slice(0, 8)}.pdf`;
+      pdf.save(fileName);
+
+      // Cleanup
+      root.unmount();
+      document.body.removeChild(container);
+
+      toast.success("Visueller Bericht als PDF heruntergeladen");
+      onOpenChange(false);
+    } catch (error) {
+      console.error("PDF generation error:", error);
+      toast.error("PDF-Erstellung fehlgeschlagen");
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [recording, userEmail, options, onOpenChange]);
+
   const handleDownload = () => {
-    const content = generateReport();
+    if (options.format === "pdf") {
+      handleDownloadPDF();
+      return;
+    }
+
+    const content = generateTextReport();
     const extension = options.format === "md" ? "md" : "txt";
     const mimeType = options.format === "md" ? "text/markdown" : "text/plain";
     const fileName = `meeting-bericht-${recording.id.slice(0, 8)}.${extension}`;
@@ -241,16 +295,22 @@ export function ReportDownloadModal({
             <Label>Dateiformat</Label>
             <Select
               value={options.format}
-              onValueChange={(v) => updateOption("format", v as "txt" | "md")}
+              onValueChange={(v) => updateOption("format", v as "txt" | "md" | "pdf")}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="pdf">PDF (Visueller Bericht)</SelectItem>
                 <SelectItem value="txt">Text (.txt)</SelectItem>
                 <SelectItem value="md">Markdown (.md)</SelectItem>
               </SelectContent>
             </Select>
+            {options.format === "pdf" && (
+              <p className="text-xs text-muted-foreground">
+                Enthält Charts und KPI-Karten wie in der Dashboard-Analyse.
+              </p>
+            )}
           </div>
 
           {/* Content Options */}
@@ -258,54 +318,38 @@ export function ReportDownloadModal({
             <Label>Inhalt</Label>
             <div className="space-y-2">
               <label className="flex items-center gap-3 cursor-pointer">
-                <Checkbox
-                  checked={options.includeSummary}
-                  onCheckedChange={(c) => updateOption("includeSummary", !!c)}
-                />
+                <Checkbox checked={options.includeSummary} onCheckedChange={(c) => updateOption("includeSummary", !!c)} />
                 <span className="text-sm">Zusammenfassung</span>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
-                <Checkbox
-                  checked={options.includeKeyPoints}
-                  onCheckedChange={(c) => updateOption("includeKeyPoints", !!c)}
-                />
+                <Checkbox checked={options.includeKeyPoints} onCheckedChange={(c) => updateOption("includeKeyPoints", !!c)} />
                 <span className="text-sm">Key Points</span>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
-                <Checkbox
-                  checked={options.includeActionItems}
-                  onCheckedChange={(c) => updateOption("includeActionItems", !!c)}
-                />
+                <Checkbox checked={options.includeActionItems} onCheckedChange={(c) => updateOption("includeActionItems", !!c)} />
                 <span className="text-sm">To-Dos / Action Items</span>
               </label>
+              {options.format !== "pdf" && (
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <Checkbox checked={options.includeTranscript} onCheckedChange={(c) => updateOption("includeTranscript", !!c)} />
+                  <span className="text-sm">Vollständiges Transkript</span>
+                </label>
+              )}
               <label className="flex items-center gap-3 cursor-pointer">
-                <Checkbox
-                  checked={options.includeTranscript}
-                  onCheckedChange={(c) => updateOption("includeTranscript", !!c)}
-                />
-                <span className="text-sm">Vollständiges Transkript</span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <Checkbox
-                  checked={options.includeParticipants}
-                  onCheckedChange={(c) => updateOption("includeParticipants", !!c)}
-                />
+                <Checkbox checked={options.includeParticipants} onCheckedChange={(c) => updateOption("includeParticipants", !!c)} />
                 <span className="text-sm">Teilnehmerliste</span>
               </label>
               {followUpEmail && (
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={options.includeEmail}
-                    onCheckedChange={(c) => updateOption("includeEmail", !!c)}
-                  />
+                  <Checkbox checked={options.includeEmail} onCheckedChange={(c) => updateOption("includeEmail", !!c)} />
                   <span className="text-sm">Follow-Up E-Mail</span>
                 </label>
               )}
             </div>
           </div>
 
-          {/* Admin Options - Only visible for admins */}
-          {isAdmin && (
+          {/* Admin Options */}
+          {isAdmin && options.format !== "pdf" && (
             <div className="border-t pt-4 space-y-3">
               <Label className="flex items-center gap-2 text-muted-foreground">
                 <Settings className="h-4 w-4" />
@@ -313,24 +357,15 @@ export function ReportDownloadModal({
               </Label>
               <div className="space-y-2">
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={options.includeMetadata}
-                    onCheckedChange={(c) => updateOption("includeMetadata", !!c)}
-                  />
+                  <Checkbox checked={options.includeMetadata} onCheckedChange={(c) => updateOption("includeMetadata", !!c)} />
                   <span className="text-sm text-muted-foreground">Metadaten (IDs, Timestamps)</span>
                 </label>
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={options.includeDebugInfo}
-                    onCheckedChange={(c) => updateOption("includeDebugInfo", !!c)}
-                  />
+                  <Checkbox checked={options.includeDebugInfo} onCheckedChange={(c) => updateOption("includeDebugInfo", !!c)} />
                   <span className="text-sm text-muted-foreground">Debug-Informationen</span>
                 </label>
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <Checkbox
-                    checked={options.includeRawData}
-                    onCheckedChange={(c) => updateOption("includeRawData", !!c)}
-                  />
+                  <Checkbox checked={options.includeRawData} onCheckedChange={(c) => updateOption("includeRawData", !!c)} />
                   <span className="text-sm text-muted-foreground">Rohdaten (JSON)</span>
                 </label>
               </div>
@@ -342,9 +377,13 @@ export function ReportDownloadModal({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Abbrechen
           </Button>
-          <Button onClick={handleDownload}>
-            <Download className="h-4 w-4 mr-2" />
-            Herunterladen
+          <Button onClick={handleDownload} disabled={isGenerating}>
+            {isGenerating ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 mr-2" />
+            )}
+            {isGenerating ? "Wird erstellt..." : "Herunterladen"}
           </Button>
         </DialogFooter>
       </DialogContent>

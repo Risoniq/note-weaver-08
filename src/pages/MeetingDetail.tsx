@@ -1546,6 +1546,7 @@ export default function MeetingDetail() {
           meeting_url: recording.meeting_url,
         }}
         followUpEmail={customEmail || generateFollowUpEmail(recording)}
+        userEmail={user?.email || null}
       />
       
       {/* Deep Dive Modal */}
