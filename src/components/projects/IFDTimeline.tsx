@@ -1,51 +1,97 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { Badge } from "@/components/ui/badge";
+
+const DOMAIN_COLORS = {
+  marketing: "#3b82f6",
+  produkt: "#8b5cf6",
+  sales: "#f59e0b",
+  operations: "#22c55e",
+};
+
+const STATUS_STYLES: Record<string, { variant: "default" | "secondary" | "outline"; label: string }> = {
+  verfolgt: { variant: "default", label: "verfolgt" },
+  offen: { variant: "secondary", label: "offen" },
+  erledigt: { variant: "outline", label: "erledigt" },
+};
+
+interface TopicTracking {
+  topic: string;
+  meetings: number[];
+  status: string;
+}
+
+interface DomainDistribution {
+  meeting: string;
+  marketing: number;
+  produkt: number;
+  sales: number;
+  operations: number;
+}
 
 interface Props {
   recordings: any[];
+  analysis?: any;
 }
 
-export function IFDTimeline({ recordings }: Props) {
-  const data = recordings.map((r) => {
-    const participants = Array.isArray(r.participants)
-      ? r.participants.filter((p: any) => p && p.name && !["User-ID", "User-Email", "Recording-ID", "Erstellt"].includes(p.name)).length
-      : Array.isArray(r.calendar_attendees)
-        ? r.calendar_attendees.length
-        : 0;
+export function IFDTimeline({ recordings, analysis }: Props) {
+  const domainData: DomainDistribution[] = analysis?.domain_distribution || [];
+  const topicTracking: TopicTracking[] = analysis?.topic_tracking || [];
 
-    return {
-      name: r.title?.slice(0, 20) || new Date(r.created_at).toLocaleDateString("de-DE"),
-      actionItems: r.action_items?.length || 0,
-      keyPoints: r.key_points?.length || 0,
-      participants,
-      duration: r.duration ? Math.round(r.duration / 60) : 0,
-      wordCount: r.word_count || 0,
-    };
-  });
+  // Fallback: if no AI analysis yet, show simple recording-based data
+  const fallbackData = recordings.map((r) => ({
+    meeting: r.title?.slice(0, 20) || new Date(r.created_at).toLocaleDateString("de-DE"),
+    marketing: 25,
+    produkt: 25,
+    sales: 25,
+    operations: 25,
+  }));
 
-  if (!data.length) return null;
+  const chartData = domainData.length > 0 ? domainData : fallbackData;
+
+  if (!chartData.length) return null;
 
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Fortschritts-Timeline</CardTitle>
+        <CardTitle className="text-base">Bereichs-Timeline</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={data}>
+          <AreaChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-            <XAxis dataKey="name" className="text-xs" tick={{ fontSize: 11 }} />
-            <YAxis yAxisId="left" className="text-xs" tick={{ fontSize: 11 }} />
-            <YAxis yAxisId="right" orientation="right" className="text-xs" tick={{ fontSize: 11 }} />
-            <Tooltip />
+            <XAxis dataKey="meeting" className="text-xs" tick={{ fontSize: 11 }} />
+            <YAxis className="text-xs" tick={{ fontSize: 11 }} unit="%" />
+            <Tooltip formatter={(value: number) => `${value}%`} />
             <Legend />
-            <Line yAxisId="left" type="monotone" dataKey="actionItems" name="Action Items" stroke="#f59e0b" strokeWidth={2} />
-            <Line yAxisId="left" type="monotone" dataKey="keyPoints" name="Key Points" stroke="#8b5cf6" strokeWidth={2} />
-            <Line yAxisId="left" type="monotone" dataKey="participants" name="Teilnehmer" stroke="#3b82f6" strokeWidth={2} />
-            <Line yAxisId="right" type="monotone" dataKey="duration" name="Dauer (Min)" stroke="#22c55e" strokeWidth={2} strokeDasharray="5 5" />
-            <Line yAxisId="right" type="monotone" dataKey="wordCount" name="Wörter" stroke="#6b7280" strokeWidth={2} strokeDasharray="5 5" />
-          </LineChart>
+            <Area type="monotone" dataKey="marketing" name="Marketing" stackId="1" fill={DOMAIN_COLORS.marketing} stroke={DOMAIN_COLORS.marketing} fillOpacity={0.7} />
+            <Area type="monotone" dataKey="produkt" name="Produkt" stackId="1" fill={DOMAIN_COLORS.produkt} stroke={DOMAIN_COLORS.produkt} fillOpacity={0.7} />
+            <Area type="monotone" dataKey="sales" name="Sales" stackId="1" fill={DOMAIN_COLORS.sales} stroke={DOMAIN_COLORS.sales} fillOpacity={0.7} />
+            <Area type="monotone" dataKey="operations" name="Operations" stackId="1" fill={DOMAIN_COLORS.operations} stroke={DOMAIN_COLORS.operations} fillOpacity={0.7} />
+          </AreaChart>
         </ResponsiveContainer>
+
+        {topicTracking.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">Themen-Verfolgung</p>
+            <div className="space-y-1">
+              {topicTracking.map((t, i) => {
+                const style = STATUS_STYLES[t.status] || STATUS_STYLES.offen;
+                return (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <Badge variant={style.variant} className="text-xs min-w-[70px] justify-center">
+                      {style.label}
+                    </Badge>
+                    <span className="font-medium">{t.topic}</span>
+                    <span className="text-muted-foreground text-xs">
+                      Meeting {t.meetings.join(", ")}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

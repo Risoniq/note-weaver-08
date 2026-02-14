@@ -69,6 +69,9 @@ Erstelle eine JSON-Antwort mit:
 - "open_topics": Array mit offenen Themen
 - "completed_topics": Array mit erledigten Themen
 - "recommendations": Array mit 3-5 konkreten Empfehlungen für die nächsten Schritte
+- "topic_tracking": Array von Objekten mit {"topic": "Thema-Name", "meetings": [1, 3, 5], "status": "verfolgt"|"offen"|"erledigt"} - tracke welche Themen in welchen Meetings (als Meeting-Nummer) besprochen wurden und ob sie aktiv verfolgt, noch offen oder bereits erledigt sind
+- "domain_distribution": Array von Objekten mit {"meeting": "Meeting-Titel kurz", "marketing": 20, "produkt": 40, "sales": 30, "operations": 10} - prozentuale Verteilung der besprochenen Themen pro Meeting auf die Geschäftsbereiche Marketing, Produkt, Sales und Operations (Summe muss 100 ergeben)
+- "speaker_domain_activity": Array von {"speaker": "Sprecher-Name", "marketing": 15, "produkt": 50, "sales": 25, "operations": 10} - prozentuale Verteilung der Beiträge jedes Sprechers auf die vier Geschäftsbereiche
 
 Antworte NUR mit validem JSON.`;
 

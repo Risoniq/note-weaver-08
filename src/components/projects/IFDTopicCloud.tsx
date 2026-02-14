@@ -1,71 +1,93 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Badge } from "@/components/ui/badge";
+
+const DOMAIN_COLORS: Record<string, string> = {
+  marketing: "#3b82f6",
+  produkt: "#8b5cf6",
+  sales: "#f59e0b",
+  operations: "#22c55e",
+};
+
+const DOMAIN_LABELS: Record<string, string> = {
+  marketing: "Marketing",
+  produkt: "Produkt",
+  sales: "Sales",
+  operations: "Operations",
+};
 
 interface Props {
   recordings: any[];
+  analysis?: any;
 }
 
-const STOP_WORDS = new Set([
-  "und", "der", "die", "das", "ist", "ein", "eine", "in", "von", "zu", "mit", "auf", "für",
-  "an", "den", "dem", "des", "als", "auch", "es", "ich", "wir", "sie", "er", "aber", "oder",
-  "dass", "nicht", "noch", "schon", "dann", "man", "hat", "haben", "wird", "werden", "kann",
-  "können", "soll", "muss", "the", "and", "is", "to", "of", "a", "in", "that", "it", "was",
-  "for", "on", "are", "with", "this", "be", "at", "we", "you", "so", "if", "do", "can",
-  "has", "had", "will", "would", "could", "should", "been", "from", "have", "not", "but",
-  "all", "was", "were", "been", "being", "there", "their", "what", "which", "who", "whom",
-  "how", "when", "where", "why", "each", "every", "both", "few", "more", "most", "other",
-  "some", "such", "only", "own", "same", "than", "very", "just", "also", "über", "nach",
-  "vor", "bei", "zum", "zur", "aus", "wie", "wenn", "weil", "hier", "dort", "sehr",
-  "gut", "mal", "also", "da", "ja", "nein", "okay",
-]);
+export function IFDTopicCloud({ recordings, analysis }: Props) {
+  const domainDist: any[] = analysis?.domain_distribution || [];
+  const topicTracking: any[] = analysis?.topic_tracking || [];
 
-export function IFDTopicCloud({ recordings }: Props) {
-  const wordFreq: Record<string, number> = {};
+  if (!domainDist.length && !topicTracking.length) return null;
 
-  recordings.forEach((r) => {
-    const text = [r.transcript_text, r.summary, ...(r.key_points || []), ...(r.action_items || [])]
-      .filter(Boolean)
-      .join(" ");
-
-    text
-      .toLowerCase()
-      .replace(/[^\wäöüß]/g, " ")
-      .split(/\s+/)
-      .filter((w) => w.length > 3 && !STOP_WORDS.has(w))
-      .forEach((w) => {
-        wordFreq[w] = (wordFreq[w] || 0) + 1;
-      });
+  // Aggregate domain percentages across all meetings
+  const totals = { marketing: 0, produkt: 0, sales: 0, operations: 0 };
+  domainDist.forEach((d) => {
+    totals.marketing += d.marketing || 0;
+    totals.produkt += d.produkt || 0;
+    totals.sales += d.sales || 0;
+    totals.operations += d.operations || 0;
   });
+  const sum = totals.marketing + totals.produkt + totals.sales + totals.operations;
 
-  const sorted = Object.entries(wordFreq)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 30);
-
-  if (!sorted.length) return null;
-
-  const maxCount = sorted[0][1];
+  const pieData = sum > 0
+    ? Object.entries(totals).map(([key, val]) => ({
+        name: DOMAIN_LABELS[key],
+        value: Math.round((val / sum) * 100),
+        key,
+      }))
+    : [];
 
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">Themen-Heatmap</CardTitle>
+        <CardTitle className="text-base">Bereichs-Verteilung</CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap gap-2">
-          {sorted.map(([word, count]) => {
-            const intensity = Math.max(0.3, count / maxCount);
-            return (
-              <Badge
-                key={word}
-                variant="secondary"
-                className="text-sm transition-all hover:scale-105"
-                style={{ opacity: intensity, fontSize: `${0.75 + intensity * 0.5}rem` }}
+      <CardContent className="space-y-4">
+        {pieData.length > 0 && (
+          <ResponsiveContainer width="100%" height={250}>
+            <PieChart>
+              <Pie
+                data={pieData}
+                cx="50%"
+                cy="50%"
+                innerRadius={50}
+                outerRadius={90}
+                dataKey="value"
+                label={({ name, value }) => `${name} ${value}%`}
               >
-                {word} ({count})
-              </Badge>
-            );
-          })}
-        </div>
+                {pieData.map((entry) => (
+                  <Cell key={entry.key} fill={DOMAIN_COLORS[entry.key]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(value: number) => `${value}%`} />
+            </PieChart>
+          </ResponsiveContainer>
+        )}
+
+        {topicTracking.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">Themen nach Status</p>
+            <div className="flex flex-wrap gap-2">
+              {topicTracking.map((t: any, i: number) => (
+                <Badge
+                  key={i}
+                  variant={t.status === "erledigt" ? "outline" : t.status === "verfolgt" ? "default" : "secondary"}
+                  className="text-xs"
+                >
+                  {t.topic} ({t.status})
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
