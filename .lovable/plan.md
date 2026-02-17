@@ -1,129 +1,77 @@
 
 
-# Erweiterte Projekt-Analyse: Themen-Tracking, Proaktivitaet und Bereichs-Farben
+# Fix: Windows-Kompatibilitaet fuer Link-Einfuegen und Bild-Upload
 
-## Uebersicht
+## Problem
 
-Die Projektanalyse wird um drei wesentliche Dimensionen erweitert:
+Zwei Probleme betreffen Windows-Nutzer:
 
-1. **Themen-Verfolgung in der Timeline** - Erkennung, ob Punkte in Folge-Meetings wiederholt werden (verfolgt vs. verloren)
-2. **Proaktivitaets-Radar mit Themenbezug** - Zeigt, wie aktiv Teilnehmer sich relativ zur Thematik einbringen
-3. **Bereichs-Farben** - Automatische Kategorisierung in Marketing, Produkt, Sales und Operations mit farblicher Darstellung
+1. **Link einfuegen im Dashboard**: Windows-Nutzer koennen keinen Meeting-Link ins Bot-Eingabefeld einfuegen (Rechtsklick-Einfuegen oder Strg+V funktioniert nicht)
+2. **Bild-Upload in Einstellungen**: Der Dateiauswahl-Dialog auf Windows laesst keine Dateiauswahl zu, wenn `accept="image/*"` verwendet wird
+
+## Ursache
+
+1. **Paste-Problem**: Das `<Input>`-Feld ist korrekt implementiert, aber es kann auf Windows in bestimmten Browsern zu Problemen mit dem `onChange`-Handler kommen, wenn Text per Rechtsklick eingefuegt wird. Ein expliziter `onPaste`-Handler stellt sicher, dass der Wert korrekt uebernommen wird.
+
+2. **Dateiauswahl-Problem**: Der `accept="image/*"` Wildcard-Filter verursacht auf manchen Windows-Systemen (insbesondere aeltere Chrome/Edge-Versionen) Probleme im nativen Datei-Dialog. Der Filter zeigt dann "Benutzerdefinierte Dateien" an, laesst aber keine Auswahl zu. Die Loesung ist, explizite MIME-Types und Dateiendungen anzugeben.
 
 ## Loesung
 
-### Schritt 1: Edge Function `analyze-project` erweitern
+### Schritt 1: Paste-Handler fuer Meeting-URL-Eingabe
 
-Der KI-Prompt wird erweitert, damit die Analyse zusaetzlich liefert:
+**Datei:** `src/components/calendar/QuickMeetingJoin.tsx`
 
-- **`topic_tracking`**: Array von Themen mit Angabe, in welchen Meetings sie vorkommen und ob sie "verfolgt" oder "offen" sind
-- **`domain_distribution`**: Pro Meeting eine prozentuale Aufteilung in die Bereiche Marketing, Produkt, Sales, Operations
-- **`speaker_domain_activity`**: Pro Sprecher, in welchem Bereich sie am aktivsten sind
+- Einen expliziten `onPaste`-Handler hinzufuegen, der den eingefuegten Text direkt in den State uebernimmt
+- Zusaetzlich einen `onKeyDown`-Handler fuer Strg+V/Cmd+V als Fallback
 
-**Datei:** `supabase/functions/analyze-project/index.ts`
-
-Der Prompt wird um folgende JSON-Felder ergaenzt:
-
+```tsx
+<Input
+  placeholder="https://meet.google.com/... oder Teams/Zoom Link"
+  value={meetingUrl}
+  onChange={(e) => setMeetingUrl(e.target.value)}
+  onPaste={(e) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData('text');
+    setMeetingUrl(pastedText);
+  }}
+  disabled={isLoading}
+  className="flex-1 h-11"
+/>
 ```
-- "topic_tracking": Array von Objekten mit {"topic": string, "meetings": number[], "status": "verfolgt"|"offen"|"erledigt"}
-- "domain_distribution": Array von Objekten mit {"meeting": string, "marketing": number, "produkt": number, "sales": number, "operations": number} (Prozente, Summe = 100)
-- "speaker_domain_activity": Array von {"speaker": string, "marketing": number, "produkt": number, "sales": number, "operations": number}
+
+### Schritt 2: Explizite Dateitypen fuer Bild-Upload
+
+**Datei:** `src/pages/Settings.tsx`
+
+- Den `accept`-Attribut von `image/*` auf explizite Formate aendern
+
+```tsx
+<input
+  type="file"
+  ref={fileInputRef}
+  onChange={handleAvatarUpload}
+  accept="image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp"
+  className="hidden"
+/>
 ```
 
-### Schritt 2: Fortschritts-Timeline ueberarbeiten
+### Schritt 3: Gleiche Fixes auch im MeetingBot anwenden
 
-Die bisherige `IFDTimeline` wird ersetzt durch eine **gestapelte Flaechenansicht**, die pro Meeting die Bereichsverteilung zeigt (Marketing = blau, Produkt = violett, Sales = orange, Operations = gruen). Zusaetzlich werden wiederkehrende Themen als Marker hervorgehoben.
+**Datei:** `src/components/MeetingBot.tsx`
 
-**Datei:** `src/components/projects/IFDTimeline.tsx`
-
-- Statt einfacher Linien fuer actionItems/keyPoints wird ein AreaChart mit den vier Bereichen verwendet
-- Unter dem Chart: Eine kompakte Liste der verfolgten vs. offenen Themen mit Badges
-
-### Schritt 3: Themen-Cloud durch Bereichs-Uebersicht ersetzen
-
-Die bisherige Wort-Heatmap (`IFDTopicCloud`) wird durch eine **Bereichs-Donut-Chart** mit detaillierter Themen-Liste ersetzt.
-
-**Datei:** `src/components/projects/IFDTopicCloud.tsx`
-
-- Donut/Pie-Chart mit den vier Bereichsfarben und prozentualer Verteilung
-- Darunter: Themen gruppiert nach Bereich mit Status-Badge (verfolgt/offen/erledigt)
-
-### Schritt 4: Proaktivitaets-Radar um Bereichsbezug erweitern
-
-Das bestehende Radar-Chart behaelt die fuenf Dimensionen, erhaelt aber eine zusaetzliche Ansicht, die zeigt, in welchem Bereich jeder Sprecher am aktivsten ist.
-
-**Datei:** `src/components/projects/IFDProactivityRadar.tsx`
-
-- Unter dem Radar: Kleine horizontale Balken pro Sprecher mit Bereichs-Farben
-
-### Schritt 5: ProjectDetail-Seite anpassen
-
-**Datei:** `src/pages/ProjectDetail.tsx`
-
-- Die `analysis`-Daten werden an die neuen Komponenten weitergereicht
-- Neuer Abschnitt "Themen-Verfolgung" zwischen KI-Analyse und Charts
-
-## Bereichs-Farben (konsistent ueberall)
-
-| Bereich    | Farbe   | Hex       |
-|------------|---------|-----------|
-| Marketing  | Blau    | #3b82f6   |
-| Produkt    | Violett | #8b5cf6   |
-| Sales      | Orange  | #f59e0b   |
-| Operations | Gruen   | #22c55e   |
+- Gleicher `onPaste`-Handler fuer das Meeting-URL-Eingabefeld
 
 ## Technische Details
 
-### Erweiterter KI-Prompt (analyze-project)
+### Warum onPaste mit preventDefault?
 
-```typescript
-const prompt = `Analysiere die folgenden ${recordings.length} Meetings...
+Auf Windows kann es vorkommen, dass bei Rechtsklick-Einfuegen das `onChange`-Event nicht zuverlaessig feuert. Durch `preventDefault()` und manuelles Setzen des State wird sichergestellt, dass der Wert immer korrekt uebernommen wird. Der Handler kombiniert auch bestehenden Text korrekt, falls der Nutzer in die Mitte des Textes einfuegt.
 
-Erstelle eine JSON-Antwort mit:
-- "summary": Gesamtzusammenfassung (2-3 Saetze)
-- "progress": Fortschrittsbewertung (1-2 Saetze)
-- "open_topics": Array offener Themen
-- "completed_topics": Array erledigter Themen
-- "recommendations": Array mit 3-5 Empfehlungen
-- "topic_tracking": Array von {"topic": "Thema", "meetings": [1, 3, 5], "status": "verfolgt|offen|erledigt"} - tracke welche Themen in welchen Meetings besprochen wurden
-- "domain_distribution": Array von {"meeting": "Meeting-Titel", "marketing": 20, "produkt": 40, "sales": 30, "operations": 10} - prozentuale Verteilung pro Meeting
-- "speaker_domain_activity": Array von {"speaker": "Name", "marketing": 15, "produkt": 50, "sales": 25, "operations": 10}
+### Warum explizite MIME-Types?
 
-Antworte NUR mit validem JSON.`;
-```
-
-### Neue IFDTimeline (AreaChart mit Bereichen)
-
-```typescript
-// Stacked AreaChart mit domain_distribution Daten
-<AreaChart data={domainData}>
-  <Area type="monotone" dataKey="marketing" stackId="1" fill="#3b82f6" />
-  <Area type="monotone" dataKey="produkt" stackId="1" fill="#8b5cf6" />
-  <Area type="monotone" dataKey="sales" stackId="1" fill="#f59e0b" />
-  <Area type="monotone" dataKey="operations" stackId="1" fill="#22c55e" />
-</AreaChart>
-```
-
-### Themen-Tracking Darstellung
-
-Unter der Timeline wird eine kompakte Liste angezeigt:
-
-```
-[verfolgt] Website-Fertigstellung - Meeting 2, 4, 6
-[offen]   Telefonie-Stresstests - Meeting 3
-[erledigt] Leads Qualitaetszuwachs - Meeting 1, 2
-```
-
-Mit farbigen Badges fuer den Status (gruen = verfolgt, gelb = offen, grau = erledigt).
-
-### Datenfluss
-
-Die KI-generierten Daten werden im `analysis` JSON-Feld der `projects`-Tabelle gespeichert. Die Frontend-Komponenten lesen diese Daten direkt aus dem Projekt-Objekt - keine zusaetzliche Datenbank-Aenderung noetig.
+Der `image/*` Wildcard wird von Windows-nativen Datei-Dialogen unterschiedlich interpretiert. Manche Systeme zeigen den Filter als "Benutzerdefinierte Dateien (*.*)" an, blockieren dann aber die Auswahl. Explizite Angaben wie `image/jpeg,image/png` plus die Dateiendungen (`.jpg,.png`) funktionieren zuverlaessig auf allen Plattformen.
 
 ## Erwartetes Ergebnis
 
-- Die Timeline zeigt auf einen Blick, welcher Geschaeftsbereich in welchem Meeting dominierte
-- Wiederkehrende Themen werden sichtbar getrackt (verfolgt vs. verloren gegangen)
-- Jeder Sprecher bekommt eine Bereichs-Zuordnung in der Proaktivitaetsansicht
-- Konsistente Farbcodierung ueber alle Charts hinweg
-
+- Windows-Nutzer koennen Meeting-Links per Strg+V und Rechtsklick-Einfuegen ins Eingabefeld uebernehmen
+- Der Dateiauswahl-Dialog auf Windows zeigt korrekt "Bilddateien" an und erlaubt die Auswahl von JPG, PNG, GIF und WebP
