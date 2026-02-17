@@ -130,6 +130,11 @@ export const QuickMeetingJoin = ({ onBotStarted }: QuickMeetingJoinProps) => {
           placeholder="https://meet.google.com/... oder Teams/Zoom Link"
           value={meetingUrl}
           onChange={(e) => setMeetingUrl(e.target.value)}
+          onPaste={(e) => {
+            e.preventDefault();
+            const pastedText = e.clipboardData.getData('text');
+            setMeetingUrl(pastedText);
+          }}
           disabled={isLoading}
           className="flex-1 h-11"
         />

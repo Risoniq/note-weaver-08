@@ -598,7 +598,7 @@ const Settings = () => {
                       type="file"
                       ref={fileInputRef}
                       onChange={handleAvatarUpload}
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/gif,image/webp,.jpg,.jpeg,.png,.gif,.webp"
                       className="hidden"
                     />
                     <Button

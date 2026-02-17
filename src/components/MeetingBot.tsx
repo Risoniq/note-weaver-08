@@ -89,6 +89,11 @@ export function MeetingBot({ onRecordingCreated }: MeetingBotProps) {
             placeholder="Meeting-URL eingeben (z.B. https://meet.google.com/...)"
             value={meetingUrl}
             onChange={(e) => setMeetingUrl(e.target.value)}
+            onPaste={(e) => {
+              e.preventDefault();
+              const pastedText = e.clipboardData.getData('text');
+              setMeetingUrl(pastedText);
+            }}
             disabled={isLoading}
             className="flex-1"
           />
