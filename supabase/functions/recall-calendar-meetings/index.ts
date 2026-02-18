@@ -687,14 +687,15 @@ Deno.serve(async (req) => {
     // - false = this rule is ignored
     // For "record all meetings": set external/internal to true, others to false (ignored)
     async function syncPreferencesToRecall(externalUserId: string, prefs: any, botConfig?: { bot_name?: string; bot_avatar_url?: string }): Promise<boolean> {
-      // "Record all meetings" = external + internal true, filtering rules false (ignored)
+      // If auto_record is off, set all recording flags to false so Recall.ai won't auto-join
+      const autoRecord = prefs.auto_record ?? false;
       const recallPreferences = {
-        record_non_host: false,       // false = ignore this rule (don't require non-host)
-        record_recurring: false,      // false = ignore this rule (record all, not just recurring)
-        record_external: true,        // true = record external meetings
-        record_internal: true,        // true = record internal meetings
-        record_confirmed: false,      // false = ignore this rule (record unconfirmed too)
-        record_only_host: prefs.record_only_owned ?? false, // Only if user wants host-only
+        record_non_host: false,
+        record_recurring: false,
+        record_external: autoRecord ? (prefs.record_external ?? true) : false,
+        record_internal: autoRecord ? true : false,
+        record_confirmed: false,
+        record_only_host: autoRecord ? (prefs.record_only_owned ?? false) : false,
       };
 
       console.log('[Internal] Syncing preferences to Recall.ai for user:', externalUserId, 'Preferences:', JSON.stringify(recallPreferences));
