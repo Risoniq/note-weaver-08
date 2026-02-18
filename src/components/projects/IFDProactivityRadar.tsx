@@ -138,8 +138,6 @@ export function IFDProactivityRadar({ recordings, analysis }: Props) {
     return normalize(stats);
   }, [recordings]);
 
-  const speakerDomainActivity: any[] = analysis?.speaker_domain_activity || [];
-
   if (!result || !result.speakers?.length) return null;
   const { data, speakers } = result;
 
@@ -161,43 +159,6 @@ export function IFDProactivityRadar({ recordings, analysis }: Props) {
             <Tooltip />
           </RadarChart>
         </ResponsiveContainer>
-
-        {speakerDomainActivity.length > 0 && (
-          <div className="space-y-3">
-            <p className="text-sm font-medium text-muted-foreground">Bereichs-Aktivität pro Sprecher</p>
-            {speakerDomainActivity.map((s: any, i: number) => {
-              const total = (s.marketing || 0) + (s.produkt || 0) + (s.sales || 0) + (s.operations || 0);
-              if (total === 0) return null;
-              return (
-                <div key={i} className="space-y-1">
-                  <p className="text-xs font-medium">{s.speaker}</p>
-                  <div className="flex h-3 rounded-full overflow-hidden">
-                    {(["marketing", "produkt", "sales", "operations"] as const).map((domain) => {
-                      const pct = total > 0 ? ((s[domain] || 0) / total) * 100 : 0;
-                      if (pct === 0) return null;
-                      return (
-                        <div
-                          key={domain}
-                          className="h-full"
-                          style={{ width: `${pct}%`, backgroundColor: DOMAIN_COLORS[domain] }}
-                          title={`${DOMAIN_LABELS[domain]}: ${Math.round(pct)}%`}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-            <div className="flex gap-3 text-xs text-muted-foreground">
-              {Object.entries(DOMAIN_LABELS).map(([key, label]) => (
-                <div key={key} className="flex items-center gap-1">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: DOMAIN_COLORS[key] }} />
-                  {label}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   );

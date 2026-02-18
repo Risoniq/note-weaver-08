@@ -178,12 +178,14 @@ export default function ProjectDetail() {
         {/* Charts */}
         {!recLoading && recordings && recordings.length > 0 && (
           <>
-            <IFDTimeline recordings={recordings} analysis={analysis} />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <IFDTimeline recordings={recordings} analysis={analysis} />
+              <IFDProactivityRadar recordings={recordings} analysis={analysis} />
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <IFDSpeakerTrend recordings={recordings} />
               <IFDTopicCloud recordings={recordings} analysis={analysis} />
             </div>
-            <IFDProactivityRadar recordings={recordings} analysis={analysis} />
             <ProjectChatWidget projectId={id!} projectName={project.name} />
           </>
         )}
