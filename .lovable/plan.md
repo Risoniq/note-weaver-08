@@ -1,30 +1,68 @@
 
-# Dropdown-Menue zum Zuordnen von Meetings
 
-## Problem
-Aktuell oeffnet sich ein separater Dialog zum Zuordnen von Meetings. Gewuenscht ist stattdessen ein Dropdown-Menue direkt auf der Projektseite, ueber das man schnell alle verfuegbaren Meetings des Accounts sehen und zuordnen kann.
+# Projekt-Strategie-Chat auf der Projektdetailseite
 
-## Loesung
+## Uebersicht
 
-### Aenderung: `AssignRecordingsDialog.tsx` durch Dropdown-Komponente ersetzen
+Ein neuer Chat-Bereich wird unterhalb des Proaktivitaets-Netzdiagramms auf der Projektdetailseite eingefuegt. Dieser Chat ist speziell auf strategisches Projektmanagement ausgerichtet und nutzt die vollstaendige Projektanalyse sowie alle zugeordneten Meeting-Daten als Kontext.
 
-Die bestehende Dialog-Komponente wird durch ein Popover mit Suchfeld und scrollbarer Meeting-Liste ersetzt. Das Popover oeffnet sich direkt beim Klick auf den Button, ohne separaten Dialog.
+## Aenderungen
 
-**Datei:** `src/components/projects/AssignRecordingsDialog.tsx`
+### 1. Neue Edge Function: `project-chat`
 
-Umstellung von `Dialog` auf `Popover` (aus den bereits vorhandenen UI-Komponenten):
+**Datei:** `supabase/functions/project-chat/index.ts`
 
-- Button "Meetings zuordnen" oeffnet ein Popover-Dropdown
-- Oben im Popover: Suchfeld zum Filtern
-- Darunter: scrollbare Liste aller abgeschlossenen Meetings des Accounts (die noch nicht zugeordnet sind)
-- Klick auf ein Meeting ordnet es sofort dem Projekt zu
-- Bereits zugeordnete Meetings werden ausgeblendet
-- Die bestehende Query und Zuordnungs-Logik bleibt identisch
+Streamt Antworten ueber die Lovable AI Gateway. Erhaelt `projectId` und `messages` im Request-Body. Laedt automatisch:
+- Projektname, Beschreibung, Status
+- Die gespeicherte KI-Analyse (Zusammenfassung, Empfehlungen, offene/erledigte Themen, Topic-Tracking)
+- Alle zugeordneten Meeting-Transkripte (Titel, Zusammenfassung, Key Points, Action Items)
 
-### Technische Details
+**System-Prompt** (strategisches Projektmanagement):
 
-- Komponente nutzt `Popover` und `PopoverContent` aus `@/components/ui/popover`
-- `PopoverContent` mit `w-96` Breite und `max-h-[60vh]` fuer scrollbare Liste
-- Suchfeld (`Input`) bleibt oben fixiert
-- Meeting-Eintraege mit Titel, Datum und Zuordnungs-Button (Checkbox-Icon)
-- Keine Aenderungen an der Datenbank oder anderen Dateien noetig
+```
+Du bist ein strategischer Projektmanagement-Berater. Du analysierst Projekte ganzheitlich und
+gibst konkrete, umsetzbare Empfehlungen. Du hast Zugriff auf alle Meetings, Analysen und den
+aktuellen Projektstatus.
+
+DEINE KERNKOMPETENZEN:
+1. Strategische Bewertung: Projektfortschritt, Risiken, Engpaesse identifizieren
+2. Potentialanalyse: Ungenutzte Chancen und Synergien zwischen Themen aufdecken
+3. Priorisierung: Welche Themen Aufmerksamkeit brauchen, was zurueckgestellt werden kann
+4. Stakeholder-Dynamik: Wer treibt welche Themen, wo fehlt Verantwortung
+5. Handlungsempfehlungen: Konkrete naechste Schritte mit Begruendung
+
+REGELN:
+- Antworte auf Deutsch, kurz und praegnant
+- Keine Markdown-Sternchen, normaler Fliesstext
+- Bei Aufzaehlungen: Nummeriert, neue Zeile pro Punkt
+- Beziehe dich immer auf konkrete Daten aus den Meetings
+- Stelle Rueckfragen wenn die Anfrage zu vage ist
+- Denke in Zusammenhaengen: Wie haengen verschiedene Meeting-Themen zusammen?
+- Bewerte kritisch: Nicht nur zusammenfassen, sondern Luecken und Risiken benennen
+```
+
+### 2. Neue Komponente: `ProjectChatWidget`
+
+**Datei:** `src/components/projects/ProjectChatWidget.tsx`
+
+Wiederverwendet das gleiche Chat-Pattern wie `MeetingChatWidget` (SSE-Streaming, ScrollArea, VoiceInput). Props: `projectId`, `projectName`.
+
+Platzhalter-Text: "Frag nach Projektpotentialen, Risiken oder strategischen Empfehlungen..."
+
+### 3. Integration in ProjectDetail
+
+**Datei:** `src/pages/ProjectDetail.tsx`
+
+Einfuegen der `ProjectChatWidget`-Komponente nach der `IFDProactivityRadar`-Komponente (Zeile 185), also direkt unter dem Proaktivitaets-Netzdiagramm:
+
+```tsx
+<ProjectChatWidget projectId={id!} projectName={project.name} />
+```
+
+## Technische Details
+
+- Die Edge Function nutzt `LOVABLE_API_KEY` (bereits konfiguriert) und `google/gemini-3-flash-preview`
+- Authentifizierung ueber den Authorization-Header des eingeloggten Nutzers
+- Projekt-Ownership wird geprueft (nur eigene oder geteilte Projekte)
+- SSE-Streaming fuer Echtzeit-Antworten
+- Keine Datenbank-Aenderungen noetig
