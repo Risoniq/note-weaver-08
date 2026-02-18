@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useProjectRecordings, useProjects } from "@/hooks/useProjects";
 import { useAuth } from "@/hooks/useAuth";
 import { IFDKpiCards } from "@/components/projects/IFDKpiCards";
-import { IFDTimeline } from "@/components/projects/IFDTimeline";
+
 import { IFDSpeakerTrend } from "@/components/projects/IFDSpeakerTrend";
 import { IFDTopicCloud } from "@/components/projects/IFDTopicCloud";
 import { IFDProactivityRadar } from "@/components/projects/IFDProactivityRadar";
@@ -184,13 +184,10 @@ export default function ProjectDetail() {
         {!recLoading && recordings && recordings.length > 0 && (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <IFDTimeline recordings={recordings} analysis={analysis} />
               <IFDProactivityRadar recordings={recordings} analysis={analysis} />
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <IFDSpeakerTrend recordings={recordings} />
-              <IFDTopicCloud recordings={recordings} analysis={analysis} />
             </div>
+            <IFDTopicCloud recordings={recordings} analysis={analysis} />
           </>
         )}
 
