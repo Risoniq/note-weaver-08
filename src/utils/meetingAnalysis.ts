@@ -13,15 +13,29 @@ export const generateAnalysis = (transcript: string): MeetingAnalysis => {
   const sentences = transcript.split(/[.!?]+/).filter(s => s.trim().length > 10);
   const words = transcript.toLowerCase().split(/\s+/);
   
-  const actionWords = [
-    'muss', 'soll', 'wird', 'sollte', 'müssen', 
-    'aufgabe', 'todo', 'deadline', 'bis', 
-    'erledigen', 'umsetzen', 'verantwortlich'
+  const actionVerbs = [
+    'muss', 'müssen', 'soll', 'sollte', 'erledigen', 'umsetzen',
+    'erstellen', 'schicken', 'senden', 'prüfen', 'vorbereiten',
+    'organisieren', 'einrichten', 'kümmere', 'übernehme', 'aufgabe', 'todo',
   ];
-  
-  const actionItems = sentences.filter(s => 
-    actionWords.some(word => s.toLowerCase().includes(word))
-  ).slice(0, 8);
+  const responsibilityIndicators = [
+    'ich mache', 'ich kümmere', 'ich übernehme', 'du musst', 'du sollst',
+    'verantwortlich', 'zuständig', 'bitte', 'kannst du', 'könntest du',
+  ];
+  const deadlineIndicators = [
+    'bis freitag', 'bis montag', 'bis dienstag', 'bis mittwoch', 'bis donnerstag',
+    'bis samstag', 'bis sonntag', 'bis morgen', 'bis heute', 'bis ende',
+    'nächste woche', 'naechste woche', 'deadline', 'frist', 'bis zum',
+  ];
+
+  const actionItems = sentences.filter(s => {
+    const lower = s.toLowerCase();
+    const hasAction = actionVerbs.some(w => lower.includes(w));
+    const hasResponsibility = responsibilityIndicators.some(w => lower.includes(w));
+    const hasDeadline = deadlineIndicators.some(w => lower.includes(w));
+    const score = (hasAction ? 1 : 0) + (hasResponsibility ? 1 : 0) + (hasDeadline ? 1 : 0);
+    return score >= 2;
+  }).slice(0, 8);
 
   const keyPoints = sentences
     .filter(s => s.split(/\s+/).length > 8)

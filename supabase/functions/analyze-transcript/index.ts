@@ -198,15 +198,25 @@ ${numbering.keyPoints}. Die 3-5 wichtigsten Punkte als Liste
 ${numbering.actionItems}. Konkrete Action Items mit Verantwortlichen
 
 WICHTIGE REGELN FÜR ACTION ITEMS:
-- Extrahiere NUR explizit formulierte Aufgaben, Zusagen oder Vereinbarungen aus dem Transkript
-- Eine Aufgabe muss klar als solche erkennbar sein (z.B. "ich kümmere mich um...", "bitte schick mir...", "wir müssen noch...", "bis nächste Woche...")
-- Allgemeine Überlegungen, Wünsche oder vage Absichten ("man könnte mal...", "wäre schön wenn...") sind KEINE Action Items
-- Extrahiere die Namen der verantwortlichen Personen DIREKT aus dem Transkript (z.B. "Speaker 1", "Max", "Anna", etc.)
-- Wenn eine Person eine Aufgabe übernimmt oder zugewiesen bekommt, nutze deren Namen aus dem Transkript
-- Wenn im Transkript keine konkrete Person genannt wird, die die Aufgabe übernimmt, schreibe "Verantwortlicher: Nicht zugewiesen" statt "Unbekannt"
-- Format für Action Items: "Aufgabenbeschreibung (Verantwortlicher: [Name aus Transkript])"
+- Ein Action Item ist NUR eine konkrete, umsetzbare Aufgabe, die EXPLIZIT vereinbart, zugesagt oder zugewiesen wurde
+- Es müssen MINDESTENS ZWEI der folgenden Kriterien erfüllt sein:
+  a) Klare Handlung (z.B. "schicken", "erstellen", "prüfen", "organisieren", "vorbereiten", "einrichten")
+  b) Verantwortliche Person (namentlich genannt oder "ich mache das", "ich kümmere mich")
+  c) Zeitrahmen oder Deadline (z.B. "bis Freitag", "nächste Woche", "bis Ende des Monats")
+- KEINE Action Items aus:
+  - Allgemeinen Überlegungen ("man könnte...", "wäre gut wenn...", "vielleicht sollten wir...")
+  - Wünschen oder Hoffnungen ("ich hoffe...", "wäre schön wenn...")
+  - Einzelnen Kommentaren oder Meinungsäußerungen
+  - Wiederholungen desselben Punkts (nur einmal erfassen)
+  - Kontextlosen Erwähnungen von Tätigkeiten in der Vergangenheit ("wir haben letzte Woche...")
+  - Fragen ohne klare Zusage ("sollten wir vielleicht...?")
+- Fasse zusammengehörige Aufgaben zu EINEM Action Item zusammen
+- Maximal 8 Action Items pro Meeting - nur die wichtigsten
+- Im Zweifel ist es KEIN Action Item
+- Extrahiere die Namen der verantwortlichen Personen DIREKT aus dem Transkript
+- Wenn keine konkrete Person genannt wird, schreibe "Verantwortlicher: Nicht zugewiesen"
+- Format: "Aufgabenbeschreibung (Verantwortlicher: [Name aus Transkript])"
 - Sei STRIKT und KONSISTENT: Bei identischem Transkript müssen immer die gleichen Action Items extrahiert werden
-- Im Zweifel WENIGER Action Items extrahieren - nur eindeutige Aufgaben zählen
 ${needsTitle ? `
 WICHTIGE REGELN FÜR DEN TITEL:
 - Der Titel MUSS das SPEZIFISCHE Thema des Meetings widerspiegeln, NICHT nur die Meeting-Art
