@@ -6,7 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { VoiceInputButton } from "@/components/ui/VoiceInputButton";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 
 interface Message {
   role: "user" | "assistant";
@@ -126,56 +126,52 @@ export const ProjectChatWidget = ({ projectId, projectName }: ProjectChatWidgetP
   };
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center gap-2">
-          <MessageCircle className="h-4 w-4 text-primary" />
-          Projekt-Strategie-Chat
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-80 mb-3 pr-2" ref={scrollRef}>
-          {messages.length === 0 ? (
-            <div className="text-center text-muted-foreground text-sm py-8">
-              <p>Frag nach Projektpotentialen, Risiken oder strategischen Empfehlungen...</p>
-              <p className="text-xs mt-2 opacity-70">
-                z.B. "Welche Risiken siehst du?" oder "Wo liegen ungenutzte Potentiale?"
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {messages.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted border"
-                  }`}>
-                    {msg.content || <Loader2 className="h-4 w-4 animate-spin" />}
-                  </div>
+    <div className="space-y-3">
+      <h4 className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
+        <MessageCircle className="h-4 w-4 text-primary" />
+        Projekt-Strategie-Chat
+      </h4>
+      <ScrollArea className="h-64 pr-2" ref={scrollRef}>
+        {messages.length === 0 ? (
+          <div className="text-center text-muted-foreground text-sm py-6">
+            <p>Frag nach Projektpotentialen, Risiken oder strategischen Empfehlungen...</p>
+            <p className="text-xs mt-2 opacity-70">
+              z.B. "Welche Risiken siehst du?" oder "Wo liegen ungenutzte Potentiale?"
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+                  msg.role === "user"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted border"
+                }`}>
+                  {msg.content || <Loader2 className="h-4 w-4 animate-spin" />}
                 </div>
-              ))}
-            </div>
-          )}
-        </ScrollArea>
+              </div>
+            ))}
+          </div>
+        )}
+      </ScrollArea>
 
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <Input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Strategische Frage zum Projekt stellen..."
-            disabled={isLoading}
-            className="flex-1"
-          />
-          <VoiceInputButton
-            onTranscript={(text) => setInput(prev => prev ? `${prev} ${text}` : text)}
-            disabled={isLoading}
-          />
-          <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+      <form onSubmit={handleSubmit} className="flex gap-2">
+        <Input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Strategische Frage zum Projekt stellen..."
+          disabled={isLoading}
+          className="flex-1"
+        />
+        <VoiceInputButton
+          onTranscript={(text) => setInput(prev => prev ? `${prev} ${text}` : text)}
+          disabled={isLoading}
+        />
+        <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </Button>
+      </form>
+    </div>
   );
 };

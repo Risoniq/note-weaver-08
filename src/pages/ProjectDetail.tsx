@@ -175,6 +175,11 @@ export default function ProjectDetail() {
           </Card>
         )}
 
+        {/* Project Chat - directly below KI Analysis */}
+        {!recLoading && recordings && recordings.length > 0 && (
+          <ProjectChatWidget projectId={id!} projectName={project.name} />
+        )}
+
         {/* Charts */}
         {!recLoading && recordings && recordings.length > 0 && (
           <>
@@ -186,7 +191,6 @@ export default function ProjectDetail() {
               <IFDSpeakerTrend recordings={recordings} />
               <IFDTopicCloud recordings={recordings} analysis={analysis} />
             </div>
-            <ProjectChatWidget projectId={id!} projectName={project.name} />
           </>
         )}
 
