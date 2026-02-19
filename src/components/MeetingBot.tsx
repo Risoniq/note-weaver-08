@@ -90,9 +90,17 @@ export function MeetingBot({ onRecordingCreated }: MeetingBotProps) {
             value={meetingUrl}
             onChange={(e) => setMeetingUrl(e.target.value)}
             onPaste={(e) => {
-              e.preventDefault();
-              const pastedText = e.clipboardData.getData('text');
-              setMeetingUrl(pastedText);
+              const plainText = e.clipboardData.getData('text/plain');
+              const htmlText = e.clipboardData.getData('text/html');
+              let url = plainText?.trim() || '';
+              if (!url && htmlText) {
+                const match = htmlText.match(/https?:\/\/[^\s"<>]+/);
+                if (match) url = match[0];
+              }
+              if (url) {
+                e.preventDefault();
+                setMeetingUrl(url);
+              }
             }}
             disabled={isLoading}
             className="flex-1"
