@@ -1,12 +1,14 @@
 import { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, FileText, Settings, Shield, Mic, Video, FolderKanban } from "lucide-react";
+import { LayoutDashboard, Settings, Shield, Mic, Video, FolderKanban, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
 import { useSessionTimeout } from "@/hooks/useSessionTimeout";
 import { SessionTimeoutWarning } from "@/components/session/SessionTimeoutWarning";
+import { useQuickRecording } from "@/hooks/useQuickRecording";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -23,6 +25,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const { isAdmin } = useAdminCheck();
   const { showWarning, remainingSeconds, extendSession } = useSessionTimeout();
+  const { isRecording, startRecording, stopRecording } = useQuickRecording();
 
   return (
     <div className={cn(
@@ -40,11 +43,9 @@ export function AppLayout({ children }: AppLayoutProps) {
         "backdrop-blur-[20px]",
         "border-b border-white/30 dark:border-white/10"
       )}>
-        {/* Logo */}
+        {/* Logo - ThemeToggle links */}
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-primary/10">
-            <Mic className="h-5 w-5 text-primary" />
-          </div>
+          <ThemeToggle />
           <span className="font-semibold text-lg hidden sm:block text-muted-foreground">Meeting Recorder</span>
         </div>
 
@@ -84,8 +85,29 @@ export function AppLayout({ children }: AppLayoutProps) {
               <span className="hidden md:block">Admin</span>
             </NavLink>
           )}
-          
-          <ThemeToggle />
+
+          {/* Quick Recording Mic Button */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                className={cn(
+                  "relative flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200",
+                  isRecording
+                    ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
+                    : "text-muted-foreground hover:bg-white/50 dark:hover:bg-white/5 hover:text-foreground"
+                )}
+              >
+                {isRecording && (
+                  <span className="absolute inset-0 rounded-xl border-2 border-destructive animate-pulse" />
+                )}
+                {isRecording ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-5 w-5" />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isRecording ? "Aufnahme beenden" : "Schnellaufnahme starten"}
+            </TooltipContent>
+          </Tooltip>
         </nav>
       </header>
       
