@@ -418,6 +418,8 @@ Deno.serve(async (req) => {
         everyone_left_timeout: 60  // 1 Minute warten nachdem alle gegangen sind
       },
       recording_config: {
+        video_mixed_layout: "gallery_view_v2",
+        video_mixed_mp4: {},
         transcript: {
           provider: { 
             recallai_streaming: {
