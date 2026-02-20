@@ -8,7 +8,6 @@ const corsHeaders = {
 // Status codes that should trigger a sync
 const SYNC_TRIGGER_STATUSES = new Set([
   'done',
-  'call_ended',
   'recording_done',
   'analysis_done',
   'fatal',
@@ -84,6 +83,12 @@ Deno.serve(async (req) => {
         .update({ status: 'recording' })
         .eq('id', recording.id);
       console.log(`[recall-status-webhook] Updated recording ${recording.id} status to 'recording'`);
+    } else if (statusCode === 'call_ended' && recording.status !== 'done') {
+      await supabase
+        .from('recordings')
+        .update({ status: 'processing' })
+        .eq('id', recording.id);
+      console.log(`[recall-status-webhook] Updated recording ${recording.id} status to 'processing' (call_ended, awaiting done)`);
     }
 
     // Check if this status should trigger sync
@@ -112,7 +117,7 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${serviceRoleKey}`,
       },
-      body: JSON.stringify({ recordingId: recording.id }),
+      body: JSON.stringify({ id: recording.id }),
     });
 
     const syncResult = await syncResponse.text();
