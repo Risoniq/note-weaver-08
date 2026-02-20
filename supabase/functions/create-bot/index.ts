@@ -407,6 +407,8 @@ Deno.serve(async (req) => {
       meeting_url: realMeetingUrl,
       bot_name: finalBotName,
       join_at: new Date().toISOString(),
+      // Recall.ai will POST status changes to this URL
+      status_change_url: `${supabaseUrl}/functions/v1/recall-status-webhook`,
       // Speaker Timeline für Sprecher-Identifikation aktivieren
       speaker_timeline: {
         enabled: true
