@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from "@/components/ui/carousel";
+
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -84,48 +84,38 @@ const Index = () => {
         {/* Bot-Steuerung und Account-Analyse - nur wenn Kontingent verfügbar */}
         {!quota?.is_exhausted && (
           <div className="space-y-5">
-          <Carousel opts={{ align: "start", loop: true }} className="w-full">
-            <CarouselContent className="-ml-4">
-              <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3">
-                <GlassCard title="Bot zu Meeting senden" className="h-full">
-                  <QuickMeetingJoin onBotStarted={setActiveRecordingId} />
-                </GlassCard>
-              </CarouselItem>
-              <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3">
-                <GlassCard title="Audio/Video hochladen" className="h-full">
-                  <AudioUploadCard />
-                </GlassCard>
-              </CarouselItem>
-              <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3">
-                <GlassCard title={isTeamlead ? `Team-Analyse${leadTeams.length > 1 ? '' : ': ' + teamName}` : 'Account-Analyse'} className="h-full">
-                  {isTeamlead ? (
-                    <div className="space-y-2">
-                      {leadTeams.length > 1 && (
-                        <Select
-                          value={selectedTeamId || leadTeams[0]?.id || ''}
-                          onValueChange={setSelectedTeamId}
-                        >
-                          <SelectTrigger className="w-full h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {leadTeams.map((t) => (
-                              <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      <TeamAnalyticsCard teamId={selectedTeamId || leadTeams[0]?.id || null} />
-                    </div>
-                  ) : (
-                    <AccountAnalyticsCard />
-                  )}
-                </GlassCard>
-              </CarouselItem>
-            </CarouselContent>
-            <CarouselPrevious />
-            <CarouselNext />
-          </Carousel>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <GlassCard title="Bot zu Meeting senden" className="h-full">
+                <QuickMeetingJoin onBotStarted={setActiveRecordingId} />
+              </GlassCard>
+              <GlassCard title="Audio/Video hochladen" className="h-full">
+                <AudioUploadCard />
+              </GlassCard>
+              <GlassCard title={isTeamlead ? `Team-Analyse${leadTeams.length > 1 ? '' : ': ' + teamName}` : 'Account-Analyse'} className="h-full">
+                {isTeamlead ? (
+                  <div className="space-y-2">
+                    {leadTeams.length > 1 && (
+                      <Select
+                        value={selectedTeamId || leadTeams[0]?.id || ''}
+                        onValueChange={setSelectedTeamId}
+                      >
+                        <SelectTrigger className="w-full h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {leadTeams.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <TeamAnalyticsCard teamId={selectedTeamId || leadTeams[0]?.id || null} />
+                  </div>
+                ) : (
+                  <AccountAnalyticsCard />
+                )}
+              </GlassCard>
+          </div>
 
             {/* Animated Link to Recordings */}
             <Link 
