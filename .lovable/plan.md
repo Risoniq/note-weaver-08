@@ -1,78 +1,60 @@
 
-# Echtzeit-Sync nach Meeting-Ende via Recall.ai Webhook
 
-## Problem
-Aktuell erkennt das System ein beendetes Meeting nur ueber den Cron-Job `auto-sync-recordings`, der alle 5 Minuten laeuft. Das bedeutet bis zu 5 Minuten Verzoegerung, bis Analyse und Video-Backup starten. Es gibt keinen Echtzeit-Trigger von Recall.ai.
+# Fix: Webhook-zu-Sync Feld-Mismatch und Analyse-Zuverlaessigkeit
 
-## Loesung
-Recall.ai unterstuetzt den Parameter `status_change_url` in der Bot-Konfiguration. Wenn sich der Bot-Status aendert (z.B. `done`, `call_ended`), sendet Recall.ai automatisch einen POST-Request an diese URL. Wir erstellen eine neue Edge Function, die diesen Webhook empfaengt und sofort `sync-recording` triggert.
+## Problem (Ursache gefunden)
+
+In `recall-status-webhook` wird der `sync-recording`-Aufruf mit dem falschen Feldnamen gemacht:
+
+```
+// Webhook sendet:
+body: JSON.stringify({ recordingId: recording.id })
+
+// Aber sync-recording erwartet:
+const { id, force_resync = false } = await req.json()
+```
+
+`id` ist daher immer `undefined`, die Recording wird nicht gefunden, und weder Transkript-Download noch Analyse werden ausgefuehrt. Der Webhook laeuft zwar, aber bewirkt nichts.
+
+Zum Vergleich: `auto-sync-recordings` macht es richtig mit `{ id: recording.id }`.
 
 ## Aenderungen
 
-### 1. Neue Edge Function: `recall-status-webhook` (neues File)
+### 1. Feld-Name korrigieren in `recall-status-webhook`
+**Datei:** `supabase/functions/recall-status-webhook/index.ts` (Zeile 115)
+
+Aenderung von `recordingId` zu `id`:
+```ts
+// Vorher:
+body: JSON.stringify({ recordingId: recording.id }),
+
+// Nachher:
+body: JSON.stringify({ id: recording.id }),
+```
+
+### 2. Retry-Logik bei `call_ended` hinzufuegen
+`call_ended` kommt oft bevor Recall.ai die Aufnahme fertig verarbeitet hat. Wenn `sync-recording` zu diesem Zeitpunkt laeuft, findet es evtl. noch kein Transkript. Loesung: Bei `call_ended` eine kurze Verzoegerung einbauen und den Status `done` abwarten bevor gesynct wird.
+
 **Datei:** `supabase/functions/recall-status-webhook/index.ts`
 
-Diese Funktion empfaengt Status-Updates von Recall.ai und triggert den Sync-Prozess:
+- Bei `call_ended`: Status in DB auf `processing` setzen, aber KEINEN Sync triggern (Recall.ai sendet danach noch `done`)
+- `call_ended` aus `SYNC_TRIGGER_STATUSES` entfernen
+- Nur `done`, `recording_done`, `analysis_done`, `fatal`, `media_expired` triggern den Sync
 
-- Empfaengt POST von Recall.ai mit Bot-Status-Daten (`bot_id`, `status.code`, `status.sub_code`)
-- Sucht die zugehoerige Recording in der Datenbank anhand der `recall_bot_id`
-- Bei relevanten Status-Codes (`done`, `call_ended`, `recording_done`, `analysis_done`, `fatal`) wird sofort `sync-recording` aufgerufen
-- Ignoriert Zwischen-Status wie `joining_call`, `in_call_recording` (diese brauchen keinen Sync)
-- Verwendet den Service-Role-Key fuer den internen `sync-recording`-Aufruf
-- Kein JWT noetig (Recall.ai sendet keine Auth-Header), aber Bot-ID wird gegen die DB validiert
+### 3. Status `transcribing` nicht als "already done" behandeln
+Aktuell blockiert die Pruefung `recording.status === 'done'` einen Re-Sync. Aber Recordings im Status `transcribing` sollten ebenfalls erneut gesynct werden koennen, da das Transkript dann fertig sein koennte.
 
-### 2. Bot-Config erweitern: `status_change_url`
-**Datei:** `supabase/functions/create-bot/index.ts`
+**Datei:** `supabase/functions/recall-status-webhook/index.ts`
 
-In der Bot-Konfiguration (Zeile 406-433) wird `status_change_url` hinzugefuegt:
+Die Pruefung auf Zeile 98 aendern: Nur wenn Status `done` ist, wird der Sync uebersprungen. `transcribing` wird durchgelassen.
 
-```text
-botConfig.status_change_url = `${supabaseUrl}/functions/v1/recall-status-webhook`
-```
-
-Dies teilt Recall.ai mit, wohin Status-Updates gesendet werden sollen. Ab sofort wird bei jedem Bot-Status-Wechsel sofort ein Webhook gesendet.
-
-### 3. Config.toml erweitern
-**Datei:** `supabase/config.toml`
-
-Neuer Eintrag fuer die Webhook-Funktion:
-```toml
-[functions.recall-status-webhook]
-verify_jwt = false
-```
-
-## Ablauf nach der Aenderung
-
-```text
-Meeting endet
-    |
-    v
-Recall.ai erkennt: alle Teilnehmer weg (everyone_left_timeout: 60s)
-    |
-    v
-Recall.ai sendet POST an recall-status-webhook (status: "done")
-    |
-    v
-recall-status-webhook findet Recording via recall_bot_id
-    |
-    v
-Ruft sync-recording auf (mit Service-Role-Key)
-    |
-    v
-sync-recording laedt Transkript + Video, speichert Backup, startet Analyse
-```
-
-Der bestehende Cron-Job (`auto-sync-recordings`) bleibt als Fallback bestehen, falls ein Webhook verloren geht.
-
-## Betroffene Dateien
+## Betroffene Datei
 
 | Datei | Aenderung |
 |-------|-----------|
-| `supabase/functions/recall-status-webhook/index.ts` | Neue Edge Function: empfaengt Recall.ai Status-Webhooks |
-| `supabase/functions/create-bot/index.ts` | `status_change_url` zur Bot-Config hinzufuegen |
-| `supabase/config.toml` | Neuer Eintrag fuer `recall-status-webhook` |
+| `supabase/functions/recall-status-webhook/index.ts` | Feld-Name Fix (`id` statt `recordingId`), `call_ended` nicht mehr als Sync-Trigger, Zwischen-Status-Updates verbessern |
 
-## Sicherheit
-- Die Webhook-Funktion validiert, dass eine Recording mit der empfangenen `bot_id` existiert (verhindert gefaelschte Anfragen)
-- Der interne `sync-recording`-Aufruf verwendet den Service-Role-Key
-- Kein sensibles Secret wird nach aussen exponiert
+## Zusammenfassung
+
+Der Hauptfehler war ein simpler Tippfehler: `recordingId` statt `id`. Dadurch hat der gesamte Echtzeit-Webhook-Flow nie funktioniert -- die Analyse wurde nur durch den 5-Minuten-Cron-Job (`auto-sync-recordings`) oder manuelles Frontend-Polling gestartet, was erklaert warum es "sich aufhaengt".
+
