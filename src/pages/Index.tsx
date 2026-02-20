@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from "@/components/ui/carousel";
+import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext, type CarouselApi } from "@/components/ui/carousel";
 import { Button } from "@/components/ui/button";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -31,6 +31,25 @@ const Index = () => {
   const { isTeamlead, teamName, leadTeams } = useTeamleadCheck();
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [showExhaustedModal, setShowExhaustedModal] = useState(false);
+  const [carouselApi, setCarouselApi] = useState<CarouselApi>();
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    if (!carouselApi) return;
+    setActiveIndex(carouselApi.selectedScrollSnap());
+    carouselApi.on("select", () => {
+      setActiveIndex(carouselApi.selectedScrollSnap());
+    });
+  }, [carouselApi]);
+
+  const getItemStyle = (index: number) => {
+    const diff = index - activeIndex;
+    if (diff === 0) {
+      return { transform: 'rotateY(0deg) scale(1)', opacity: 1, transition: 'all 0.5s ease' };
+    }
+    const rotation = diff < 0 ? '8deg' : '-8deg';
+    return { transform: `rotateY(${rotation}) scale(0.92)`, opacity: 0.7, transition: 'all 0.5s ease' };
+  };
 
   // Auto-start onboarding tour for first-time users
   useAutoStartTour();
@@ -84,19 +103,19 @@ const Index = () => {
         {/* Bot-Steuerung und Account-Analyse - nur wenn Kontingent verfügbar */}
         {!quota?.is_exhausted && (
           <div className="space-y-5">
-          <Carousel opts={{ align: "start", loop: true }} className="w-full">
-            <CarouselContent className="-ml-4">
-              <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3">
+          <Carousel opts={{ align: "start", loop: true }} setApi={setCarouselApi} className="w-full px-14">
+            <CarouselContent className="-ml-4" style={{ perspective: '1200px' }}>
+              <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3" style={getItemStyle(0)}>
                 <GlassCard title="Bot zu Meeting senden" className="h-full">
                   <QuickMeetingJoin onBotStarted={setActiveRecordingId} />
                 </GlassCard>
               </CarouselItem>
-              <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3">
+              <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3" style={getItemStyle(1)}>
                 <GlassCard title="Audio/Video hochladen" className="h-full">
                   <AudioUploadCard />
                 </GlassCard>
               </CarouselItem>
-              <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3">
+              <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3" style={getItemStyle(2)}>
                 <GlassCard title={isTeamlead ? `Team-Analyse${leadTeams.length > 1 ? '' : ': ' + teamName}` : 'Account-Analyse'} className="h-full">
                   {isTeamlead ? (
                     <div className="space-y-2">
