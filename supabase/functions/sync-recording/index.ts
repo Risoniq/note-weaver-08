@@ -873,23 +873,26 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
       }
 
       // 7c. Video als Backup in Storage speichern
+      // Edge Functions haben ~150MB RAM - nur kleine Videos im Speicher verarbeiten
       if (updates.video_url && typeof updates.video_url === 'string') {
         try {
-          console.log('Lade Video von Recall.ai herunter fuer Backup...')
-          const videoResponse = await fetch(updates.video_url)
+          // Zuerst HEAD-Request um Groesse zu pruefen ohne Download
+          const headResponse = await fetch(updates.video_url, { method: 'HEAD' })
+          const contentLength = parseInt(headResponse.headers.get('content-length') || '0')
+          const maxMemorySize = 50 * 1024 * 1024 // 50 MB - sicheres Limit fuer Edge Functions
           
-          if (videoResponse.ok) {
-            const contentLength = parseInt(videoResponse.headers.get('content-length') || '0')
-            const maxSize = 500 * 1024 * 1024 // 500 MB
+          if (contentLength > 0 && contentLength > maxMemorySize) {
+            console.log(`Video zu gross fuer In-Memory-Backup: ${Math.round(contentLength / 1024 / 1024)}MB > 50MB. Recall.ai-URL wird beibehalten.`)
+          } else if (headResponse.ok) {
+            console.log(`Video-Groesse: ${contentLength > 0 ? Math.round(contentLength / 1024 / 1024) + 'MB' : 'unbekannt'}, starte Download...`)
+            const videoResponse = await fetch(updates.video_url)
             
-            if (contentLength > 0 && contentLength > maxSize) {
-              console.warn(`Video zu gross fuer Backup: ${Math.round(contentLength / 1024 / 1024)}MB > 500MB`)
-            } else {
+            if (videoResponse.ok) {
               const videoBuffer = await videoResponse.arrayBuffer()
-              const videoUint8Array = new Uint8Array(videoBuffer)
               
-              // Groesse nochmal pruefen nach Download
-              if (videoUint8Array.length <= maxSize) {
+              // Nochmal pruefen nach Download
+              if (videoBuffer.byteLength <= maxMemorySize) {
+                const videoUint8Array = new Uint8Array(videoBuffer)
                 const userId = recording.user_id || user.id
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
                 const videoFileName = `${userId}/${id}_video_${timestamp}.mp4`
@@ -910,14 +913,16 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
                   console.log('Video-URL aktualisiert auf Storage-URL')
                 }
               } else {
-                console.warn(`Video nach Download zu gross: ${Math.round(videoUint8Array.length / 1024 / 1024)}MB`)
+                console.warn(`Video nach Download zu gross: ${Math.round(videoBuffer.byteLength / 1024 / 1024)}MB > 50MB`)
               }
+            } else {
+              console.error('Video-Download fehlgeschlagen:', videoResponse.status)
             }
           } else {
-            console.error('Video-Download fehlgeschlagen:', videoResponse.status)
+            console.warn('Video HEAD-Request fehlgeschlagen:', headResponse.status, '- ueberspringe Backup')
           }
         } catch (videoBackupError) {
-          console.error('Video-Backup fehlgeschlagen:', videoBackupError)
+          console.error('Video-Backup fehlgeschlagen (nicht kritisch):', videoBackupError)
         }
       }
     }
