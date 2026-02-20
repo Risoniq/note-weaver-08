@@ -119,13 +119,13 @@ export const QuickMeetingJoin = ({ onBotStarted }: QuickMeetingJoinProps) => {
           <Bot size={24} className="text-primary" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-foreground">Bot zu Meeting senden</h3>
-          <p className="text-sm text-muted-foreground">Sofort aufnehmen lassen</p>
+          <h3 className="text-base sm:text-lg font-semibold text-foreground">Bot zu Meeting senden</h3>
+          <p className="text-xs sm:text-sm text-muted-foreground">Sofort aufnehmen lassen</p>
         </div>
       </div>
       
       {/* Input und Button */}
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         <Input
           placeholder="https://meet.google.com/... oder Teams/Zoom Link"
           value={meetingUrl}
