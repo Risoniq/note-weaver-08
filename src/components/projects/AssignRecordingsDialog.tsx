@@ -23,7 +23,7 @@ export function AssignRecordingsDialog({ projectId }: Props) {
       const { data, error } = await supabase
         .from("recordings")
         .select("id, title, created_at, status")
-        .eq("status", "completed")
+        .eq("status", "done")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data ?? [];
