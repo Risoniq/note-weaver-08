@@ -23,7 +23,7 @@ import { CalendarView } from './calendar/CalendarView';
 import { QuotaExhaustedModal } from './quota/QuotaExhaustedModal';
 import { useToast } from '@/hooks/use-toast';
 
-const MAX_CHUNK_BYTES = 500 * 1024 * 1024; // 500 MB
+const MAX_CHUNK_BYTES = 750 * 1024 * 1024; // 750 MB
 
 export default function MeetingNoteTaker() {
   const [isRecording, setIsRecording] = useState(false);
@@ -220,11 +220,11 @@ export default function MeetingNoteTaker() {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
           totalChunkSizeRef.current += event.data.size;
-          // M3: Auto-stop at 500 MB
+          // M3: Auto-stop at 750 MB
           if (totalChunkSizeRef.current >= MAX_CHUNK_BYTES) {
             toast({
               title: 'Speicherlimit erreicht',
-              description: 'Die Aufnahme wurde automatisch beendet (500 MB). Bitte kürzere Aufnahmen erstellen.',
+              description: 'Die Aufnahme wurde automatisch beendet (750 MB). Bitte kürzere Aufnahmen erstellen.',
               variant: 'destructive',
             });
             stopRecording();
