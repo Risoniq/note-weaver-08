@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { X, Download, FileAudio, FileText, CheckCircle } from 'lucide-react';
 import { Meeting } from '@/types/meeting';
 import { downloadTranscript, formatDuration } from '@/utils/meetingAnalysis';
+import { getAudioUrl } from '@/hooks/useMeetingStorage';
 import { useToast } from '@/hooks/use-toast';
 
 interface DownloadModalProps {
@@ -10,39 +12,46 @@ interface DownloadModalProps {
 
 export const DownloadModal = ({ meeting, onClose }: DownloadModalProps) => {
   const { toast } = useToast();
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
 
-  const handleDownloadAudio = () => {
-    if (!meeting.audioUrl && !meeting.audioBlob) {
-      toast({
-        title: "Fehler",
-        description: "Audio-Datei nicht verfügbar",
-        variant: "destructive",
-      });
-      return;
+  const handleDownloadAudio = async () => {
+    setIsLoadingAudio(true);
+    try {
+      let url: string | null = null;
+
+      // Prefer local blob (just recorded)
+      if (meeting.audioBlob) {
+        url = URL.createObjectURL(meeting.audioBlob);
+      } else if (meeting.audioUrl) {
+        // Generate fresh signed URL from storage path
+        url = await getAudioUrl(meeting.audioUrl);
+      }
+
+      if (!url) {
+        toast({ title: "Fehler", description: "Audio-Datei nicht verfügbar", variant: "destructive" });
+        return;
+      }
+
+      const extension = meeting.audioBlob?.type?.includes('webm') ? 'webm' : 'mp3';
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${meeting.title.replace(/[^a-z0-9]/gi, '_')}_${new Date(meeting.date).toISOString().split('T')[0]}.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      toast({ title: "Audio-Download gestartet", description: `${meeting.title}.${extension}` });
+    } catch (err) {
+      console.error('Audio download error:', err);
+      toast({ title: "Fehler", description: "Audio konnte nicht heruntergeladen werden", variant: "destructive" });
+    } finally {
+      setIsLoadingAudio(false);
     }
-
-    const url = meeting.audioUrl || (meeting.audioBlob ? URL.createObjectURL(meeting.audioBlob) : '');
-    const extension = meeting.audioBlob?.type?.includes('webm') ? 'webm' : 'mp3';
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${meeting.title.replace(/[^a-z0-9]/gi, '_')}_${new Date(meeting.date).toISOString().split('T')[0]}.${extension}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    toast({
-      title: "Audio-Download gestartet",
-      description: `${meeting.title}.${extension}`,
-    });
   };
 
   const handleDownloadTranscript = () => {
     downloadTranscript(meeting);
-    toast({
-      title: "Transkript-Download gestartet",
-      description: `${meeting.title}.txt`,
-    });
+    toast({ title: "Transkript-Download gestartet", description: `${meeting.title}.txt` });
   };
 
   return (
@@ -100,7 +109,8 @@ export const DownloadModal = ({ meeting, onClose }: DownloadModalProps) => {
             {/* Audio Download */}
             <button
               onClick={handleDownloadAudio}
-              className="w-full flex items-center gap-4 p-4 bg-primary/5 hover:bg-primary/10 border border-primary/20 rounded-xl transition-all group"
+              disabled={isLoadingAudio}
+              className="w-full flex items-center gap-4 p-4 bg-primary/5 hover:bg-primary/10 border border-primary/20 rounded-xl transition-all group disabled:opacity-50"
             >
               <div className="p-3 bg-primary/10 rounded-xl group-hover:bg-primary/20 transition-colors">
                 <FileAudio className="h-6 w-6 text-primary" />
@@ -108,7 +118,7 @@ export const DownloadModal = ({ meeting, onClose }: DownloadModalProps) => {
               <div className="flex-1 text-left">
                 <p className="font-semibold text-foreground">Audio-Datei</p>
                 <p className="text-sm text-muted-foreground">
-                  {meeting.audioBlob?.type?.includes('webm') ? 'WebM' : 'Audio'} • {formatDuration(meeting.duration)}
+                  {isLoadingAudio ? 'Wird vorbereitet...' : `${meeting.audioBlob?.type?.includes('webm') ? 'WebM' : 'Audio'} • ${formatDuration(meeting.duration)}`}
                 </p>
               </div>
               <Download className="h-5 w-5 text-primary" />
