@@ -1,10 +1,13 @@
-import { Mic, Square, Radio, Lightbulb } from 'lucide-react';
+import { Mic, Square, Radio, Lightbulb, AlertTriangle } from 'lucide-react';
 import { CaptureMode } from '@/types/meeting';
 import { AudioDevices } from '@/hooks/useAudioDevices';
 import { MicrophoneTest } from '@/hooks/useMicrophoneTest';
 import { AudioDeviceSelector } from './AudioDeviceSelector';
 import { MicrophoneTestButton } from './MicrophoneTestButton';
 import { AudioLevelIndicator } from './AudioLevelIndicator';
+
+const isSpeechRecognitionSupported = typeof window !== 'undefined' && 
+  ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
 
 interface RecordViewProps {
   meetingTitle: string;
@@ -36,6 +39,16 @@ export const RecordView = ({
   return (
     <div className="bg-card rounded-2xl shadow-lg border border-border p-6 sm:p-8 animate-fade-in">
       <h2 className="text-xl sm:text-2xl font-bold mb-6 text-foreground">Meeting transkribieren</h2>
+
+      {/* Browser Compatibility Banner */}
+      {!isSpeechRecognitionSupported && (
+        <div className="bg-warning/10 border border-warning/30 rounded-xl p-4 mb-6 flex items-start gap-3">
+          <AlertTriangle size={20} className="text-warning flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-foreground">
+            Dein Browser unterstützt keine Echtzeit-Transkription. Verwende Chrome oder Edge für Live-Transkripte, oder nimm auf – die Transkription erfolgt nach dem Upload.
+          </p>
+        </div>
+      )}
       
       {/* Audio Device Selection */}
       {!isRecording && (

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -57,17 +58,9 @@ export const VoiceInputButton = ({
   }, [onTranscript, setOnResult]);
 
   const handleStart = useCallback(() => {
-    if (!isSupported) {
-      toast({
-        variant: "destructive",
-        title: "Nicht unterstützt",
-        description: "Spracherkennung wird von diesem Browser nicht unterstützt. Bitte nutze Chrome oder Edge.",
-      });
-      return;
-    }
     setIsRecording(true);
     startRecognition();
-  }, [isSupported, startRecognition, toast]);
+  }, [startRecognition]);
 
   const handleStop = useCallback(() => {
     setIsRecording(false);
@@ -82,9 +75,30 @@ export const VoiceInputButton = ({
     }
   };
 
-  // Hide button if not supported
+  // Show disabled button with tooltip if not supported
   if (!isSupported) {
-    return null;
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span tabIndex={0}>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                disabled
+                className={cn("opacity-50 cursor-not-allowed", className)}
+              >
+                <Mic className="h-4 w-4" />
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Spracheingabe wird nur in Chrome und Edge unterstützt</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
   }
 
   return (
