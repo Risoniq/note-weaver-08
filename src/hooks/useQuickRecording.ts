@@ -1,12 +1,22 @@
 import { useState, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { UserQuota } from '@/hooks/useUserQuota';
 
-export function useQuickRecording() {
+const MAX_CHUNK_BYTES = 500 * 1024 * 1024; // 500 MB
+
+interface UseQuickRecordingOptions {
+  quota?: UserQuota | null;
+  onQuotaExhausted?: () => void;
+}
+
+export function useQuickRecording(options: UseQuickRecordingOptions = {}) {
+  const { quota, onQuotaExhausted } = options;
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const totalChunkSizeRef = useRef(0);
   const displayStreamRef = useRef<MediaStream | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -21,8 +31,15 @@ export function useQuickRecording() {
   }, []);
 
   const startRecording = useCallback(async () => {
+    // M1: Quota check before recording
+    if (quota?.is_exhausted) {
+      onQuotaExhausted?.();
+      return;
+    }
+
     setError('');
     chunksRef.current = [];
+    totalChunkSizeRef.current = 0;
 
     try {
       // Request screen (with system audio) and microphone simultaneously
@@ -66,7 +83,15 @@ export function useQuickRecording() {
       });
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+          totalChunkSizeRef.current += e.data.size;
+          // M3: Auto-stop at 500 MB
+          if (totalChunkSizeRef.current >= MAX_CHUNK_BYTES) {
+            toast({ title: 'Speicherlimit erreicht', description: 'Die Aufnahme wurde automatisch beendet (500 MB). Bitte kürzere Aufnahmen erstellen.', variant: 'destructive' });
+            stopRecording();
+          }
+        }
       };
 
       mediaRecorderRef.current = mediaRecorder;
@@ -87,7 +112,7 @@ export function useQuickRecording() {
         toast({ title: 'Fehler', description: 'Aufnahme konnte nicht gestartet werden.', variant: 'destructive' });
       }
     }
-  }, [stopAllTracks]);
+  }, [stopAllTracks, quota, onQuotaExhausted]);
 
   const stopRecording = useCallback(async () => {
     if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;

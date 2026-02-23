@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { LayoutDashboard, Settings, Shield, Mic, Video, FolderKanban, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,8 @@ import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
 import { useSessionTimeout } from "@/hooks/useSessionTimeout";
 import { SessionTimeoutWarning } from "@/components/session/SessionTimeoutWarning";
 import { useQuickRecording } from "@/hooks/useQuickRecording";
+import { useUserQuota } from "@/hooks/useUserQuota";
+import { QuotaExhaustedModal } from "@/components/quota/QuotaExhaustedModal";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface AppLayoutProps {
@@ -24,7 +26,12 @@ const navItems = [
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const { isAdmin } = useAdminCheck();
-  const { isRecording, startRecording, stopRecording } = useQuickRecording();
+  const { quota } = useUserQuota();
+  const [showQuotaModal, setShowQuotaModal] = useState(false);
+  const { isRecording, startRecording, stopRecording } = useQuickRecording({
+    quota,
+    onQuotaExhausted: () => setShowQuotaModal(true),
+  });
   const { showWarning, remainingSeconds, extendSession } = useSessionTimeout({ paused: isRecording });
 
   return (
@@ -127,6 +134,11 @@ export function AppLayout({ children }: AppLayoutProps) {
         open={showWarning}
         remainingSeconds={remainingSeconds}
         onExtend={extendSession}
+      />
+
+      <QuotaExhaustedModal
+        open={showQuotaModal}
+        onClose={() => setShowQuotaModal(false)}
       />
     </div>
   );
