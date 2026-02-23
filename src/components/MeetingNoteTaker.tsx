@@ -40,7 +40,7 @@ export default function MeetingNoteTaker() {
   const { toast } = useToast();
   const { user, isAuthenticated } = useAuth();
   const { meetings, loadMeetings, saveMeeting, deleteMeeting, migrateLocalStorage } = useMeetingStorage();
-  const { startRecognition, stopRecognition, setOnResult, error: recognitionError } = useSpeechRecognition();
+  const { startRecognition, stopRecognition, setOnResult, error: recognitionError, isSupported: isSpeechSupported } = useSpeechRecognition();
   const audioDevices = useAudioDevices();
   const microphoneTest = useMicrophoneTest();
   const audioLevel = useAudioLevel(currentStream);
@@ -177,9 +177,16 @@ export default function MeetingNoteTaker() {
       // Request data every second
       mediaRecorderRef.current.start(1000);
       
-      // Kurze Verzögerung vor Speech Recognition Start, um Mikrofon-Konflikte zu vermeiden
-      await new Promise(resolve => setTimeout(resolve, 300));
-      startRecognition();
+      // Only start speech recognition if supported
+      if (isSpeechSupported) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        startRecognition();
+      } else {
+        toast({
+          title: "Hinweis",
+          description: "Echtzeit-Transkription ist in diesem Browser nicht verfügbar. Audio wird trotzdem aufgenommen und kann später transkribiert werden.",
+        });
+      }
 
       toast({
         title: "Aufnahme gestartet",

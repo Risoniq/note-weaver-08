@@ -2,6 +2,7 @@ import { useRef, useCallback, useState } from 'react';
 
 interface SpeechRecognitionHook {
   isSupported: boolean;
+  isActive: boolean;
   error: string;
   startRecognition: () => void;
   stopRecognition: () => void;
@@ -12,7 +13,9 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
   const recognitionRef = useRef<any>(null);
   const onResultCallbackRef = useRef<((transcript: string) => void) | null>(null);
   const [error, setError] = useState('');
+  const [isActive, setIsActive] = useState(false);
   const isRecordingRef = useRef(false);
+  const accumulatedTranscriptRef = useRef('');
 
   const isSupported = typeof window !== 'undefined' && 
     ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
@@ -30,21 +33,49 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
     recognition.lang = 'de-DE';
 
     recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results)
-        .map((result: any) => result[0].transcript)
-        .join(' ');
+      // Only process new results starting from event.resultIndex
+      let newText = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          newText += event.results[i][0].transcript;
+        }
+      }
       
-      if (onResultCallbackRef.current) {
-        onResultCallbackRef.current(transcript);
+      if (newText && onResultCallbackRef.current) {
+        accumulatedTranscriptRef.current = accumulatedTranscriptRef.current
+          ? accumulatedTranscriptRef.current + ' ' + newText.trim()
+          : newText.trim();
+        onResultCallbackRef.current(accumulatedTranscriptRef.current);
       }
     };
 
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error);
-      if (event.error === 'not-allowed') {
-        setError('Mikrofon-Zugriff wurde verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen.');
-      } else if (event.error === 'no-speech') {
-        console.log('Keine Sprache erkannt, warte weiter...');
+      switch (event.error) {
+        case 'not-allowed':
+          setError('Mikrofon-Zugriff wurde verweigert. Bitte erlaube den Zugriff in den Browser-Einstellungen.');
+          setIsActive(false);
+          break;
+        case 'audio-capture':
+          setError('Kein Mikrofon gefunden. Bitte überprüfe deine Audio-Einstellungen.');
+          setIsActive(false);
+          break;
+        case 'network':
+          setError('Netzwerkfehler bei der Spracherkennung. Bitte prüfe deine Internetverbindung.');
+          setIsActive(false);
+          break;
+        case 'service-not-available':
+          setError('Spracherkennungsdienst ist nicht erreichbar. Bitte versuche es später erneut.');
+          setIsActive(false);
+          break;
+        case 'aborted':
+          // Intentional stop, no error to show
+          break;
+        case 'no-speech':
+          console.log('Keine Sprache erkannt, warte weiter...');
+          break;
+        default:
+          console.warn('Unbekannter Speech Recognition Fehler:', event.error);
       }
     };
 
@@ -54,7 +85,10 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
           recognitionRef.current.start();
         } catch (e) {
           console.log('Recognition restart failed:', e);
+          setIsActive(false);
         }
+      } else {
+        setIsActive(false);
       }
     };
 
@@ -62,26 +96,27 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
   }, [isSupported]);
 
   const startRecognition = useCallback(() => {
-    // Immer neue Recognition-Instanz erstellen für sauberen Start
+    accumulatedTranscriptRef.current = '';
     recognitionRef.current = initializeRecognition();
     
     if (recognitionRef.current) {
       isRecordingRef.current = true;
-      // Längere Verzögerung um sicherzustellen, dass MediaRecorder das Mikrofon bereits hat
       setTimeout(() => {
         try {
           recognitionRef.current?.start();
+          setIsActive(true);
           console.log('Speech recognition started');
         } catch (e) {
           console.error('Failed to start recognition:', e);
-          // Bei Fehler nochmal versuchen
           setTimeout(() => {
             try {
               recognitionRef.current?.start();
+              setIsActive(true);
               console.log('Speech recognition started (retry)');
             } catch (retryError) {
               console.error('Speech recognition retry failed:', retryError);
               setError('Spracherkennung konnte nicht gestartet werden. Bitte versuche es erneut.');
+              setIsActive(false);
             }
           }, 500);
         }
@@ -91,6 +126,7 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
 
   const stopRecognition = useCallback(() => {
     isRecordingRef.current = false;
+    setIsActive(false);
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -106,6 +142,7 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
 
   return {
     isSupported,
+    isActive,
     error,
     startRecognition,
     stopRecognition,
