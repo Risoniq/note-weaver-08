@@ -250,7 +250,7 @@ export default function MeetingNoteTaker() {
             }
             toast({
               title: "KI-Analyse abgeschlossen",
-              description: "Zusammenfassung, Action Items und Risikoanalyse wurden erstellt",
+              description: "Zusammenfassung und Action Items wurden erstellt",
             });
           } else if (data?.error) {
             console.warn('AI analysis failed:', data.error);
