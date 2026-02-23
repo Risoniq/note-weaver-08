@@ -5,6 +5,7 @@ import { saveBlob, deleteBlob } from './useIndexedDBBackup';
 
 const STORAGE_PREFIX = 'meeting:';
 const MAX_UPLOAD_RETRIES = 3;
+const PAGE_SIZE = 20;
 
 const mapRecordingToMeeting = (rec: any): Meeting => {
   const analysis: MeetingAnalysis = {
@@ -93,14 +94,18 @@ async function uploadWithRetry(
 
 export const useMeetingStorage = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [hasMore, setHasMore] = useState(false);
 
-  const loadMeetings = useCallback(async () => {
+  const loadMeetings = useCallback(async (append = false) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setMeetings([]);
+        setHasMore(false);
         return;
       }
+
+      const offset = append ? meetings.length : 0;
 
       const { data, error } = await supabase
         .from('recordings')
@@ -108,7 +113,8 @@ export const useMeetingStorage = () => {
         .in('source', ['notetaker_tab', 'notetaker_mic'])
         .eq('user_id', user.id)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
 
       if (error) {
         console.error('Fehler beim Laden der Meetings:', error);
@@ -116,11 +122,21 @@ export const useMeetingStorage = () => {
       }
 
       const mapped = (data || []).map(mapRecordingToMeeting);
-      setMeetings(mapped);
+      setHasMore(mapped.length === PAGE_SIZE);
+
+      if (append) {
+        setMeetings(prev => [...prev, ...mapped]);
+      } else {
+        setMeetings(mapped);
+      }
     } catch (error) {
       console.error('Fehler beim Laden der Meetings:', error);
     }
-  }, []);
+  }, [meetings.length]);
+
+  const loadMore = useCallback(() => {
+    loadMeetings(true);
+  }, [loadMeetings]);
 
   const saveMeeting = useCallback(async (meeting: Meeting) => {
     try {
@@ -231,5 +247,7 @@ export const useMeetingStorage = () => {
     deleteMeeting,
     migrateLocalStorage,
     getAudioUrl,
+    hasMore,
+    loadMore,
   };
 };

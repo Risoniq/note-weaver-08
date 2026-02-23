@@ -16,6 +16,8 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
   const [isActive, setIsActive] = useState(false);
   const isRecordingRef = useRef(false);
   const accumulatedTranscriptRef = useRef('');
+  const restartCountRef = useRef(0);
+  const MAX_RESTARTS = 5;
 
   const isSupported = typeof window !== 'undefined' && 
     ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
@@ -33,7 +35,9 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
     recognition.lang = 'de-DE';
 
     recognition.onresult = (event: any) => {
-      // Only process new results starting from event.resultIndex
+      // Reset restart counter on successful result
+      restartCountRef.current = 0;
+
       let newText = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
@@ -81,12 +85,22 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
 
     recognition.onend = () => {
       if (isRecordingRef.current && recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch (e) {
-          console.log('Recognition restart failed:', e);
+        if (restartCountRef.current >= MAX_RESTARTS) {
+          setError('Spracherkennung unterbrochen – bitte erneut starten.');
           setIsActive(false);
+          return;
         }
+        const delay = Math.min(1000 * Math.pow(2, restartCountRef.current), 8000);
+        restartCountRef.current += 1;
+        setTimeout(() => {
+          if (!isRecordingRef.current) return;
+          try {
+            recognitionRef.current?.start();
+          } catch (e) {
+            console.log('Recognition restart failed:', e);
+            setIsActive(false);
+          }
+        }, delay);
       } else {
         setIsActive(false);
       }
@@ -97,6 +111,7 @@ export const useSpeechRecognition = (): SpeechRecognitionHook => {
 
   const startRecognition = useCallback(() => {
     accumulatedTranscriptRef.current = '';
+    restartCountRef.current = 0;
     recognitionRef.current = initializeRecognition();
     
     if (recognitionRef.current) {

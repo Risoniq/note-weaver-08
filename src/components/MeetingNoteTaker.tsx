@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Meeting, CaptureMode, ViewType } from '@/types/meeting';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useMeetingStorage } from '@/hooks/useMeetingStorage';
+import { Button } from '@/components/ui/button';
 import { useAudioDevices } from '@/hooks/useAudioDevices';
 import { useAudioLevel } from '@/hooks/useAudioLevel';
 import { useMicrophoneTest } from '@/hooks/useMicrophoneTest';
@@ -49,7 +50,7 @@ export default function MeetingNoteTaker() {
   const { toast } = useToast();
   const { user, isAuthenticated } = useAuth();
   const { quota } = useUserQuota();
-  const { meetings, loadMeetings, saveMeeting, deleteMeeting, migrateLocalStorage } = useMeetingStorage();
+  const { meetings, loadMeetings, saveMeeting, deleteMeeting, migrateLocalStorage, hasMore, loadMore } = useMeetingStorage();
   const { startRecognition, stopRecognition, setOnResult, error: recognitionError, isSupported: isSpeechSupported } = useSpeechRecognition();
   const audioDevices = useAudioDevices();
   const microphoneTest = useMicrophoneTest();
@@ -446,17 +447,26 @@ export default function MeetingNoteTaker() {
             <SearchBar searchTerm={searchTerm} onSearchChange={setSearchTerm} />
             
             {filteredMeetings.length > 0 ? (
-              <div className="grid sm:grid-cols-2 gap-4 sm:gap-6">
-                {filteredMeetings.map(meeting => (
-                  <MeetingCard
-                    key={meeting.id}
-                    meeting={meeting}
-                    onSelect={setSelectedMeeting}
-                    onDownload={handleDownloadTranscript}
-                    onDelete={handleDeleteMeeting}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid sm:grid-cols-2 gap-4 sm:gap-6">
+                  {filteredMeetings.map(meeting => (
+                    <MeetingCard
+                      key={meeting.id}
+                      meeting={meeting}
+                      onSelect={setSelectedMeeting}
+                      onDownload={handleDownloadTranscript}
+                      onDelete={handleDeleteMeeting}
+                    />
+                  ))}
+                </div>
+                {hasMore && !searchTerm && (
+                  <div className="flex justify-center mt-6">
+                    <Button variant="outline" onClick={loadMore}>
+                      Mehr Meetings laden
+                    </Button>
+                  </div>
+                )}
+              </>
             ) : (
               <EmptyState hasSearchTerm={!!searchTerm} />
             )}
