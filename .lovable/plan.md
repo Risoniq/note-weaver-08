@@ -1,35 +1,107 @@
 
+# Umfangreiche Risikoanalyse fuer den Notetaker
 
-# Fix: Meeting-Zuordnung zu Projektordnern
+## Ueberblick
 
-## Problem
+Der lokale Notetaker (Browser-Aufnahme) soll nach jeder Aufnahme eine umfangreiche KI-gestuetzte Analyse erhalten -- inklusive einer vollstaendigen Risikoanalyse nach dem Muster der hochgeladenen Excel-Vorlage (Risikodokumentation). Aktuell nutzt der Notetaker nur eine einfache regelbasierte Analyse ohne KI. Das wird auf eine KI-basierte Analyse umgestellt.
 
-Die Zuordnung von Meetings zu Projekten funktioniert teilweise nicht, weil im Code nach dem falschen Status gefiltert wird.
+## Was sich aendert
 
-**Ursache**: In der Datei `AssignRecordingsDialog.tsx` (Zeile 26) wird nach `.eq("status", "completed")` gefiltert. In der Datenbank existiert dieser Status jedoch nicht -- der korrekte Wert ist `"done"`.
+### 1. Erweitertes Analyse-Datenmodell
 
-Dadurch erscheinen in der "Meetings zuordnen"-Liste auf der Projektseite **keine Meetings**, obwohl abgeschlossene Aufnahmen vorhanden sind.
+Die `MeetingAnalysis`-Struktur wird um eine Risikoanalyse erweitert. Jedes Risiko enthaelt alle Spalten aus der Excel-Vorlage:
 
-## Loesung
+- Nr.
+- Risikobereich
+- Beschreibung
+- Eintrittswahrscheinlichkeit (Niedrig / Mittel / Hoch)
+- Auswirkung (Niedrig / Mittel / Hoch)
+- Risikoniveau (Niedrig / Mittel / Hoch)
+- Massnahmen / Kontrollen
+- Verantwortlich
+- Nachweis / Dokument
 
-### Datei: `src/components/projects/AssignRecordingsDialog.tsx`
+### 2. Neue Edge-Funktion: `analyze-notetaker`
 
-Den Statusfilter von `"completed"` auf `"done"` aendern:
+Eine neue Backend-Funktion, die das Transkript per KI analysiert und zurueckliefert:
 
-```
-Vorher:  .eq("status", "completed")
-Nachher: .eq("status", "done")
-```
+- Zusammenfassung (2-3 Saetze)
+- Key Points (3-5 Punkte)
+- Action Items (mit Verantwortlichen)
+- Risikoanalyse (5-10 Risiken im Excel-Format)
 
-Das ist eine einzeilige Aenderung. Danach werden alle abgeschlossenen Meetings korrekt in der Zuordnungsliste angezeigt.
+Die Funktion nutzt das Lovable AI Gateway (google/gemini-2.5-flash) und erwartet das Transkript direkt im Request Body (kein Datenbank-Lookup noetig, da der Notetaker lokal arbeitet).
 
-## Betroffene Dateien
+### 3. Analyse nach Aufnahme-Ende
+
+Wenn die Aufnahme endet, wird der bisherige lokale `generateAnalysis()`-Aufruf durch einen Aufruf an die neue Edge-Funktion ersetzt. Die lokale Funktion bleibt als Fallback bestehen, falls die KI nicht erreichbar ist.
+
+### 4. Risiko-Anzeige im Meeting-Detail-Modal
+
+Das `MeetingDetailModal` erhaelt einen neuen Abschnitt "Risikoanalyse" mit einer uebersichtlichen Tabellen-/Kartenansicht:
+
+- Jedes Risiko als Karte mit farbcodiertem Risikoniveau (Rot=Hoch, Gelb=Mittel, Gruen=Niedrig)
+- Alle 8 Felder aus der Excel-Vorlage sichtbar
+- Responsive Darstellung (Tabelle auf Desktop, Karten auf Mobil)
+
+### 5. Download mit Risikoanalyse
+
+Die `downloadTranscript`-Funktion wird erweitert, damit das heruntergeladene TXT-Dokument auch die vollstaendige Risikoanalyse enthaelt -- formatiert aehnlich wie die Excel-Vorlage.
+
+## Technische Details
+
+### Dateien die erstellt werden
+
+| Datei | Beschreibung |
+|-------|-------------|
+| `supabase/functions/analyze-notetaker/index.ts` | Neue Edge-Funktion fuer KI-Analyse mit Risikobewertung |
+
+### Dateien die geaendert werden
 
 | Datei | Aenderung |
 |-------|-----------|
-| `src/components/projects/AssignRecordingsDialog.tsx` | Statusfilter von `"completed"` auf `"done"` korrigieren |
+| `src/types/meeting.ts` | `MeetingAnalysis` um `risks: RiskItem[]` erweitern |
+| `src/components/MeetingNoteTaker.tsx` | Nach Aufnahme-Ende die Edge-Funktion aufrufen statt lokaler Analyse |
+| `src/components/meeting/MeetingDetailModal.tsx` | Neuen Abschnitt "Risikoanalyse" mit Tabelle/Karten hinzufuegen |
+| `src/utils/meetingAnalysis.ts` | Download-Funktion um Risiko-Sektion erweitern |
 
-## Hinweis
+### KI-Prompt (Kernlogik)
 
-Die Zuordnung ueber die Meeting-Detailseite (`ProjectAssignment.tsx`) ist davon nicht betroffen -- dort wird kein Statusfilter verwendet. Das Problem betrifft nur die Zuordnung ueber die Projektseite.
+Der Prompt an die KI enthaelt die Anweisung, neben Summary/Key Points/Action Items auch eine Risikoanalyse im JSON-Format zurueckzugeben:
 
+```text
+Analysiere das Transkript und erstelle:
+1. Zusammenfassung (2-3 Saetze)
+2. Key Points (3-5 wichtigste Punkte)
+3. Action Items (mit Verantwortlichen)
+4. Risikoanalyse: Identifiziere 5-10 Risiken mit:
+   - Risikobereich
+   - Beschreibung
+   - Eintrittswahrscheinlichkeit (Niedrig/Mittel/Hoch)
+   - Auswirkung (Niedrig/Mittel/Hoch)
+   - Risikoniveau (Niedrig/Mittel/Hoch)
+   - Massnahmen/Kontrollen
+   - Verantwortlich
+   - Nachweis/Dokument
+```
+
+### Ablauf nach Aufnahme
+
+```text
+Aufnahme stoppt
+    |
+    v
+Lokale Schnellanalyse (Fallback)
+    |
+    v
+Edge-Funktion aufrufen mit Transkript
+    |
+    v
+KI generiert vollstaendige Analyse + Risiken
+    |
+    v
+Meeting in localStorage aktualisieren
+    |
+    v
+UI zeigt vollstaendige Analyse mit Risikoanalyse
+```
