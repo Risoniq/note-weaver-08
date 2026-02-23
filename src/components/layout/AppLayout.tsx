@@ -24,8 +24,8 @@ const navItems = [
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const { isAdmin } = useAdminCheck();
-  const { showWarning, remainingSeconds, extendSession } = useSessionTimeout();
   const { isRecording, startRecording, stopRecording } = useQuickRecording();
+  const { showWarning, remainingSeconds, extendSession } = useSessionTimeout({ paused: isRecording });
 
   return (
     <div className={cn(

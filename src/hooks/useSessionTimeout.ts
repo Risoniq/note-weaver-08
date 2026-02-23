@@ -6,7 +6,7 @@ const TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const WARNING_MS = 13 * 60 * 1000; // 13 minutes (2 min before timeout)
 const THROTTLE_MS = 30 * 1000; // 30s throttle for events
 
-export const useSessionTimeout = () => {
+export const useSessionTimeout = ({ paused = false }: { paused?: boolean } = {}) => {
   const [showWarning, setShowWarning] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(120);
   const navigate = useNavigate();
@@ -60,6 +60,12 @@ export const useSessionTimeout = () => {
   }, [resetTimers]);
 
   useEffect(() => {
+    if (paused) {
+      clearAllTimers();
+      setShowWarning(false);
+      return;
+    }
+
     resetTimers();
 
     const handleActivity = () => {
@@ -80,7 +86,7 @@ export const useSessionTimeout = () => {
       clearAllTimers();
       events.forEach(e => window.removeEventListener(e, handleActivity));
     };
-  }, [resetTimers, clearAllTimers, showWarning]);
+  }, [resetTimers, clearAllTimers, showWarning, paused]);
 
   return { showWarning, remainingSeconds, extendSession };
 };
