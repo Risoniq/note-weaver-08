@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { UserQuota } from '@/hooks/useUserQuota';
 
-const MAX_CHUNK_BYTES = 500 * 1024 * 1024; // 500 MB
+const MAX_CHUNK_BYTES = 750 * 1024 * 1024; // 750 MB
 
 interface UseQuickRecordingOptions {
   quota?: UserQuota | null;
@@ -86,9 +86,9 @@ export function useQuickRecording(options: UseQuickRecordingOptions = {}) {
         if (e.data.size > 0) {
           chunksRef.current.push(e.data);
           totalChunkSizeRef.current += e.data.size;
-          // M3: Auto-stop at 500 MB
+          // M3: Auto-stop at 750 MB
           if (totalChunkSizeRef.current >= MAX_CHUNK_BYTES) {
-            toast({ title: 'Speicherlimit erreicht', description: 'Die Aufnahme wurde automatisch beendet (500 MB). Bitte kürzere Aufnahmen erstellen.', variant: 'destructive' });
+            toast({ title: 'Speicherlimit erreicht', description: 'Die Aufnahme wurde automatisch beendet (750 MB). Bitte kürzere Aufnahmen erstellen.', variant: 'destructive' });
             stopRecording();
           }
         }
