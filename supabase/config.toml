@@ -125,3 +125,6 @@ verify_jwt = false
 
 [functions.project-chat]
 verify_jwt = false
+
+[functions.analyze-notetaker]
+verify_jwt = false
