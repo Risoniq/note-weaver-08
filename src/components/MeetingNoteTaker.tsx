@@ -6,6 +6,7 @@ import { useAudioDevices } from '@/hooks/useAudioDevices';
 import { useAudioLevel } from '@/hooks/useAudioLevel';
 import { useMicrophoneTest } from '@/hooks/useMicrophoneTest';
 import { useAuth } from '@/hooks/useAuth';
+import { useUserQuota } from '@/hooks/useUserQuota';
 import { generateAnalysis, downloadTranscript } from '@/utils/meetingAnalysis';
 import { supabase } from '@/integrations/supabase/client';
 import { getPendingIds, getBlob, deleteBlob } from '@/hooks/useIndexedDBBackup';
@@ -19,7 +20,10 @@ import { EmptyState } from './meeting/EmptyState';
 import { MeetingDetailModal } from './meeting/MeetingDetailModal';
 import { DownloadModal } from './meeting/DownloadModal';
 import { CalendarView } from './calendar/CalendarView';
+import { QuotaExhaustedModal } from './quota/QuotaExhaustedModal';
 import { useToast } from '@/hooks/use-toast';
+
+const MAX_CHUNK_BYTES = 500 * 1024 * 1024; // 500 MB
 
 export default function MeetingNoteTaker() {
   const [isRecording, setIsRecording] = useState(false);
@@ -33,15 +37,18 @@ export default function MeetingNoteTaker() {
   const [error, setError] = useState('');
   const [downloadModalMeeting, setDownloadModalMeeting] = useState<Meeting | null>(null);
   const [currentStream, setCurrentStream] = useState<MediaStream | null>(null);
+  const [showQuotaModal, setShowQuotaModal] = useState(false);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const isStoppingRef = useRef(false); // H2: race condition lock
   const currentMeetingIdRef = useRef<string | null>(null); // H2: ID at start
+  const totalChunkSizeRef = useRef(0); // M3: chunk size tracking
   
   const { toast } = useToast();
   const { user, isAuthenticated } = useAuth();
+  const { quota } = useUserQuota();
   const { meetings, loadMeetings, saveMeeting, deleteMeeting, migrateLocalStorage } = useMeetingStorage();
   const { startRecognition, stopRecognition, setOnResult, error: recognitionError, isSupported: isSpeechSupported } = useSpeechRecognition();
   const audioDevices = useAudioDevices();
@@ -120,6 +127,12 @@ export default function MeetingNoteTaker() {
       return;
     }
 
+    // M1: Quota check before recording
+    if (quota?.is_exhausted) {
+      setShowQuotaModal(true);
+      return;
+    }
+
     if (!meetingTitle.trim()) {
       setError('Bitte gib einen Meeting-Titel ein');
       return;
@@ -140,7 +153,7 @@ export default function MeetingNoteTaker() {
     setCurrentTranscript('');
     setRecordingStartTime(Date.now());
     audioChunksRef.current = [];
-
+    totalChunkSizeRef.current = 0;
     try {
       let stream: MediaStream;
 
@@ -206,6 +219,16 @@ export default function MeetingNoteTaker() {
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
+          totalChunkSizeRef.current += event.data.size;
+          // M3: Auto-stop at 500 MB
+          if (totalChunkSizeRef.current >= MAX_CHUNK_BYTES) {
+            toast({
+              title: 'Speicherlimit erreicht',
+              description: 'Die Aufnahme wurde automatisch beendet (500 MB). Bitte kürzere Aufnahmen erstellen.',
+              variant: 'destructive',
+            });
+            stopRecording();
+          }
         }
       };
 
@@ -458,6 +481,11 @@ export default function MeetingNoteTaker() {
             onClose={handleCloseDownloadModal}
           />
         )}
+
+        <QuotaExhaustedModal
+          open={showQuotaModal}
+          onClose={() => setShowQuotaModal(false)}
+        />
       </div>
     </div>
   );
