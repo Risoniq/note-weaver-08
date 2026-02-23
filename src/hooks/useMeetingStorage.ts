@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
 import { Meeting, MeetingAnalysis } from '@/types/meeting';
 import { supabase } from '@/integrations/supabase/client';
+import { saveBlob, deleteBlob } from './useIndexedDBBackup';
 
 const STORAGE_PREFIX = 'meeting:';
+const MAX_UPLOAD_RETRIES = 3;
 
 const mapRecordingToMeeting = (rec: any): Meeting => {
   const analysis: MeetingAnalysis = {
@@ -20,12 +22,74 @@ const mapRecordingToMeeting = (rec: any): Meeting => {
     analysis,
     captureMode: rec.source === 'notetaker_mic' ? 'mic' : 'tab',
     duration: rec.duration || 0,
+    // Store the storage path, not a signed URL
     audioUrl: rec.video_url || undefined,
     user_id: rec.user_id,
     meeting_id: rec.meeting_id,
     status: rec.status,
   };
 };
+
+/** Generate a short-lived signed URL from a storage path */
+export const getAudioUrl = async (storagePath: string): Promise<string | null> => {
+  if (!storagePath) return null;
+
+  // If it's already a full URL (legacy signed URL), return as-is
+  if (storagePath.startsWith('http://') || storagePath.startsWith('https://')) {
+    return storagePath;
+  }
+
+  const { data, error } = await supabase.storage
+    .from('audio-uploads')
+    .createSignedUrl(storagePath, 60 * 60); // 1 hour
+
+  if (error) {
+    console.error('Fehler beim Erstellen der Signed URL:', error);
+    return null;
+  }
+  return data?.signedUrl || null;
+};
+
+async function uploadWithRetry(
+  filePath: string,
+  blob: Blob,
+  meetingId: string,
+): Promise<string> {
+  let lastError: any;
+
+  for (let attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from('audio-uploads')
+        .upload(filePath, blob, {
+          contentType: blob.type || 'audio/webm',
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Success – remove any IndexedDB backup
+      try { await deleteBlob(meetingId); } catch (_) { /* ignore */ }
+      return filePath;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Upload Versuch ${attempt}/${MAX_UPLOAD_RETRIES} fehlgeschlagen:`, err);
+      if (attempt < MAX_UPLOAD_RETRIES) {
+        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+      }
+    }
+  }
+
+  // All retries failed – save blob to IndexedDB
+  try {
+    await saveBlob(meetingId, blob);
+    console.log('Audio-Blob in IndexedDB gesichert:', meetingId);
+  } catch (idbErr) {
+    console.error('IndexedDB-Sicherung fehlgeschlagen:', idbErr);
+  }
+
+  throw lastError;
+}
 
 export const useMeetingStorage = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -66,29 +130,12 @@ export const useMeetingStorage = () => {
       const source = meeting.captureMode === 'mic' ? 'notetaker_mic' : 'notetaker_tab';
 
       // Upload audio if blob is present
-      let audioUrl = meeting.audioUrl;
+      let storagePath: string | null = null;
       if (meeting.audioBlob && meeting.audioBlob.size > 0) {
         const extension = meeting.audioBlob.type?.includes('webm') ? 'webm' : 'mp3';
         const filePath = `${user.id}/${meeting.id}.${extension}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('audio-uploads')
-          .upload(filePath, meeting.audioBlob, {
-            contentType: meeting.audioBlob.type || 'audio/webm',
-            upsert: true,
-          });
 
-        if (uploadError) {
-          console.error('Audio-Upload fehlgeschlagen:', uploadError);
-        } else {
-          const { data: signedData } = await supabase.storage
-            .from('audio-uploads')
-            .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year
-          
-          if (signedData?.signedUrl) {
-            audioUrl = signedData.signedUrl;
-          }
-        }
+        storagePath = await uploadWithRetry(filePath, meeting.audioBlob, meeting.id);
       }
 
       const recordData = {
@@ -104,7 +151,8 @@ export const useMeetingStorage = () => {
         source,
         duration: meeting.duration || null,
         status: meeting.status || 'done',
-        video_url: audioUrl || null,
+        // Store path instead of signed URL
+        video_url: storagePath || meeting.audioUrl || null,
       };
 
       const { error } = await supabase
@@ -182,5 +230,6 @@ export const useMeetingStorage = () => {
     saveMeeting,
     deleteMeeting,
     migrateLocalStorage,
+    getAudioUrl,
   };
 };

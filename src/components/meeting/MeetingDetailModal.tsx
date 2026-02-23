@@ -1,6 +1,9 @@
-import { X, Download, FileText, Target, CheckCircle, Clock, Radio, Mic } from 'lucide-react';
+import { useState } from 'react';
+import { X, Download, FileText, Target, CheckCircle, Clock, Radio, Mic, Play } from 'lucide-react';
 import { Meeting } from '@/types/meeting';
 import { formatDuration } from '@/utils/meetingAnalysis';
+import { getAudioUrl } from '@/hooks/useMeetingStorage';
+import { useToast } from '@/hooks/use-toast';
 
 interface MeetingDetailModalProps {
   meeting: Meeting;
@@ -9,6 +12,28 @@ interface MeetingDetailModalProps {
 }
 
 export const MeetingDetailModal = ({ meeting, onClose, onDownload }: MeetingDetailModalProps) => {
+  const { toast } = useToast();
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+
+  const handlePlayAudio = async () => {
+    if (audioSrc) return; // already loaded
+    setIsLoadingAudio(true);
+    try {
+      if (meeting.audioBlob) {
+        setAudioSrc(URL.createObjectURL(meeting.audioBlob));
+      } else if (meeting.audioUrl) {
+        const url = await getAudioUrl(meeting.audioUrl);
+        if (url) setAudioSrc(url);
+        else toast({ title: "Fehler", description: "Audio nicht verfügbar", variant: "destructive" });
+      }
+    } catch (err) {
+      console.error('Audio load error:', err);
+    } finally {
+      setIsLoadingAudio(false);
+    }
+  };
+
   return (
     <div 
       className="fixed inset-0 bg-foreground/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto animate-fade-in" 
@@ -47,6 +72,24 @@ export const MeetingDetailModal = ({ meeting, onClose, onDownload }: MeetingDeta
         </div>
 
         <div className="p-5 sm:p-6 space-y-6">
+          {/* Audio Player */}
+          {(meeting.audioUrl || meeting.audioBlob) && (
+            <div className="animate-slide-up">
+              {audioSrc ? (
+                <audio controls src={audioSrc} className="w-full" />
+              ) : (
+                <button
+                  onClick={handlePlayAudio}
+                  disabled={isLoadingAudio}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary/10 text-primary rounded-xl hover:bg-primary/20 transition-colors text-sm font-medium disabled:opacity-50"
+                >
+                  <Play size={16} />
+                  {isLoadingAudio ? 'Wird geladen...' : 'Audio abspielen'}
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Summary */}
           {meeting.analysis?.summary && (
             <div className="animate-slide-up" style={{ animationDelay: '0.1s' }}>

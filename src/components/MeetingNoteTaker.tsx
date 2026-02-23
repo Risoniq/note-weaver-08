@@ -8,6 +8,7 @@ import { useMicrophoneTest } from '@/hooks/useMicrophoneTest';
 import { useAuth } from '@/hooks/useAuth';
 import { generateAnalysis, downloadTranscript } from '@/utils/meetingAnalysis';
 import { supabase } from '@/integrations/supabase/client';
+import { getPendingIds, getBlob, deleteBlob } from '@/hooks/useIndexedDBBackup';
 import { Header } from './meeting/Header';
 import { ErrorAlert } from './meeting/ErrorAlert';
 import { Navigation } from './meeting/Navigation';
@@ -36,6 +37,8 @@ export default function MeetingNoteTaker() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const isStoppingRef = useRef(false); // H2: race condition lock
+  const currentMeetingIdRef = useRef<string | null>(null); // H2: ID at start
   
   const { toast } = useToast();
   const { user, isAuthenticated } = useAuth();
@@ -45,10 +48,42 @@ export default function MeetingNoteTaker() {
   const microphoneTest = useMicrophoneTest();
   const audioLevel = useAudioLevel(currentStream);
 
+  // Retry pending IndexedDB uploads on mount
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    
+    const retryPending = async () => {
+      try {
+        const ids = await getPendingIds();
+        for (const id of ids) {
+          const blob = await getBlob(id);
+          if (!blob) { await deleteBlob(id); continue; }
+          
+          const extension = blob.type?.includes('webm') ? 'webm' : 'mp3';
+          const filePath = `${user.id}/${id}.${extension}`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from('audio-uploads')
+            .upload(filePath, blob, { contentType: blob.type || 'audio/webm', upsert: true });
+          
+          if (!uploadError) {
+            // Update the recording's video_url to the storage path
+            await supabase.from('recordings').update({ video_url: filePath, status: 'done' }).eq('id', id);
+            await deleteBlob(id);
+            console.log('Pending upload nachgeholt:', id);
+          }
+        }
+      } catch (err) {
+        console.warn('Pending upload retry failed:', err);
+      }
+    };
+    
+    retryPending();
+  }, [isAuthenticated, user]);
+
   useEffect(() => {
     if (isAuthenticated) {
       loadMeetings();
-      // Migrate old localStorage meetings
       migrateLocalStorage().then((count) => {
         if (count > 0) {
           toast({
@@ -95,6 +130,11 @@ export default function MeetingNoteTaker() {
       microphoneTest.stopTest();
     }
 
+    // H2: Generate meeting ID at start, not at stop
+    const meetingId = crypto.randomUUID();
+    currentMeetingIdRef.current = meetingId;
+    isStoppingRef.current = false;
+
     setError('');
     setIsRecording(true);
     setCurrentTranscript('');
@@ -106,7 +146,7 @@ export default function MeetingNoteTaker() {
 
       if (captureMode === 'tab') {
         stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true, // Browser erfordert video: true
+          video: true,
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
@@ -114,10 +154,8 @@ export default function MeetingNoteTaker() {
           }
         });
 
-        // Video-Track sofort stoppen (wir brauchen nur Audio)
         stream.getVideoTracks().forEach(track => track.stop());
 
-        // Prüfen ob Audio-Track vorhanden
         const audioTracks = stream.getAudioTracks();
         if (audioTracks.length === 0) {
           stream.getTracks().forEach(track => track.stop());
@@ -129,7 +167,6 @@ export default function MeetingNoteTaker() {
           stopRecording();
         };
       } else {
-        // Mikrofon-Modus: Ausgewähltes Mikrofon verwenden
         const deviceId = audioDevices.selectedMicId;
         stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -156,7 +193,6 @@ export default function MeetingNoteTaker() {
       streamRef.current = stream;
       setCurrentStream(stream);
 
-      // Try to use mp3 if available, otherwise webm
       const mimeType = MediaRecorder.isTypeSupported('audio/mp3') 
         ? 'audio/mp3' 
         : MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -170,14 +206,11 @@ export default function MeetingNoteTaker() {
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
-          console.log('Audio chunk received:', event.data.size, 'bytes');
         }
       };
 
-      // Request data every second
       mediaRecorderRef.current.start(1000);
       
-      // Only start speech recognition if supported
       if (isSpeechSupported) {
         await new Promise(resolve => setTimeout(resolve, 300));
         startRecognition();
@@ -199,11 +232,14 @@ export default function MeetingNoteTaker() {
       setIsRecording(false);
       setRecordingStartTime(null);
       setCurrentStream(null);
+      currentMeetingIdRef.current = null;
     }
   };
 
   const stopRecording = useCallback(async () => {
-    if (!isRecording) return;
+    // H2: Lock to prevent double invocation
+    if (isStoppingRef.current || !isRecording) return;
+    isStoppingRef.current = true;
     
     setIsRecording(false);
     setCurrentStream(null);
@@ -212,10 +248,10 @@ export default function MeetingNoteTaker() {
     const title = meetingTitle;
     const transcript = currentTranscript;
     const mode = captureMode;
+    const meetingId = currentMeetingIdRef.current || crypto.randomUUID();
 
     stopRecognition();
 
-    // Create a promise to wait for final audio data
     const audioPromise = new Promise<Blob>((resolve) => {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.onstop = () => {
@@ -242,7 +278,6 @@ export default function MeetingNoteTaker() {
 
       const localAnalysis = generateAnalysis(transcript);
 
-      const meetingId = crypto.randomUUID();
       const meeting: Meeting = {
         id: meetingId,
         title: title,
@@ -258,13 +293,26 @@ export default function MeetingNoteTaker() {
         status: 'processing',
       };
 
-      // Show download modal with local analysis first
       setDownloadModalMeeting(meeting);
-      await saveMeeting(meeting);
 
-      // Update status to done after save (audio uploaded)
-      const doneMeeting: Meeting = { ...meeting, status: 'done' };
-      await saveMeeting(doneMeeting);
+      try {
+        await saveMeeting(meeting);
+
+        const doneMeeting: Meeting = { ...meeting, status: 'done' };
+        await saveMeeting(doneMeeting);
+
+        toast({
+          title: "Aufnahme beendet",
+          description: "Audio und Transkript wurden in der Cloud gespeichert",
+        });
+      } catch (saveErr) {
+        console.error('Upload fehlgeschlagen, Blob in IndexedDB gesichert:', saveErr);
+        toast({
+          title: "Upload fehlgeschlagen",
+          description: "Audio wurde lokal gesichert. Der Upload wird beim nächsten Start wiederholt. Du kannst die Datei auch manuell herunterladen.",
+          variant: "destructive",
+        });
+      }
 
       // Try AI analysis in background
       if (transcript && transcript.trim().length > 0) {
@@ -274,14 +322,14 @@ export default function MeetingNoteTaker() {
           });
           if (!error && data?.success && data.analysis) {
             const updatedMeeting: Meeting = {
-              ...doneMeeting,
+              ...meeting,
+              status: 'done',
               analysis: data.analysis,
             };
             setDownloadModalMeeting(updatedMeeting);
             if (selectedMeeting?.id === meeting.id) {
               setSelectedMeeting(updatedMeeting);
             }
-            // Reload from DB to get consistent state
             await loadMeetings();
             toast({
               title: "KI-Analyse abgeschlossen",
@@ -302,11 +350,8 @@ export default function MeetingNoteTaker() {
       setMeetingTitle('');
       setCurrentTranscript('');
       setRecordingStartTime(null);
-      
-      toast({
-        title: "Aufnahme beendet",
-        description: "Audio und Transkript wurden in der Cloud gespeichert",
-      });
+      currentMeetingIdRef.current = null;
+
     } catch (err) {
       console.error('Fehler beim Speichern:', err);
       setError('Meeting konnte nicht gespeichert werden.');
