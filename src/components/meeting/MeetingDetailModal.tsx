@@ -1,5 +1,5 @@
-import { X, Download, FileText, Target, CheckCircle, Clock, Radio, Mic, AlertTriangle, Shield } from 'lucide-react';
-import { Meeting, RiskItem } from '@/types/meeting';
+import { X, Download, FileText, Target, CheckCircle, Clock, Radio, Mic } from 'lucide-react';
+import { Meeting } from '@/types/meeting';
 import { formatDuration } from '@/utils/meetingAnalysis';
 
 interface MeetingDetailModalProps {
@@ -96,47 +96,6 @@ export const MeetingDetailModal = ({ meeting, onClose, onDownload }: MeetingDeta
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
-
-          {/* Risk Analysis */}
-          {meeting.analysis?.risks && meeting.analysis.risks.length > 0 && (
-            <div className="animate-slide-up" style={{ animationDelay: '0.4s' }}>
-              <h3 className="text-lg font-bold mb-3 text-destructive flex items-center gap-2">
-                <Shield size={20} />
-                Risikoanalyse
-              </h3>
-              <div className="space-y-3">
-                {meeting.analysis.risks.map((risk: RiskItem) => (
-                  <div key={risk.nr} className={`p-4 rounded-xl border ${
-                    risk.risikoniveau === 'Hoch' ? 'bg-destructive/5 border-destructive/20' :
-                    risk.risikoniveau === 'Mittel' ? 'bg-yellow-500/5 border-yellow-500/20' :
-                    'bg-green-500/5 border-green-500/20'
-                  }`}>
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-foreground">#{risk.nr}</span>
-                        <span className="font-semibold text-foreground">{risk.risikobereich}</span>
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-lg text-xs font-bold ${
-                        risk.risikoniveau === 'Hoch' ? 'bg-destructive/10 text-destructive' :
-                        risk.risikoniveau === 'Mittel' ? 'bg-yellow-500/10 text-yellow-600' :
-                        'bg-green-500/10 text-green-600'
-                      }`}>
-                        {risk.risikoniveau}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-3">{risk.beschreibung}</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      <div><span className="font-medium text-foreground">Eintritt:</span> <span className="text-muted-foreground">{risk.eintrittswahrscheinlichkeit}</span></div>
-                      <div><span className="font-medium text-foreground">Auswirkung:</span> <span className="text-muted-foreground">{risk.auswirkung}</span></div>
-                      <div className="sm:col-span-2"><span className="font-medium text-foreground">Maßnahmen:</span> <span className="text-muted-foreground">{risk.massnahmen}</span></div>
-                      <div><span className="font-medium text-foreground">Verantwortlich:</span> <span className="text-muted-foreground">{risk.verantwortlich}</span></div>
-                      <div><span className="font-medium text-foreground">Nachweis:</span> <span className="text-muted-foreground">{risk.nachweis}</span></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
 

@@ -28,7 +28,7 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const systemPrompt = `Du bist ein Experte für Meeting-Analyse und Risikomanagement. Kommuniziere auf Deutsch. Verwende KEINE Markdown-Sterne für Fettdruck. Listen verwenden nummerierte Formate.
+    const systemPrompt = `Du bist ein Experte für Meeting-Analyse. Kommuniziere auf Deutsch. Verwende KEINE Markdown-Sterne für Fettdruck. Listen verwenden nummerierte Formate.
 
 Analysiere das folgende Meeting-Transkript und erstelle eine umfassende Analyse.
 
@@ -80,29 +80,9 @@ ${transcript}`;
                     type: "array",
                     items: { type: "string" },
                     description: "Konkrete Aufgaben mit Verantwortlichen (max 8)"
-                  },
-                  risks: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        nr: { type: "number" },
-                        risikobereich: { type: "string", description: "z.B. Projektmanagement, Technik, Personal, Finanzen, Kommunikation" },
-                        beschreibung: { type: "string", description: "Konkrete Risikobeschreibung" },
-                        eintrittswahrscheinlichkeit: { type: "string", enum: ["Niedrig", "Mittel", "Hoch"] },
-                        auswirkung: { type: "string", enum: ["Niedrig", "Mittel", "Hoch"] },
-                        risikoniveau: { type: "string", enum: ["Niedrig", "Mittel", "Hoch"] },
-                        massnahmen: { type: "string", description: "Empfohlene Gegenmaßnahmen und Kontrollen" },
-                        verantwortlich: { type: "string", description: "Verantwortliche Person oder Rolle" },
-                        nachweis: { type: "string", description: "Empfohlenes Nachweis-/Dokumentformat" }
-                      },
-                      required: ["nr", "risikobereich", "beschreibung", "eintrittswahrscheinlichkeit", "auswirkung", "risikoniveau", "massnahmen", "verantwortlich", "nachweis"],
-                      additionalProperties: false
-                    },
-                    description: "5-10 identifizierte Risiken"
                   }
                 },
-                required: ["summary", "keyPoints", "actionItems", "risks"],
+                required: ["summary", "keyPoints", "actionItems"],
                 additionalProperties: false
               }
             }
@@ -156,7 +136,6 @@ ${transcript}`;
         keyPoints: analysis.keyPoints || [],
         actionItems: analysis.actionItems || [],
         wordCount: words.length,
-        risks: analysis.risks || [],
       }
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 

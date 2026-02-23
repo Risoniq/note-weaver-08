@@ -70,20 +70,6 @@ export const downloadTranscript = (meeting: {
   const durationMin = Math.floor((meeting.duration || 0) / 60);
   const durationSec = (meeting.duration || 0) % 60;
   
-  const risksSection = meeting.analysis.risks && meeting.analysis.risks.length > 0
-    ? `RISIKOANALYSE:
-${meeting.analysis.risks.map(r => 
-`Nr. ${r.nr}: ${r.risikobereich}
-  Beschreibung: ${r.beschreibung}
-  Eintrittswahrscheinlichkeit: ${r.eintrittswahrscheinlichkeit}
-  Auswirkung: ${r.auswirkung}
-  Risikoniveau: ${r.risikoniveau}
-  Maßnahmen/Kontrollen: ${r.massnahmen}
-  Verantwortlich: ${r.verantwortlich}
-  Nachweis/Dokument: ${r.nachweis}
-`).join('\n')}`
-    : 'RISIKOANALYSE:\nKeine Risiken identifiziert';
-
   const content = `Meeting: ${meeting.title}
 Datum: ${new Date(meeting.date).toLocaleString('de-DE')}
 Dauer: ${durationMin}:${durationSec.toString().padStart(2, '0')} Min
@@ -104,10 +90,6 @@ ${meeting.analysis.keyPoints.length > 0 ? meeting.analysis.keyPoints.map((p, i) 
 
 ACTION ITEMS:
 ${meeting.analysis.actionItems.length > 0 ? meeting.analysis.actionItems.map((a, i) => `[ ] ${i + 1}. ${a}`).join('\n') : 'Keine Action Items identifiziert'}
-
-═══════════════════════════════════════════════════════
-
-${risksSection}
 
 ═══════════════════════════════════════════════════════
 
