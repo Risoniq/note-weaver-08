@@ -6,6 +6,7 @@ import { useAudioDevices } from '@/hooks/useAudioDevices';
 import { useAudioLevel } from '@/hooks/useAudioLevel';
 import { useMicrophoneTest } from '@/hooks/useMicrophoneTest';
 import { generateAnalysis, downloadTranscript } from '@/utils/meetingAnalysis';
+import { supabase } from '@/integrations/supabase/client';
 import { Header } from './meeting/Header';
 import { ErrorAlert } from './meeting/ErrorAlert';
 import { Navigation } from './meeting/Navigation';
@@ -213,22 +214,56 @@ export default function MeetingNoteTaker() {
       const audioBlob = await audioPromise;
       const audioUrl = URL.createObjectURL(audioBlob);
 
+      const localAnalysis = generateAnalysis(transcript);
+
       const meeting: Meeting = {
         id: Date.now().toString(),
         title: title,
         date: new Date().toISOString(),
         transcript: transcript || 'Keine Transkription verfügbar',
-        analysis: generateAnalysis(transcript),
+        analysis: localAnalysis,
         captureMode: mode,
         duration: duration,
         audioBlob: audioBlob,
         audioUrl: audioUrl,
       };
 
-      // Show download modal
+      // Show download modal with local analysis first
       setDownloadModalMeeting(meeting);
-      
       await saveMeeting(meeting);
+
+      // Try AI analysis in background
+      if (transcript && transcript.trim().length > 0) {
+        try {
+          const { data, error } = await supabase.functions.invoke('analyze-notetaker', {
+            body: { transcript, title }
+          });
+          if (!error && data?.success && data.analysis) {
+            const updatedMeeting: Meeting = {
+              ...meeting,
+              analysis: data.analysis,
+            };
+            await saveMeeting(updatedMeeting);
+            setDownloadModalMeeting(updatedMeeting);
+            if (selectedMeeting?.id === meeting.id) {
+              setSelectedMeeting(updatedMeeting);
+            }
+            toast({
+              title: "KI-Analyse abgeschlossen",
+              description: "Zusammenfassung, Action Items und Risikoanalyse wurden erstellt",
+            });
+          } else if (data?.error) {
+            console.warn('AI analysis failed:', data.error);
+            toast({
+              title: "KI-Analyse nicht verfügbar",
+              description: data.error,
+              variant: "destructive",
+            });
+          }
+        } catch (aiErr) {
+          console.warn('AI analysis error:', aiErr);
+        }
+      }
       setMeetingTitle('');
       setCurrentTranscript('');
       setRecordingStartTime(null);
