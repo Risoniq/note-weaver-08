@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,7 +12,27 @@ serve(async (req) => {
   }
 
   try {
-    const { transcript, title } = await req.json();
+    // Validate JWT
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ success: false, error: "Nicht autorisiert" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    if (authError || !user) {
+      return new Response(JSON.stringify({ success: false, error: "Nicht autorisiert" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const { transcript, title, recording_id } = await req.json();
 
     if (!transcript || transcript.trim().length === 0) {
       return new Response(JSON.stringify({
@@ -67,20 +88,9 @@ ${transcript}`;
               parameters: {
                 type: "object",
                 properties: {
-                  summary: {
-                    type: "string",
-                    description: "Zusammenfassung in 2-3 Sätzen"
-                  },
-                  keyPoints: {
-                    type: "array",
-                    items: { type: "string" },
-                    description: "3-5 wichtigste Punkte"
-                  },
-                  actionItems: {
-                    type: "array",
-                    items: { type: "string" },
-                    description: "Konkrete Aufgaben mit Verantwortlichen (max 8)"
-                  }
+                  summary: { type: "string", description: "Zusammenfassung in 2-3 Sätzen" },
+                  keyPoints: { type: "array", items: { type: "string" }, description: "3-5 wichtigste Punkte" },
+                  actionItems: { type: "array", items: { type: "string" }, description: "Konkrete Aufgaben mit Verantwortlichen (max 8)" }
                 },
                 required: ["summary", "keyPoints", "actionItems"],
                 additionalProperties: false
@@ -128,6 +138,25 @@ ${transcript}`;
 
     const analysis = JSON.parse(toolCall.function.arguments);
     const words = transcript.split(/\s+/);
+    const wordCount = words.length;
+
+    // If recording_id provided, update the recording directly
+    if (recording_id) {
+      const { error: updateError } = await supabaseAdmin
+        .from('recordings')
+        .update({
+          summary: analysis.summary || null,
+          key_points: analysis.keyPoints || [],
+          action_items: analysis.actionItems || [],
+          word_count: wordCount,
+        })
+        .eq('id', recording_id)
+        .eq('user_id', user.id);
+
+      if (updateError) {
+        console.error("DB update error:", updateError);
+      }
+    }
 
     return new Response(JSON.stringify({
       success: true,
@@ -135,7 +164,7 @@ ${transcript}`;
         summary: analysis.summary || "Keine Zusammenfassung verfügbar",
         keyPoints: analysis.keyPoints || [],
         actionItems: analysis.actionItems || [],
-        wordCount: words.length,
+        wordCount,
       }
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 

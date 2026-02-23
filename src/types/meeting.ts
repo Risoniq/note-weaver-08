@@ -15,6 +15,9 @@ export interface Meeting {
   duration: number;
   audioBlob?: Blob;
   audioUrl?: string;
+  user_id?: string;
+  meeting_id?: string;
+  status?: string;
 }
 
 export type CaptureMode = 'tab' | 'mic';

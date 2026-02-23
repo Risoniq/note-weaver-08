@@ -5,6 +5,7 @@ import { useMeetingStorage } from '@/hooks/useMeetingStorage';
 import { useAudioDevices } from '@/hooks/useAudioDevices';
 import { useAudioLevel } from '@/hooks/useAudioLevel';
 import { useMicrophoneTest } from '@/hooks/useMicrophoneTest';
+import { useAuth } from '@/hooks/useAuth';
 import { generateAnalysis, downloadTranscript } from '@/utils/meetingAnalysis';
 import { supabase } from '@/integrations/supabase/client';
 import { Header } from './meeting/Header';
@@ -37,21 +38,34 @@ export default function MeetingNoteTaker() {
   const audioChunksRef = useRef<Blob[]>([]);
   
   const { toast } = useToast();
-  const { meetings, loadMeetings, saveMeeting, deleteMeeting } = useMeetingStorage();
+  const { user, isAuthenticated } = useAuth();
+  const { meetings, loadMeetings, saveMeeting, deleteMeeting, migrateLocalStorage } = useMeetingStorage();
   const { startRecognition, stopRecognition, setOnResult, error: recognitionError } = useSpeechRecognition();
   const audioDevices = useAudioDevices();
   const microphoneTest = useMicrophoneTest();
   const audioLevel = useAudioLevel(currentStream);
 
   useEffect(() => {
-    loadMeetings();
+    if (isAuthenticated) {
+      loadMeetings();
+      // Migrate old localStorage meetings
+      migrateLocalStorage().then((count) => {
+        if (count > 0) {
+          toast({
+            title: "Migration abgeschlossen",
+            description: `${count} Meeting(s) wurden in die Cloud migriert`,
+          });
+          loadMeetings();
+        }
+      });
+    }
     
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
     };
-  }, [loadMeetings]);
+  }, [loadMeetings, isAuthenticated, migrateLocalStorage, toast]);
 
   useEffect(() => {
     setOnResult((transcript) => {
@@ -66,6 +80,11 @@ export default function MeetingNoteTaker() {
   }, [recognitionError]);
 
   const startRecording = async () => {
+    if (!isAuthenticated || !user) {
+      setError('Bitte melde dich an, um eine Aufnahme zu starten');
+      return;
+    }
+
     if (!meetingTitle.trim()) {
       setError('Bitte gib einen Meeting-Titel ein');
       return;
@@ -216,8 +235,9 @@ export default function MeetingNoteTaker() {
 
       const localAnalysis = generateAnalysis(transcript);
 
+      const meetingId = crypto.randomUUID();
       const meeting: Meeting = {
-        id: Date.now().toString(),
+        id: meetingId,
         title: title,
         date: new Date().toISOString(),
         transcript: transcript || 'Keine Transkription verfügbar',
@@ -226,28 +246,36 @@ export default function MeetingNoteTaker() {
         duration: duration,
         audioBlob: audioBlob,
         audioUrl: audioUrl,
+        user_id: user?.id,
+        meeting_id: `notetaker_${meetingId}`,
+        status: 'processing',
       };
 
       // Show download modal with local analysis first
       setDownloadModalMeeting(meeting);
       await saveMeeting(meeting);
 
+      // Update status to done after save (audio uploaded)
+      const doneMeeting: Meeting = { ...meeting, status: 'done' };
+      await saveMeeting(doneMeeting);
+
       // Try AI analysis in background
       if (transcript && transcript.trim().length > 0) {
         try {
           const { data, error } = await supabase.functions.invoke('analyze-notetaker', {
-            body: { transcript, title }
+            body: { transcript, title, recording_id: meetingId }
           });
           if (!error && data?.success && data.analysis) {
             const updatedMeeting: Meeting = {
-              ...meeting,
+              ...doneMeeting,
               analysis: data.analysis,
             };
-            await saveMeeting(updatedMeeting);
             setDownloadModalMeeting(updatedMeeting);
             if (selectedMeeting?.id === meeting.id) {
               setSelectedMeeting(updatedMeeting);
             }
+            // Reload from DB to get consistent state
+            await loadMeetings();
             toast({
               title: "KI-Analyse abgeschlossen",
               description: "Zusammenfassung und Action Items wurden erstellt",
@@ -270,13 +298,13 @@ export default function MeetingNoteTaker() {
       
       toast({
         title: "Aufnahme beendet",
-        description: "Audio und Transkript stehen zum Download bereit",
+        description: "Audio und Transkript wurden in der Cloud gespeichert",
       });
     } catch (err) {
       console.error('Fehler beim Speichern:', err);
       setError('Meeting konnte nicht gespeichert werden.');
     }
-  }, [isRecording, recordingStartTime, meetingTitle, currentTranscript, captureMode, saveMeeting, stopRecognition, toast]);
+  }, [isRecording, recordingStartTime, meetingTitle, currentTranscript, captureMode, saveMeeting, stopRecognition, toast, user, selectedMeeting, loadMeetings]);
 
   const handleCloseDownloadModal = () => {
     setDownloadModalMeeting(null);
