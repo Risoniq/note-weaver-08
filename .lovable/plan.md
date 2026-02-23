@@ -1,50 +1,70 @@
 
 
-# Session-Timeout waehrend aktiver Aufnahme pausieren
+# Risiko 2: Browser-Kompatibilitaet der Speech Recognition absichern
 
 ## Problem
 
-Der `useSessionTimeout`-Hook loggt den Benutzer nach 15 Minuten Inaktivitaet aus -- auch wenn gerade eine Aufnahme laeuft. Das fuehrt dazu, dass laufende Aufnahmen abgebrochen und Daten verloren gehen koennen.
+Die Web Speech API (`webkitSpeechRecognition`) wird nur von Chrome und Edge unterstuetzt. In Firefox und Safari:
+- Der Notetaker startet die Aufnahme, aber die Spracherkennung schlaegt still fehl
+- Der Benutzer bekommt kein Transkript, ohne zu verstehen warum
+- Die `VoiceInputButton` versteckt sich komplett -- kein Hinweis fuer den Benutzer
 
-## Loesung
-
-Den `useSessionTimeout`-Hook um einen `paused`-Parameter erweitern. Wenn `paused = true`, werden alle Timer gestoppt und kein Logout durchgefuehrt. Sobald die Aufnahme endet (`paused = false`), starten die Timer neu.
+Zusaetzlich gibt es einen Bug im `onresult`-Handler: Er sammelt ALLE bisherigen Ergebnisse bei jedem Event, statt nur neue hinzuzufuegen. Das fuehrt zu doppeltem Text im Transkript.
 
 ## Aenderungen
 
-### 1. `src/hooks/useSessionTimeout.ts`
+### 1. `src/hooks/useSpeechRecognition.ts` -- Robuster machen
 
-- Neuen Parameter `paused?: boolean` akzeptieren
-- Wenn `paused` aktiv ist:
-  - Alle Timer stoppen (`clearAllTimers`)
-  - Warnung ausblenden
-  - Keinen Logout durchfuehren
-- Wenn `paused` wieder auf `false` wechselt: Timer neu starten
+- **onresult-Bug fixen**: Nur neue Ergebnisse seit dem letzten Event verarbeiten (Index-Tracking mit `event.resultIndex`)
+- **Fehlerbehandlung erweitern**: `network`, `audio-capture`, `aborted` und `service-not-available` Fehler abfangen und verstaendliche Meldungen ausgeben
+- **`isActive`-State** hinzufuegen: Zeigt ob die Recognition tatsaechlich laeuft (nicht nur angefragt wurde)
+
+### 2. `src/components/MeetingNoteTaker.tsx` -- Warnung bei fehlendem Support
+
+- Beim Start der Aufnahme pruefen ob `isSupported === false`
+- Falls nicht unterstuetzt: Aufnahme trotzdem starten (Audio wird aufgenommen), aber einen Warnhinweis anzeigen:
+  "Echtzeit-Transkription ist in diesem Browser nicht verfuegbar. Audio wird trotzdem aufgenommen und kann spaeter transkribiert werden."
+- Damit funktioniert die Aufnahme in allen Browsern, nur das Live-Transkript fehlt
+
+### 3. `src/components/ui/VoiceInputButton.tsx` -- Sichtbar bleiben mit Hinweis
+
+- Statt den Button komplett zu verstecken wenn `!isSupported`, den Button deaktiviert anzeigen mit Tooltip:
+  "Spracheingabe wird nur in Chrome und Edge unterstuetzt"
+- Damit weiss der Benutzer, dass die Funktion existiert, aber nicht verfuegbar ist
+
+### 4. `src/components/meeting/RecordView.tsx` -- Browser-Kompatibilitaets-Banner
+
+- Wenn `!isSupported`: Info-Banner oberhalb der Aufnahme-Steuerung anzeigen
+- Text: "Dein Browser unterstuetzt keine Echtzeit-Transkription. Verwende Chrome oder Edge fuer Live-Transkripte, oder nimm auf -- die Transkription erfolgt nach dem Upload."
+
+## Technische Details
+
+### onresult-Bug Fix (vorher vs. nachher)
 
 ```text
-Vorher:  useSessionTimeout()
-Nachher: useSessionTimeout({ paused?: boolean })
+VORHER (fehlerhaft):
+- Event 1: results = ["Hallo"] -> callback("Hallo")
+- Event 2: results = ["Hallo", "Welt"] -> callback("Hallo Welt")  // "Hallo" wird doppelt
+
+NACHHER (korrekt):
+- Event 1: resultIndex=0, results[0] = "Hallo" -> callback("Hallo")
+- Event 2: resultIndex=1, results[1] = "Welt" -> callback("Hallo Welt")  // Nur neue ab resultIndex
 ```
 
-### 2. `src/components/layout/AppLayout.tsx`
-
-- Den `isRecording`-State von `useQuickRecording` an `useSessionTimeout` weitergeben:
+### Erweiterte Fehlerbehandlung
 
 ```text
-const { isRecording } = useQuickRecording();
-const { showWarning, remainingSeconds, extendSession } = useSessionTimeout({ paused: isRecording });
+'not-allowed'       -> Mikrofon-Zugriff verweigert
+'audio-capture'     -> Kein Mikrofon gefunden
+'network'           -> Netzwerkfehler bei der Spracherkennung
+'service-not-available' -> Spracherkennungsdienst nicht erreichbar
+'aborted'           -> Spracherkennung wurde unterbrochen (kein Fehler anzeigen)
+'no-speech'         -> Ignorieren, weiter warten
 ```
-
-Das deckt die Schnellaufnahme ab, die direkt im AppLayout lebt.
-
-### 3. MeetingNoteTaker (falls noch genutzt)
-
-Der MeetingNoteTaker wird aktuell nicht mehr als Seite eingebunden -- die Aufnahmen laufen ueber `useQuickRecording` im Header. Falls der Notetaker spaeter wieder aktiviert wird, wuerde er den gleichen Mechanismus nutzen koennen (Recording-State nach oben propagieren oder ueber einen globalen Context).
 
 ## Was sich NICHT aendert
 
-- Die Timeout-Dauer (15 Minuten) bleibt gleich
-- Das Verhalten nach Ende der Aufnahme bleibt gleich (Timer startet neu)
-- Die SessionTimeoutWarning-Komponente bleibt unveraendert
-- Alle anderen Komponenten bleiben unberuehrt
+- Die Aufnahme-Logik (MediaRecorder) funktioniert bereits in allen Browsern
+- Der Audio-Upload und die Backend-Transkription bleiben unberuehrt
+- Die Quick-Recording-Funktion ist nicht betroffen (nutzt keine Speech Recognition)
 
