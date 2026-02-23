@@ -1,60 +1,35 @@
 
-# Dashboard-Karussell fuer dynamische Inhalte
 
-## Ziel
-Die drei GlassCards im Dashboard (Bot senden, Audio hochladen, Account-Analyse) werden in ein horizontales Karussell umgewandelt. Auf Desktop werden weiterhin alle 3 Karten sichtbar sein, auf kleineren Bildschirmen kann der Nutzer durch die Karten wischen/navigieren. Das Karussell nutzt die bereits installierte `embla-carousel-react` Bibliothek und die vorhandene `carousel.tsx` UI-Komponente.
+# Fix: Meeting-Zuordnung zu Projektordnern
 
-## Aenderungen
+## Problem
 
-### Datei: `src/pages/Index.tsx`
+Die Zuordnung von Meetings zu Projekten funktioniert teilweise nicht, weil im Code nach dem falschen Status gefiltert wird.
 
-1. **Imports hinzufuegen**: `Carousel`, `CarouselContent`, `CarouselItem`, `CarouselPrevious`, `CarouselNext` aus `@/components/ui/carousel` importieren.
+**Ursache**: In der Datei `AssignRecordingsDialog.tsx` (Zeile 26) wird nach `.eq("status", "completed")` gefiltert. In der Datenbank existiert dieser Status jedoch nicht -- der korrekte Wert ist `"done"`.
 
-2. **Grid durch Karussell ersetzen**: Der bisherige `grid grid-cols-1 lg:grid-cols-3` Block (Zeilen 86-119) wird durch eine Karussell-Struktur ersetzt:
+Dadurch erscheinen in der "Meetings zuordnen"-Liste auf der Projektseite **keine Meetings**, obwohl abgeschlossene Aufnahmen vorhanden sind.
+
+## Loesung
+
+### Datei: `src/components/projects/AssignRecordingsDialog.tsx`
+
+Den Statusfilter von `"completed"` auf `"done"` aendern:
 
 ```
-Vorher:
-<div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-  <GlassCard>...</GlassCard>
-  <GlassCard>...</GlassCard>
-  <GlassCard>...</GlassCard>
-</div>
-
-Nachher:
-<Carousel opts={{ align: "start", loop: true }} className="w-full">
-  <CarouselContent className="-ml-4">
-    <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3">
-      <GlassCard>Bot zu Meeting senden</GlassCard>
-    </CarouselItem>
-    <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3">
-      <GlassCard>Audio/Video hochladen</GlassCard>
-    </CarouselItem>
-    <CarouselItem className="pl-4 md:basis-1/2 lg:basis-1/3">
-      <GlassCard>Account/Team-Analyse</GlassCard>
-    </CarouselItem>
-    <!-- Platz fuer weitere Karten in Zukunft -->
-  </CarouselContent>
-  <CarouselPrevious />
-  <CarouselNext />
-</Carousel>
+Vorher:  .eq("status", "completed")
+Nachher: .eq("status", "done")
 ```
 
-3. **Responsive Verhalten**:
-   - Mobil (< 768px): 1 Karte sichtbar, wischbar
-   - Tablet (768px+): 2 Karten sichtbar
-   - Desktop (1024px+): 3 Karten sichtbar (alle auf einmal)
-   - `loop: true` ermoeglicht endloses Durchblaettern
-
-4. **Erweiterbarkeit**: Durch die Karussell-Struktur koennen spaeter einfach weitere `CarouselItem`-Karten hinzugefuegt werden (z.B. Kalender-Schnellzugriff, letzte Aufnahmen, Tipps), die dann per Wischen/Pfeile erreichbar sind.
+Das ist eine einzeilige Aenderung. Danach werden alle abgeschlossenen Meetings korrekt in der Zuordnungsliste angezeigt.
 
 ## Betroffene Dateien
 
 | Datei | Aenderung |
 |-------|-----------|
-| `src/pages/Index.tsx` | Grid durch Carousel-Komponente ersetzen, Imports ergaenzen |
+| `src/components/projects/AssignRecordingsDialog.tsx` | Statusfilter von `"completed"` auf `"done"` korrigieren |
 
-## Ergebnis
-- Dynamisches, wischbares Karussell im Dashboard
-- Auf Desktop bleiben alle 3 Karten sichtbar (kein Unterschied zum jetzigen Layout)
-- Auf Mobil/Tablet wird gewischt oder per Pfeiltasten navigiert
-- Einfach erweiterbar um zusaetzliche Dashboard-Karten
+## Hinweis
+
+Die Zuordnung ueber die Meeting-Detailseite (`ProjectAssignment.tsx`) ist davon nicht betroffen -- dort wird kein Statusfilter verwendet. Das Problem betrifft nur die Zuordnung ueber die Projektseite.
+
