@@ -44,7 +44,7 @@ export const ChatHistorySidebar = ({
   }
 
   return (
-    <div className="w-40 shrink-0 border-r flex flex-col h-full">
+    <div className="w-40 shrink-0 border-r mr-1 flex flex-col h-full">
       <div className="flex items-center justify-between p-2 border-b">
         <span className="text-xs font-medium text-muted-foreground">Verlauf</span>
         <div className="flex gap-1">
