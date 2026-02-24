@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Message {
@@ -22,6 +22,7 @@ interface UseChatSessionsOptions {
 export function useChatSessions({ contextType, contextId }: UseChatSessionsOptions) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -70,6 +71,7 @@ export function useChatSessions({ contextType, contextId }: UseChatSessionsOptio
       const loaded = await loadSessions();
       if (cancelled) return;
       if (loaded && loaded.length > 0) {
+        activeSessionIdRef.current = loaded[0].id;
         setActiveSessionId(loaded[0].id);
         setMessages(loaded[0].messages);
       }
@@ -82,6 +84,7 @@ export function useChatSessions({ contextType, contextId }: UseChatSessionsOptio
   const loadSession = useCallback((id: string) => {
     const found = sessions.find(s => s.id === id);
     if (found) {
+      activeSessionIdRef.current = found.id;
       setActiveSessionId(found.id);
       setMessages(found.messages);
     }
@@ -89,7 +92,8 @@ export function useChatSessions({ contextType, contextId }: UseChatSessionsOptio
 
   // Save messages to active session
   const saveMessages = useCallback(async (msgs: Message[]) => {
-    if (!activeSessionId) return;
+    const currentId = activeSessionIdRef.current;
+    if (!currentId) return;
 
     const title = msgs.find(m => m.role === "user")?.content?.slice(0, 40) || null;
     const titleWithEllipsis = title && title.length >= 40 ? title + "…" : title;
@@ -97,17 +101,17 @@ export function useChatSessions({ contextType, contextId }: UseChatSessionsOptio
     const { error } = await supabase
       .from("chat_sessions" as any)
       .update({ messages: msgs as any, title: titleWithEllipsis } as any)
-      .eq("id", activeSessionId);
+      .eq("id", currentId);
 
     if (error) console.error("Failed to save chat session:", error);
 
     // Refresh local list
     setSessions(prev => prev.map(s =>
-      s.id === activeSessionId
+      s.id === currentId
         ? { ...s, messages: msgs, title: titleWithEllipsis, updated_at: new Date().toISOString() }
         : s
     ));
-  }, [activeSessionId]);
+  }, []);
 
   // Create new chat
   const createNewChat = useCallback(async () => {
@@ -139,6 +143,7 @@ export function useChatSessions({ contextType, contextId }: UseChatSessionsOptio
     };
 
     setSessions(prev => [newSession, ...prev]);
+    activeSessionIdRef.current = newSession.id;
     setActiveSessionId(newSession.id);
     setMessages([]);
     return newSession.id;
@@ -161,6 +166,7 @@ export function useChatSessions({ contextType, contextId }: UseChatSessionsOptio
       setSessions(prev => prev.filter(s => s.id !== activeSessionId));
     }
     setMessages([]);
+    activeSessionIdRef.current = null;
     setActiveSessionId(null);
     // Create a fresh session
     await createNewChat();
