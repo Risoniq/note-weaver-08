@@ -25,7 +25,6 @@ serve(async (req) => {
     const { projectId } = await req.json();
     if (!projectId) throw new Error("projectId required");
 
-    // Verify ownership
     const { data: project, error: projError } = await supabase
       .from("projects")
       .select("*")
@@ -34,7 +33,6 @@ serve(async (req) => {
       .maybeSingle();
     if (projError || !project) throw new Error("Project not found");
 
-    // Get recordings
     const { data: prLinks } = await supabase
       .from("project_recordings")
       .select("recording_id")
@@ -51,7 +49,6 @@ serve(async (req) => {
 
     if (!recordings?.length) throw new Error("No recordings found");
 
-    // Build prompt
     const meetingSummaries = recordings.map((r: any, i: number) => {
       return `Meeting ${i + 1}: "${r.title || 'Ohne Titel'}" (${new Date(r.created_at).toLocaleDateString("de-DE")})
 Zusammenfassung: ${r.summary || 'Keine'}
@@ -69,25 +66,27 @@ Erstelle eine JSON-Antwort mit:
 - "open_topics": Array mit offenen Themen
 - "completed_topics": Array mit erledigten Themen
 - "recommendations": Array mit 3-5 konkreten Empfehlungen für die nächsten Schritte
-- "topic_tracking": Array von Objekten mit {"topic": "Thema-Name", "meetings": [1, 3, 5], "status": "verfolgt"|"offen"|"erledigt"} - tracke welche Themen in welchen Meetings (als Meeting-Nummer) besprochen wurden und ob sie aktiv verfolgt, noch offen oder bereits erledigt sind
-- "domain_distribution": Array von Objekten mit {"meeting": "Meeting-Titel kurz", "marketing": 20, "produkt": 40, "sales": 30, "operations": 10} - prozentuale Verteilung der besprochenen Themen pro Meeting auf die Geschäftsbereiche Marketing, Produkt, Sales und Operations (Summe muss 100 ergeben)
-- "speaker_domain_activity": Array von {"speaker": "Sprecher-Name", "marketing": 15, "produkt": 50, "sales": 25, "operations": 10} - prozentuale Verteilung der Beiträge jedes Sprechers auf die vier Geschäftsbereiche
+- "topic_tracking": Array von Objekten mit {"topic": "Thema-Name", "meetings": [1, 3, 5], "status": "verfolgt"|"offen"|"erledigt"}
+- "domain_distribution": Array von Objekten mit {"meeting": "Meeting-Titel kurz", "marketing": 20, "produkt": 40, "sales": 30, "operations": 10}
+- "speaker_domain_activity": Array von {"speaker": "Sprecher-Name", "marketing": 15, "produkt": 50, "sales": 25, "operations": 10}
 
 Antworte NUR mit validem JSON.`;
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("AI not configured");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!ANTHROPIC_API_KEY) throw new Error("AI not configured");
 
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: "Du bist ein Projektanalyse-Assistent. Antworte immer in validem JSON auf Deutsch.",
         messages: [
-          { role: "system", content: "Du bist ein Projektanalyse-Assistent. Antworte immer in validem JSON auf Deutsch." },
           { role: "user", content: prompt },
         ],
       }),
@@ -101,9 +100,8 @@ Antworte NUR mit validem JSON.`;
     }
 
     const aiData = await aiResponse.json();
-    let analysisText = aiData.choices?.[0]?.message?.content || "";
+    let analysisText = aiData.content?.[0]?.text || "";
     
-    // Strip markdown code fences if present
     analysisText = analysisText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
     
     let analysis;
@@ -113,7 +111,6 @@ Antworte NUR mit validem JSON.`;
       analysis = { summary: analysisText, progress: "", open_topics: [], completed_topics: [], recommendations: [] };
     }
 
-    // Save to project
     const serviceClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     await serviceClient.from("projects").update({ analysis }).eq("id", projectId);
 

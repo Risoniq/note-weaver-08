@@ -5,6 +5,51 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Convert Anthropic SSE stream to OpenAI-compatible SSE stream
+function convertAnthropicStream(anthropicBody: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const reader = anthropicBody.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = "";
+
+  return new ReadableStream({
+    async pull(controller) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          return;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.slice(6).trim();
+            if (!jsonStr) continue;
+            try {
+              const event = JSON.parse(jsonStr);
+              if (event.type === "content_block_delta" && event.delta?.text) {
+                const openAIChunk = {
+                  choices: [{ delta: { content: event.delta.text }, index: 0 }],
+                };
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(openAIChunk)}\n\n`));
+              } else if (event.type === "message_stop") {
+                controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                controller.close();
+                return;
+              }
+            } catch { /* skip unparseable */ }
+          }
+        }
+      }
+    },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -56,7 +101,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Load assigned recordings via project_recordings join
+    // Load assigned recordings
     const { data: projectRecordings } = await supabase
       .from("project_recordings")
       .select("recording_id")
@@ -93,7 +138,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Build analysis context
     const analysis = project.analysis as any;
     let analysisContext = "Keine KI-Analyse vorhanden.";
     if (analysis) {
@@ -106,7 +150,7 @@ Deno.serve(async (req) => {
       if (parts.length > 0) analysisContext = parts.join("\n");
     }
 
-    const systemPrompt = `Du bist ein strategischer Projektmanagement-Berater. Du analysierst Projekte ganzheitlich und gibst konkrete, umsetzbare Empfehlungen. Du hast Zugriff auf alle Meetings, Analysen und den aktuellen Projektstatus.
+    const systemPrompt = `Du bist ein strategischer Projektmanagement-Berater. Du analysierst Projekte ganzheitlich und gibst konkrete, umsetzbare Empfehlungen.
 
 DEINE KERNKOMPETENZEN:
 1. Strategische Bewertung: Projektfortschritt, Risiken, Engpaesse identifizieren
@@ -121,8 +165,6 @@ REGELN:
 - Bei Aufzaehlungen: Nummeriert, neue Zeile pro Punkt
 - Beziehe dich immer auf konkrete Daten aus den Meetings
 - Stelle Rueckfragen wenn die Anfrage zu vage ist
-- Denke in Zusammenhaengen: Wie haengen verschiedene Meeting-Themen zusammen?
-- Bewerte kritisch: Nicht nur zusammenfassen, sondern Luecken und Risiken benennen
 
 PROJEKTINFORMATIONEN:
 - Name: ${project.name}
@@ -135,23 +177,25 @@ ${analysisContext}
 ZUGEORDNETE MEETINGS (${recordingIds.length}):
 ${meetingContext}`;
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const userMessages = messages.filter((m: any) => m.role !== "system");
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages,
-        ],
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: userMessages,
         stream: true,
       }),
     });
@@ -170,14 +214,16 @@ ${meetingContext}`;
         });
       }
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      return new Response(JSON.stringify({ error: "AI gateway error" }), {
+      console.error("Anthropic API error:", response.status, errorText);
+      return new Response(JSON.stringify({ error: "AI service error" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    return new Response(response.body, {
+    const openAIStream = convertAnthropicStream(response.body!);
+
+    return new Response(openAIStream, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
   } catch (e) {

@@ -1,5 +1,4 @@
 const corsHeaders = {
-
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
@@ -19,9 +18,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      console.error("LOVABLE_API_KEY is not configured");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!ANTHROPIC_API_KEY) {
       return new Response(
         JSON.stringify({ error: "API-Schlüssel nicht konfiguriert" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -58,19 +56,20 @@ ${instructions}
 
 Gib NUR die bearbeitete E-Mail zurück, ohne zusätzliche Erklärungen oder Formatierung.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: systemPrompt,
         messages: [
-          { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
         ],
-        stream: false,
       }),
     });
 
@@ -88,7 +87,7 @@ Gib NUR die bearbeitete E-Mail zurück, ohne zusätzliche Erklärungen oder Form
         );
       }
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
+      console.error("Anthropic API error:", response.status, errorText);
       return new Response(
         JSON.stringify({ error: "KI-Service vorübergehend nicht verfügbar" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -96,7 +95,7 @@ Gib NUR die bearbeitete E-Mail zurück, ohne zusätzliche Erklärungen oder Form
     }
 
     const data = await response.json();
-    const editedEmail = data.choices?.[0]?.message?.content?.trim();
+    const editedEmail = data.content?.[0]?.text?.trim();
 
     if (!editedEmail) {
       return new Response(

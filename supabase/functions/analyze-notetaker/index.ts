@@ -12,7 +12,6 @@ serve(async (req) => {
   }
 
   try {
-    // Validate JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ success: false, error: "Nicht autorisiert" }), {
@@ -41,11 +40,11 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!ANTHROPIC_API_KEY) {
       return new Response(JSON.stringify({
         success: false,
-        error: "LOVABLE_API_KEY nicht konfiguriert"
+        error: "ANTHROPIC_API_KEY nicht konfiguriert"
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -59,52 +58,40 @@ WICHTIG für Action Items: Eine Aufgabe muss mindestens zwei von drei Kriterien 
 3. Zeitrahmen oder Deadline
 Vage Absichten, Wünsche oder einfache Kommentare werden NICHT als Action Items aufgenommen. Maximal 8 Action Items.
 
-Antworte NUR mit dem Tool-Call, keine zusätzliche Erklärung.`;
+Du MUSST deine Antwort als JSON-Objekt mit folgender Struktur zurückgeben:
+{
+  "summary": "Zusammenfassung in 2-3 Sätzen",
+  "keyPoints": ["Punkt 1", "Punkt 2", ...],
+  "actionItems": ["Aufgabe 1 (Verantwortlicher: Name)", ...]
+}
+
+Antworte NUR mit dem JSON, keine zusätzliche Erklärung.`;
 
     const userPrompt = `Meeting-Titel: ${title || "Ohne Titel"}
 
 Transkript:
 ${transcript}`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        temperature: 0,
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: systemPrompt,
         messages: [
-          { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "meeting_analysis",
-              description: "Vollständige Meeting-Analyse mit Risikoanalyse zurückgeben",
-              parameters: {
-                type: "object",
-                properties: {
-                  summary: { type: "string", description: "Zusammenfassung in 2-3 Sätzen" },
-                  keyPoints: { type: "array", items: { type: "string" }, description: "3-5 wichtigste Punkte" },
-                  actionItems: { type: "array", items: { type: "string" }, description: "Konkrete Aufgaben mit Verantwortlichen (max 8)" }
-                },
-                required: ["summary", "keyPoints", "actionItems"],
-                additionalProperties: false
-              }
-            }
-          }
-        ],
-        tool_choice: { type: "function", function: { name: "meeting_analysis" } }
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
+      console.error("Anthropic API error:", response.status, errorText);
 
       if (response.status === 429) {
         return new Response(JSON.stringify({
@@ -126,21 +113,37 @@ ${transcript}`;
     }
 
     const aiResult = await response.json();
-    const toolCall = aiResult.choices?.[0]?.message?.tool_calls?.[0];
+    const content = aiResult.content?.[0]?.text;
 
-    if (!toolCall?.function?.arguments) {
-      console.error("No tool call in response:", JSON.stringify(aiResult));
+    if (!content) {
+      console.error("No content in Anthropic response:", JSON.stringify(aiResult));
+      return new Response(JSON.stringify({
+        success: false,
+        error: "KI hat keine Antwort geliefert"
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Parse JSON from response
+    let analysis;
+    try {
+      let jsonStr = content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      if (!jsonStr.startsWith('{')) {
+        const startIdx = jsonStr.indexOf('{');
+        const endIdx = jsonStr.lastIndexOf('}');
+        if (startIdx !== -1 && endIdx !== -1) jsonStr = jsonStr.slice(startIdx, endIdx + 1);
+      }
+      analysis = JSON.parse(jsonStr);
+    } catch {
+      console.error("Failed to parse AI response:", content.substring(0, 500));
       return new Response(JSON.stringify({
         success: false,
         error: "KI hat keine strukturierte Antwort geliefert"
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const analysis = JSON.parse(toolCall.function.arguments);
     const words = transcript.split(/\s+/);
     const wordCount = words.length;
 
-    // If recording_id provided, update the recording directly
     if (recording_id) {
       const { error: updateError } = await supabaseAdmin
         .from('recordings')
