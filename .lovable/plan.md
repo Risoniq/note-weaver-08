@@ -1,64 +1,39 @@
 
-# Fix: Video-Backup und abgelaufene S3-URLs dauerhaft loesen
+
+# S3-URL-Erkennung im RecordingViewer ergaenzen
 
 ## Problem
 
-1. **Video-Backup scheitert**: In `sync-recording` wird vor dem Video-Download ein `HEAD`-Request gemacht, um die Dateigroesse zu pruefen. S3 pre-signed URLs von Recall.ai erlauben aber oft kein `HEAD` (nur `GET` ist signiert), was zu einem 403 fuehrt. Dadurch wird das Backup uebersprungen und die temporaere S3-URL bleibt in der Datenbank.
-
-2. **Abgelaufene URLs im Frontend**: Wenn das Backup fehlschlaegt, zeigt die Meeting-Detail-Seite eine abgelaufene S3-URL. Der Video-Player laeuft ins Leere und der Download scheitert mit "AccessDenied / Request has expired".
+Der `RecordingViewer` (Dashboard-Ansicht fuer aktive Aufnahmen) zeigt bei Status "done" direkt den Video-Player und Download-Button mit der `video_url`. Wenn das Video-Backup fehlgeschlagen ist und die URL eine abgelaufene S3-URL ist, bleibt der Player leer und der Download schlaegt fehl -- genau dasselbe Problem wie in der MeetingDetail-Seite.
 
 ## Loesung
 
-### 1. `supabase/functions/sync-recording/index.ts` -- HEAD-Fallback
+Die gleiche S3-URL-Erkennung wie in `MeetingDetail.tsx` in den `RecordingViewer` einbauen:
 
-Anstatt bei einem fehlgeschlagenen HEAD-Request das Backup komplett zu ueberspringen, direkt einen GET-Request mit Streaming starten (ohne vorherige Groessenprüfung). Konkreter Ablauf:
+### Datei: `src/components/RecordingViewer.tsx`
 
-- HEAD-Request versuchen (wie bisher)
-- Bei Fehler (403/405): Direkt zum Streaming-Upload wechseln (ohne Groessenkenntnis)
-- Der Streaming-Upload funktioniert ohne Groessenangabe, da er ReadableStream verwendet
+1. **Hilfsfunktion** `isExpiredS3Url(url)` hinzufuegen, die prueft ob die URL von S3 stammt (nicht vom eigenen Storage)
+2. **Neuer State** `isRefreshingVideo` fuer den Ladezustand des Refresh-Buttons
+3. **Funktion** `refreshVideoUrl()` die `sync-recording` mit `force_resync: true` aufruft und danach die Recording-Daten neu laedt
+4. **UI-Anpassung** im Video-Bereich (Zeilen 220-230):
+   - Wenn `isExpiredS3Url(video_url)` zutrifft: Statt des defekten Video-Players einen Hinweis anzeigen ("Video-Link abgelaufen") mit einem "Video erneuern"-Button
+   - Wenn die URL eine Storage-URL ist: normaler Player wie bisher
+5. **Download-Buttons** ebenfalls nur anzeigen, wenn die URL gueltig ist (keine S3-URL)
 
-```text
-Aktuell:
-  HEAD fehlgeschlagen -> Backup uebersprungen
-
-Neu:
-  HEAD fehlgeschlagen -> Streaming-Upload (wie bei >100MB Videos)
-```
-
-Aenderung in Zeile 890-891: Statt `console.warn` + return wird ein Fallback auf Streaming-Upload ausgefuehrt.
-
-### 2. `src/pages/MeetingDetail.tsx` -- Abgelaufene URLs erkennen + "Video erneuern"
-
-- Hilfsfunktion `isExpiredOrTempS3Url(url)`: Prueft ob eine URL eine S3-URL ist (nicht vom eigenen Storage stammt)
-- Neuer State `isRefreshingVideo` und Funktion `refreshVideoUrl()` die `sync-recording` mit `force_resync: true` aufruft
-- Im Video-Bereich: Wenn die URL eine S3-URL ist, wird ein "Video erneuern"-Button angezeigt statt eines kaputten Players
-- Nach erfolgreichem Refresh wird die Seite mit der neuen (frischen) URL aktualisiert
-- Optional: Automatischer Refresh-Versuch beim Laden der Seite wenn eine S3-URL erkannt wird
-
-### 3. Ablauf nach dem Fix
+### Erkennungslogik (identisch zu MeetingDetail)
 
 ```text
-Sync-Recording:
-  1. Recall.ai liefert frische S3-URL
-  2. HEAD-Request versuchen
-  3a. HEAD OK + <100MB -> In-Memory Upload
-  3b. HEAD OK + >100MB -> Streaming Upload  
-  3c. HEAD fehlgeschlagen (403) -> Streaming Upload (NEU)
-  4. Storage-URL ersetzt S3-URL in DB
-  5. Video dauerhaft verfuegbar
-
-Frontend (MeetingDetail):
-  1. Recording laden
-  2. Pruefen ob video_url eine S3-URL ist
-  3a. Storage-URL -> normaler Player
-  3b. S3-URL -> "Video erneuern" Button anzeigen
-  4. Button klickt -> sync-recording mit force_resync
-  5. Nach Erfolg: Seite aktualisieren mit neuer URL
+isExpiredS3Url(url):
+  - url enthaelt "s3.amazonaws.com" -> true
+  - url enthaelt "/storage/v1/object/" -> false (eigener Storage)
+  - Sonst -> false
 ```
 
-## Dateien
+### Betroffene Datei
 
 | Datei | Aenderung |
 |---|---|
-| `supabase/functions/sync-recording/index.ts` | Bei HEAD 403: Fallback auf Streaming-Upload statt Backup ueberspringen |
-| `src/pages/MeetingDetail.tsx` | S3-URL-Erkennung, "Video erneuern"-Button, automatischer Refresh |
+| `src/components/RecordingViewer.tsx` | S3-URL-Erkennung, "Video erneuern"-Button, Refresh-Logik |
+
+Keine Datenbank-Aenderungen noetig. Kein neuer Edge Function Code -- die bestehende `sync-recording` Funktion mit `force_resync` wird wiederverwendet.
+
