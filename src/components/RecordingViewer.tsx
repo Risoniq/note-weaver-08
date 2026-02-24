@@ -7,20 +7,23 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Video, FileText, Download, Loader2, CheckCircle, Clock, AlertCircle, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+// Pruefen ob URL ein aufloesbarar Storage-Pfad ist
+const isResolvableStorageUrl = (url: string): boolean => {
+  return url.startsWith('storage:') || url.includes('/storage/v1/object/authenticated/');
+};
+
 const isExpiredS3Url = (url: string): boolean => {
-  // Permanente Supabase Storage URLs sind nie "abgelaufen"
-  if (url.includes("/storage/v1/object/")) return false;
+  // Storage-Pfade und authenticated-URLs sind permanent - nicht abgelaufen
+  if (isResolvableStorageUrl(url)) return false;
   // Nur S3 URLs pruefen
   if (!url.includes("s3.amazonaws.com") && !(url.includes("s3.") && url.includes(".amazonaws.com"))) return false;
   
-  // Tatsaechliche Ablaufzeit aus X-Amz-Date und X-Amz-Expires berechnen
   try {
     const urlObj = new URL(url);
-    const amzDate = urlObj.searchParams.get("X-Amz-Date"); // z.B. "20260224T160114Z"
+    const amzDate = urlObj.searchParams.get("X-Amz-Date");
     const amzExpires = parseInt(urlObj.searchParams.get("X-Amz-Expires") || "0", 10);
     
     if (amzDate && amzExpires > 0) {
-      // Parse ISO-artiges Datum: "20260224T160114Z"
       const year = parseInt(amzDate.substring(0, 4));
       const month = parseInt(amzDate.substring(4, 6)) - 1;
       const day = parseInt(amzDate.substring(6, 8));
@@ -30,15 +33,34 @@ const isExpiredS3Url = (url: string): boolean => {
       
       const signedAt = Date.UTC(year, month, day, hour, minute, second);
       const expiresAt = signedAt + amzExpires * 1000;
-      
       return Date.now() >= expiresAt;
     }
   } catch {
-    // URL parsing fehlgeschlagen - sicherheitshalber als abgelaufen markieren
+    // URL parsing fehlgeschlagen
   }
-  
-  // Kein Ablauf-Info gefunden -> als abgelaufen behandeln
   return true;
+};
+
+// Storage-Pfade und authenticated-URLs in Signed URLs aufloesen
+const resolveVideoUrl = async (url: string): Promise<string> => {
+  if (url.startsWith('storage:')) {
+    const [, bucket, ...pathParts] = url.split(':');
+    const path = pathParts.join(':');
+    const { data } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(path, 3600);
+    return data?.signedUrl || url;
+  }
+  if (url.includes('/storage/v1/object/authenticated/')) {
+    const match = url.match(/\/storage\/v1\/object\/authenticated\/([^/]+)\/(.+)/);
+    if (match) {
+      const { data } = await supabase.storage
+        .from(match[1])
+        .createSignedUrl(match[2], 3600);
+      return data?.signedUrl || url;
+    }
+  }
+  return url;
 };
 
 interface Recording {
@@ -63,6 +85,7 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [errorPollCount, setErrorPollCount] = useState(0);
   const [isRefreshingVideo, setIsRefreshingVideo] = useState(false);
+  const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string | null>(null);
 
   const ERROR_STATUSES = ["waiting_room_rejected", "waiting_room_timeout", "error"];
   const MAX_ERROR_POLLS = 3; // Weitere Polling-Zyklen nach Fehler-Status
@@ -134,8 +157,16 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
 
     return () => clearInterval(interval);
   }, [recordingId, status, errorPollCount]);
+  // Signed URL fuer Storage-Pfade aufloesen
+  useEffect(() => {
+    if (recording?.video_url && isResolvableStorageUrl(recording.video_url)) {
+      resolveVideoUrl(recording.video_url).then(setResolvedVideoUrl);
+    } else if (recording?.video_url) {
+      setResolvedVideoUrl(recording.video_url);
+    }
+  }, [recording?.video_url]);
 
-  const refreshVideoUrl = async () => {
+
     setIsRefreshingVideo(true);
     try {
       const { data, error } = await supabase.functions.invoke("sync-recording", {
@@ -330,13 +361,17 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
                     Video erneuern
                   </Button>
                 </div>
-              ) : (
+              ) : resolvedVideoUrl ? (
                 <div className="rounded-lg overflow-hidden bg-muted">
                   <video
-                    src={recording.video_url}
+                    src={resolvedVideoUrl}
                     controls
                     className="w-full aspect-video"
                   />
+                </div>
+              ) : (
+                <div className="rounded-lg bg-muted p-6 flex items-center justify-center">
+                  <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
                 </div>
               )
             )}
@@ -356,9 +391,9 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
 
             {/* Download Buttons */}
             <div className="flex gap-3">
-              {recording.video_url && !isExpiredS3Url(recording.video_url) && (
+              {recording.video_url && !isExpiredS3Url(recording.video_url) && resolvedVideoUrl && (
                 <Button asChild variant="outline">
-                  <a href={recording.video_url} download target="_blank">
+                  <a href={resolvedVideoUrl} download target="_blank">
                     <Download className="h-4 w-4 mr-2" />
                     Video herunterladen
                   </a>

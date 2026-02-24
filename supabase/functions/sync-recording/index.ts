@@ -904,8 +904,9 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
                 console.error('Video-Backup Upload Fehler:', videoUploadError)
               } else {
                 console.log('Video-Backup gespeichert:', videoUploadData?.path)
-                updates.video_url = `${supabaseUrl}/storage/v1/object/authenticated/transcript-backups/${videoFileName}`
-                console.log('Video-URL aktualisiert auf permanente Storage-URL')
+                // Storage-Pfad speichern - Frontend generiert Signed URLs on-demand
+                updates.video_url = `storage:transcript-backups:${videoFileName}`
+                console.log('Video-URL als Storage-Pfad gespeichert:', updates.video_url)
               }
             } else {
               console.warn(`Video zu gross fuer In-Memory Upload: ${Math.round(videoSize / 1024 / 1024)}MB > ${Math.round(maxMemorySize / 1024 / 1024)}MB`)
