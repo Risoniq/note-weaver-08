@@ -1441,10 +1441,37 @@ export default function MeetingDetail() {
 
             {/* Video */}
             {recording.video_url && (() => {
-              const isS3Url = recording.video_url!.includes('s3.amazonaws.com') || 
-                              recording.video_url!.includes('s3.') && recording.video_url!.includes('.amazonaws.com');
-              const isStorageUrl = recording.video_url!.includes('/storage/v1/object/');
-              const isExpiredOrTemp = isS3Url && !isStorageUrl;
+              const videoUrl = recording.video_url!;
+              const isStorageUrl = videoUrl.includes('/storage/v1/object/');
+              const isS3Url = videoUrl.includes('s3.amazonaws.com') || 
+                              (videoUrl.includes('s3.') && videoUrl.includes('.amazonaws.com'));
+              
+              // Tatsaechliche Ablaufzeit berechnen statt pauschal "abgelaufen"
+              let isExpiredOrTemp = false;
+              if (isS3Url && !isStorageUrl) {
+                try {
+                  const urlObj = new URL(videoUrl);
+                  const amzDate = urlObj.searchParams.get("X-Amz-Date");
+                  const amzExpires = parseInt(urlObj.searchParams.get("X-Amz-Expires") || "0", 10);
+                  
+                  if (amzDate && amzExpires > 0) {
+                    const year = parseInt(amzDate.substring(0, 4));
+                    const month = parseInt(amzDate.substring(4, 6)) - 1;
+                    const day = parseInt(amzDate.substring(6, 8));
+                    const hour = parseInt(amzDate.substring(9, 11));
+                    const minute = parseInt(amzDate.substring(11, 13));
+                    const second = parseInt(amzDate.substring(13, 15));
+                    
+                    const signedAt = Date.UTC(year, month, day, hour, minute, second);
+                    const expiresAt = signedAt + amzExpires * 1000;
+                    isExpiredOrTemp = Date.now() >= expiresAt;
+                  } else {
+                    isExpiredOrTemp = true; // Keine Ablauf-Info -> sicherheitshalber abgelaufen
+                  }
+                } catch {
+                  isExpiredOrTemp = true;
+                }
+              }
               
               return (
                 <Card className="glass-card border-0 rounded-3xl shadow-card animate-fade-in" style={{ animationDelay: '350ms' }}>
