@@ -137,7 +137,7 @@ export const MeetingChatWidget = ({
         Fragen zu diesem Meeting
       </h3>
 
-      <div className="flex gap-0 h-80 mb-3">
+      <div className="flex gap-3 h-80 mb-3">
         <ChatHistorySidebar
           sessions={sessions}
           activeSessionId={activeSessionId}

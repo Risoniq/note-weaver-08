@@ -124,7 +124,7 @@ export const ProjectChatWidget = ({ projectId, projectName }: ProjectChatWidgetP
         Projekt-Strategie-Chat
       </h4>
 
-      <div className="flex gap-0 h-64">
+      <div className="flex gap-3 h-64">
         <ChatHistorySidebar
           sessions={sessions}
           activeSessionId={activeSessionId}
