@@ -4,7 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Video, FileText, Download, Loader2, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { Video, FileText, Download, Loader2, CheckCircle, Clock, AlertCircle, RefreshCw } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+const isExpiredS3Url = (url: string): boolean => {
+  if (url.includes("/storage/v1/object/")) return false;
+  if (url.includes("s3.amazonaws.com")) return true;
+  return false;
+};
 
 interface Recording {
   id: string;
@@ -22,10 +29,12 @@ interface RecordingViewerProps {
 }
 
 export function RecordingViewer({ recordingId }: RecordingViewerProps) {
+  const { toast } = useToast();
   const [recording, setRecording] = useState<Recording | null>(null);
   const [status, setStatus] = useState<string>("pending");
   const [isLoading, setIsLoading] = useState(true);
   const [errorPollCount, setErrorPollCount] = useState(0);
+  const [isRefreshingVideo, setIsRefreshingVideo] = useState(false);
 
   const ERROR_STATUSES = ["waiting_room_rejected", "waiting_room_timeout", "error"];
   const MAX_ERROR_POLLS = 3; // Weitere Polling-Zyklen nach Fehler-Status
@@ -97,6 +106,30 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
 
     return () => clearInterval(interval);
   }, [recordingId, status, errorPollCount]);
+
+  const refreshVideoUrl = async () => {
+    setIsRefreshingVideo(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-recording", {
+        body: { id: recordingId, force_resync: true },
+      });
+      if (error) throw error;
+
+      const { data: updated } = await supabase
+        .from("recordings")
+        .select("*")
+        .eq("id", recordingId)
+        .maybeSingle();
+
+      if (updated) setRecording(updated as Recording);
+      toast({ title: "Video-Link aktualisiert" });
+    } catch (err) {
+      console.error("Refresh error:", err);
+      toast({ title: "Fehler", description: "Video konnte nicht erneuert werden", variant: "destructive" });
+    } finally {
+      setIsRefreshingVideo(false);
+    }
+  };
 
   const getStatusBadge = () => {
     switch (status) {
@@ -254,13 +287,30 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
           <div className="space-y-4">
             {/* Video Player */}
             {recording.video_url && (
-              <div className="rounded-lg overflow-hidden bg-muted">
-                <video
-                  src={recording.video_url}
-                  controls
-                  className="w-full aspect-video"
-                />
-              </div>
+              isExpiredS3Url(recording.video_url) ? (
+                <div className="rounded-lg bg-muted p-6 text-center space-y-3">
+                  <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto" />
+                  <p className="text-sm text-muted-foreground">
+                    Der Video-Link ist abgelaufen. Klicke auf "Video erneuern", um einen neuen Link zu generieren.
+                  </p>
+                  <Button onClick={refreshVideoUrl} disabled={isRefreshingVideo} variant="outline">
+                    {isRefreshingVideo ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                    )}
+                    Video erneuern
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded-lg overflow-hidden bg-muted">
+                  <video
+                    src={recording.video_url}
+                    controls
+                    className="w-full aspect-video"
+                  />
+                </div>
+              )
             )}
 
             {/* Transcript */}
@@ -278,7 +328,7 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
 
             {/* Download Buttons */}
             <div className="flex gap-3">
-              {recording.video_url && (
+              {recording.video_url && !isExpiredS3Url(recording.video_url) && (
                 <Button asChild variant="outline">
                   <a href={recording.video_url} download target="_blank">
                     <Download className="h-4 w-4 mr-2" />
@@ -286,7 +336,7 @@ export function RecordingViewer({ recordingId }: RecordingViewerProps) {
                   </a>
                 </Button>
               )}
-              {recording.transcript_url && (
+              {recording.transcript_url && !isExpiredS3Url(recording.transcript_url) && (
                 <Button asChild variant="outline">
                   <a href={recording.transcript_url} download target="_blank">
                     <FileText className="h-4 w-4 mr-2" />
