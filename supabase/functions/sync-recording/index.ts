@@ -873,54 +873,26 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
       }
 
       // 7c. Video als Backup in Storage speichern
-      // Edge Functions haben ~150MB RAM
-      // - Videos bis 100 MB: In-Memory Download + Upload (schnell)
-      // - Videos ueber 100 MB: Streaming-Upload ueber Storage REST API (kein RAM-Problem)
+      // Nutze immer In-Memory Download + supabase.storage.upload() (max 150 MB)
+      // Das vermeidet das "Invalid Compact JWS" Problem beim raw fetch mit Bearer Token
       if (updates.video_url && typeof updates.video_url === 'string') {
         try {
-          const headResponse = await fetch(updates.video_url, { method: 'HEAD' })
-          const contentLength = parseInt(headResponse.headers.get('content-length') || '0')
-          const maxMemorySize = 100 * 1024 * 1024 // 100 MB - sicheres Limit fuer In-Memory
+          const maxMemorySize = 150 * 1024 * 1024 // 150 MB - Edge Function RAM Limit
           const userId = recording.user_id || user.id
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
           const videoFileName = `${userId}/${id}_video_${timestamp}.mp4`
           const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
-          const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 
-          if (!headResponse.ok) {
-            // HEAD fehlgeschlagen (z.B. 403 bei S3 pre-signed URLs) -> Fallback auf Streaming-Upload
-            console.warn('Video HEAD-Request fehlgeschlagen:', headResponse.status, '- Fallback auf Streaming-Upload (ohne Groessenkenntnis)')
-            const videoResponse = await fetch(updates.video_url as string)
-            if (videoResponse.ok && videoResponse.body) {
-              const storageUploadUrl = `${supabaseUrl}/storage/v1/object/transcript-backups/${videoFileName}`
-              const streamUploadResponse = await fetch(storageUploadUrl, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${serviceRoleKey}`,
-                  'Content-Type': 'video/mp4',
-                  'x-upsert': 'true',
-                },
-                body: videoResponse.body,
-                // @ts-ignore - duplex is needed for streaming request bodies
-                duplex: 'half',
-              })
-              if (streamUploadResponse.ok) {
-                console.log('Video-Backup (HEAD-Fallback) erfolgreich gespeichert:', videoFileName)
-                updates.video_url = `${supabaseUrl}/storage/v1/object/authenticated/transcript-backups/${videoFileName}`
-                console.log('Video-URL aktualisiert auf Storage-URL (HEAD-Fallback)')
-              } else {
-                const errText = await streamUploadResponse.text()
-                console.error('Video-Streaming-Upload (HEAD-Fallback) fehlgeschlagen:', streamUploadResponse.status, errText)
-              }
-            } else {
-              console.error('Video-Download fuer HEAD-Fallback fehlgeschlagen:', videoResponse.status)
-            }
-          } else if (contentLength > 0 && contentLength <= maxMemorySize) {
-            // --- In-Memory Upload (bis 100 MB) ---
-            console.log(`Video-Groesse: ${Math.round(contentLength / 1024 / 1024)}MB, starte In-Memory Download...`)
-            const videoResponse = await fetch(updates.video_url)
-            if (videoResponse.ok) {
-              const videoBuffer = await videoResponse.arrayBuffer()
+          // Direkt per GET herunterladen (HEAD schlaegt bei S3 pre-signed URLs fehl)
+          console.log('Starte Video-Download fuer permanentes Backup...')
+          const videoResponse = await fetch(updates.video_url as string)
+          
+          if (videoResponse.ok) {
+            const videoBuffer = await videoResponse.arrayBuffer()
+            const videoSize = videoBuffer.byteLength
+            console.log(`Video heruntergeladen: ${Math.round(videoSize / 1024 / 1024)}MB`)
+            
+            if (videoSize <= maxMemorySize) {
               const videoUint8Array = new Uint8Array(videoBuffer)
               const { data: videoUploadData, error: videoUploadError } = await supabase.storage
                 .from('transcript-backups')
@@ -933,40 +905,13 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
               } else {
                 console.log('Video-Backup gespeichert:', videoUploadData?.path)
                 updates.video_url = `${supabaseUrl}/storage/v1/object/authenticated/transcript-backups/${videoFileName}`
-                console.log('Video-URL aktualisiert auf Storage-URL')
+                console.log('Video-URL aktualisiert auf permanente Storage-URL')
               }
             } else {
-              console.error('Video-Download fehlgeschlagen:', videoResponse.status)
+              console.warn(`Video zu gross fuer In-Memory Upload: ${Math.round(videoSize / 1024 / 1024)}MB > ${Math.round(maxMemorySize / 1024 / 1024)}MB`)
             }
           } else {
-            // --- Streaming Upload (ueber 100 MB oder unbekannte Groesse) ---
-            const sizeInfo = contentLength > 0 ? `${Math.round(contentLength / 1024 / 1024)}MB` : 'unbekannt'
-            console.log(`Video-Groesse: ${sizeInfo}, starte Streaming-Upload...`)
-            const videoResponse = await fetch(updates.video_url)
-            if (videoResponse.ok && videoResponse.body) {
-              const storageUploadUrl = `${supabaseUrl}/storage/v1/object/transcript-backups/${videoFileName}`
-              const streamUploadResponse = await fetch(storageUploadUrl, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${serviceRoleKey}`,
-                  'Content-Type': 'video/mp4',
-                  'x-upsert': 'true',
-                },
-                body: videoResponse.body,
-                // @ts-ignore - duplex is needed for streaming request bodies
-                duplex: 'half',
-              })
-              if (streamUploadResponse.ok) {
-                console.log('Video-Streaming-Backup erfolgreich gespeichert:', videoFileName)
-                updates.video_url = `${supabaseUrl}/storage/v1/object/authenticated/transcript-backups/${videoFileName}`
-                console.log('Video-URL aktualisiert auf Storage-URL (Streaming)')
-              } else {
-                const errText = await streamUploadResponse.text()
-                console.error('Video-Streaming-Upload fehlgeschlagen:', streamUploadResponse.status, errText)
-              }
-            } else {
-              console.error('Video-Download fuer Streaming fehlgeschlagen:', videoResponse.status)
-            }
+            console.error('Video-Download fehlgeschlagen:', videoResponse.status)
           }
         } catch (videoBackupError) {
           console.error('Video-Backup fehlgeschlagen (nicht kritisch):', videoBackupError)
