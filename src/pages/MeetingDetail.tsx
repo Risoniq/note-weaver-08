@@ -1440,36 +1440,76 @@ export default function MeetingDetail() {
             </Card>
 
             {/* Video */}
-            {recording.video_url && (
-              <Card className="glass-card border-0 rounded-3xl shadow-card animate-fade-in" style={{ animationDelay: '350ms' }}>
-                <CardHeader className="pb-3 pt-6 px-6">
-                  <CardTitle className="flex items-center gap-3 text-lg">
-                    <div className="p-2 rounded-xl bg-primary/10">
-                      <Video className="h-5 w-5 text-primary" />
-                    </div>
-                    Video
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-6 pb-6">
-                  <div className="aspect-video rounded-2xl overflow-hidden bg-secondary/30 relative group">
-                    <video 
-                      src={recording.video_url} 
-                      controls 
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                  </div>
-                  <div className="mt-4">
-                    <Button variant="outline" asChild>
-                      <a href={recording.video_url} target="_blank" rel="noopener noreferrer">
-                        <Download className="h-4 w-4 mr-2" />
-                        Video herunterladen
-                      </a>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            {recording.video_url && (() => {
+              const isS3Url = recording.video_url!.includes('s3.amazonaws.com') || 
+                              recording.video_url!.includes('s3.') && recording.video_url!.includes('.amazonaws.com');
+              const isStorageUrl = recording.video_url!.includes('/storage/v1/object/');
+              const isExpiredOrTemp = isS3Url && !isStorageUrl;
+              
+              return (
+                <Card className="glass-card border-0 rounded-3xl shadow-card animate-fade-in" style={{ animationDelay: '350ms' }}>
+                  <CardHeader className="pb-3 pt-6 px-6">
+                    <CardTitle className="flex items-center gap-3 text-lg">
+                      <div className="p-2 rounded-xl bg-primary/10">
+                        <Video className="h-5 w-5 text-primary" />
+                      </div>
+                      Video
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-6 pb-6">
+                    {isExpiredOrTemp ? (
+                      <div className="flex flex-col items-center justify-center py-8 text-center space-y-4">
+                        <div className="p-3 rounded-full bg-destructive/10">
+                          <Video className="h-8 w-8 text-destructive" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground">Video-Link abgelaufen</p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Der temporäre Video-Link ist nicht mehr gültig. Klicke auf "Video erneuern", um das Video dauerhaft zu sichern.
+                          </p>
+                        </div>
+                        <Button 
+                          onClick={() => syncRecordingStatus(true)}
+                          disabled={isSyncing}
+                          className="rounded-xl"
+                        >
+                          {isSyncing ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                              Video wird gesichert...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="h-4 w-4 mr-2" />
+                              Video erneuern
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="aspect-video rounded-2xl overflow-hidden bg-secondary/30 relative group">
+                          <video 
+                            src={recording.video_url} 
+                            controls 
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                        </div>
+                        <div className="mt-4">
+                          <Button variant="outline" asChild>
+                            <a href={recording.video_url} target="_blank" rel="noopener noreferrer">
+                              <Download className="h-4 w-4 mr-2" />
+                              Video herunterladen
+                            </a>
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
             {/* Stats */}
             <Card className="glass-card border-0 rounded-3xl shadow-card animate-fade-in" style={{ animationDelay: '400ms' }}>
