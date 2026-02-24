@@ -1,73 +1,113 @@
 
-# Analyse-Fehler beheben: Recording 1ca33b84 (Meeting vom 24.02.)
 
-## Diagnose
+# Umstellung auf eigenen Anthropic API Key
 
-Das Meeting (`1ca33b84-c981-4193-bf6c-25952beda8a5`) hat zwar ein vollstaendiges Transkript (40.347 Zeichen), aber **keine Analyse** (Summary, Key Points, Action Items und Titel fehlen).
+## Uebersicht
 
-**Ursache**: Die KI-API hat beim Sync zweimal mit **HTTP 402 (Payment Required)** geantwortet - die AI-Credits waren zu dem Zeitpunkt aufgebraucht. Die Fehlermeldung war: "Service unavailable. Please contact support."
+7 Edge Functions nutzen aktuell den Lovable AI Gateway (`ai.gateway.lovable.dev`) mit dem `LOVABLE_API_KEY`. Diese werden auf die Anthropic Messages API (`api.anthropic.com`) umgestellt, sodass du volle Kontrolle ueber Kosten und Rate Limits hast.
 
-Dies ist **kein permanenter Code-Bug**, sondern ein temporaerer Credit-Engpass. Allerdings gibt es eine **systemische Luecke**: Wenn die Analyse beim initialen Sync fehlschlaegt, gibt es keinen automatischen Retry-Mechanismus.
+## Schritt 1: API Key sicher speichern
 
-## Loesung (2 Teile)
+Du wirst aufgefordert, deinen Anthropic API Key einzugeben. Dieser wird als `ANTHROPIC_API_KEY` sicher in deinem Backend gespeichert und ist nur fuer die Edge Functions zugaenglich.
 
-### Teil 1: Sofortiger Retry fuer dieses Meeting
+Den API Key findest du unter: https://console.anthropic.com/settings/keys
 
-Die Analyse fuer Recording `1ca33b84-c981-4193-bf6c-25952beda8a5` erneut ausloesen. Da der "Transkript neu laden"-Button in der UI bereits existiert, kann dies auch manuell erfolgen - aber ich werde einen automatischen Retry einbauen.
+## Schritt 2: Alle 7 Edge Functions umstellen
 
-### Teil 2: Retry-Logik in sync-recording einbauen (permanenter Fix)
+Jede Funktion wird von der OpenAI-kompatiblen Gateway-API auf die Anthropic Messages API umgestellt.
 
-**Datei: `supabase/functions/sync-recording/index.ts`** (Zeilen 942-960)
+**Betroffene Funktionen:**
 
-Wenn die Analyse mit einem temporaeren Fehler (402, 429, 500+) fehlschlaegt:
-- 1. Versuch sofort
-- Bei Fehler: 10 Sekunden warten, dann 2. Versuch
-- Bei erneutem Fehler: Log-Warnung, aber kein Abbruch des gesamten Sync-Prozesses
-
-```text
-Aktueller Ablauf:
-  sync-recording -> analyze-transcript -> 402 Fehler -> Fertig (keine Analyse)
-
-Neuer Ablauf:
-  sync-recording -> analyze-transcript -> 402 Fehler
-                 -> 10s warten
-                 -> analyze-transcript (Retry) -> Erfolg oder Log-Warnung
-```
-
-### Aenderungen im Detail
-
-| Datei | Aenderung |
+| Funktion | Zweck |
 |---|---|
-| `supabase/functions/sync-recording/index.ts` | Retry-Logik mit 1 Wiederholungsversuch und 10s Wartezeit bei temporaeren Fehlern (402, 429, 5xx) |
+| `analyze-transcript` | Automatische Meeting-Analyse (Summary, Key Points, Action Items) |
+| `analyze-notetaker` | Notetaker-Analyse |
+| `analyze-project` | Projekt-uebergreifende Analyse |
+| `meeting-chat` | Chat ueber alle Meetings |
+| `single-meeting-chat` | Chat ueber ein einzelnes Meeting |
+| `edit-email-ai` | KI-gestuetzte E-Mail-Bearbeitung |
+| `project-chat` | Projekt-Chat-Assistent |
 
-### Technische Details
+### Technische Aenderungen pro Funktion
 
-In `sync-recording/index.ts` wird der Analyse-Aufruf (Zeilen 944-960) erweitert:
-
+**API-Endpunkt:**
 ```text
-// Vorher: Einmaliger Versuch
-const analyzeResponse = await fetch(...)
-if (!analyzeResponse.ok) {
-  console.error('Analyse-Start fehlgeschlagen:', ...)
+Vorher:  https://ai.gateway.lovable.dev/v1/chat/completions
+Nachher: https://api.anthropic.com/v1/messages
+```
+
+**Headers:**
+```text
+Vorher:  Authorization: Bearer ${LOVABLE_API_KEY}
+Nachher: x-api-key: ${ANTHROPIC_API_KEY}
+         anthropic-version: 2023-06-01
+```
+
+**Request-Format:**
+```text
+Vorher (OpenAI-kompatibel):
+{
+  model: "google/gemini-3-flash-preview",
+  messages: [
+    { role: "system", content: "..." },
+    { role: "user", content: "..." }
+  ]
 }
 
-// Nachher: Retry bei temporaeren Fehlern
-const maxRetries = 2;
-for (let attempt = 1; attempt <= maxRetries; attempt++) {
-  const analyzeResponse = await fetch(...)
-  if (analyzeResponse.ok) {
-    console.log('Analyse erfolgreich gestartet')
-    break;
-  }
-  const errorText = await analyzeResponse.text();
-  const isRetryable = [402, 429, 500, 502, 503].includes(analyzeResponse.status);
-  if (isRetryable && attempt < maxRetries) {
-    console.warn(`Analyse Versuch ${attempt} fehlgeschlagen (${analyzeResponse.status}), Retry in 10s...`)
-    await new Promise(r => setTimeout(r, 10000));
-  } else {
-    console.error(`Analyse endgueltig fehlgeschlagen nach ${attempt} Versuchen:`, errorText)
-  }
+Nachher (Anthropic Messages API):
+{
+  model: "claude-sonnet-4-20250514",
+  max_tokens: 4096,
+  system: "...",
+  messages: [
+    { role: "user", content: "..." }
+  ]
 }
 ```
 
-Nach dem Deploy wird ausserdem ein manueller Resync fuer das betroffene Recording ausgeloest, um die Analyse nachzuholen.
+**Response-Format:**
+```text
+Vorher:  data.choices[0].message.content
+Nachher: data.content[0].text
+```
+
+**Streaming (fuer Chat-Funktionen):**
+```text
+Vorher:  stream: true (OpenAI SSE-Format)
+Nachher: stream: true (Anthropic SSE-Format mit event: content_block_delta)
+```
+
+### Modell-Zuordnung
+
+| Bisheriges Modell | Neues Modell | Einsatz |
+|---|---|---|
+| google/gemini-3-flash-preview | claude-sonnet-4-20250514 | Chat, E-Mail, Notetaker, Projekt-Analyse |
+| google/gemini-2.5-flash | claude-sonnet-4-20250514 | Transkript-Analyse |
+
+Claude Sonnet 4 bietet ein gutes Verhaeltnis von Qualitaet, Geschwindigkeit und Kosten. Falls gewuenscht, kann auch Claude Haiku (guenstiger/schneller) oder Claude Opus (leistungsstaerker) gewaehlt werden.
+
+## Schritt 3: Streaming-Format anpassen
+
+Die 3 Chat-Funktionen (`meeting-chat`, `single-meeting-chat`, `project-chat`) nutzen Streaming. Das Anthropic SSE-Format unterscheidet sich vom OpenAI-Format:
+
+```text
+Anthropic SSE Events:
+  event: message_start
+  event: content_block_start
+  event: content_block_delta    <- hier kommt der Text
+  event: content_block_stop
+  event: message_stop
+
+Die Edge Functions werden den Anthropic-Stream in das OpenAI-kompatible Format
+umwandeln, sodass das Frontend NICHT geaendert werden muss.
+```
+
+## Zusammenfassung
+
+| Was | Aenderung |
+|---|---|
+| Neues Secret | `ANTHROPIC_API_KEY` hinzufuegen |
+| 7 Edge Functions | API-Endpunkt, Headers, Request/Response-Format anpassen |
+| Frontend | Keine Aenderungen noetig (Stream-Format wird im Backend konvertiert) |
+| Bisheriger LOVABLE_API_KEY | Bleibt bestehen, wird aber von diesen Funktionen nicht mehr genutzt |
+
