@@ -1,54 +1,99 @@
 
-# Video wiederherstellen und permanenten Backup-Prozess reparieren
+# Video dauerhaft in Storage sichern
 
 ## Problem
-Das Video fuer Recording `f9b14594-595e-4587-aa75-4d59db4deb4c` ist nicht dauerhaft abrufbar, weil:
 
-1. **Video-Backup scheitert**: Der Streaming-Upload zum Storage gibt `403 "Invalid Compact JWS"` zurueck. Das liegt daran, dass S3-URLs keine HEAD-Requests unterstuetzen (403), der Fallback-Upload aber ebenfalls scheitert.
-2. **UI zeigt alle S3-URLs als abgelaufen**: Die Logik in `MeetingDetail.tsx` prueft nicht, ob die URL tatsaechlich abgelaufen ist, sondern markiert pauschal alle S3-URLs als "Video-Link abgelaufen".
+Das Video fuer Recording `f9b14594-595e-4587-aa75-4d59db4deb4c` ist nur ueber einen temporaeren S3-Link von Recall.ai verfuegbar, der nach 6 Stunden ablaeuft. Der Video-Backup-Prozess in der `sync-recording` Edge Function hat zwar den richtigen Code (In-Memory Download + `supabase.storage.upload()`), aber es gibt ein kritisches Problem:
+
+Die gespeicherte permanente URL nutzt den `authenticated`-Pfad:
+```
+/storage/v1/object/authenticated/transcript-backups/...
+```
+
+Ein `<video src="...">` HTML-Tag kann **keine Authorization-Header** mitsenden. Das bedeutet: Selbst wenn das Video korrekt im Storage liegt, kann der Browser es nicht abspielen.
 
 ## Loesung
 
-### Teil 1: Video-Backup in `sync-recording` Edge Function reparieren
+### 1. Permanente Video-URL als Signed URL speichern
 
-**Datei: `supabase/functions/sync-recording/index.ts`**
+**Datei: `supabase/functions/sync-recording/index.ts`** (Zeilen 878-919)
 
-Das Problem beim Streaming-Upload: Der Service Role Key wird als Bearer Token verwendet, aber fuer den Storage REST API Upload wird ein anderer Auth-Header benoetigt. Die Loesung:
+Nach dem erfolgreichen Upload wird statt der `authenticated`-URL eine **Signed URL** mit langer Laufzeit (z.B. 1 Jahr) generiert und in der Datenbank gespeichert. Alternativ kann der Storage-Pfad (ohne URL-Praefix) gespeichert werden und das Frontend generiert on-demand Signed URLs.
 
-- Statt Streaming-Upload mit `fetch()` den In-Memory-Ansatz nutzen (der ueber `supabase.storage.upload()` geht und korrekt authentifiziert)
-- Den HEAD-Fallback-Pfad so aendern, dass er das Video per GET herunterlaed und dann per `supabase.storage.upload()` hochlaed (statt per raw fetch mit Bearer Token)
-- Maximalgroesse fuer In-Memory auf 150 MB erhoehen (Edge Functions unterstuetzen das)
+Gewaehlter Ansatz: **Storage-Pfad speichern** (z.B. `704551d2.../f9b14594_video_2026-02-24.mp4`), damit das Frontend flexibel Signed URLs erzeugen kann.
 
-### Teil 2: S3-URL-Ablauf korrekt pruefen in `MeetingDetail.tsx`
+### 2. Frontend: Signed URL on-demand generieren
 
 **Datei: `src/pages/MeetingDetail.tsx`**
 
-Statt alle S3-URLs pauschal als abgelaufen zu markieren, wird der `X-Amz-Date` und `X-Amz-Expires` Parameter aus der URL ausgelesen und mathematisch geprueft, ob die URL tatsaechlich abgelaufen ist.
-
-Logik:
-```text
-X-Amz-Date = "20260224T160114Z" -> Signierungszeitpunkt
-X-Amz-Expires = "21600" -> 6 Stunden Gueltigkeit
-Ablauf = Signierungszeitpunkt + Gueltigkeit
-Wenn jetzt < Ablauf -> URL ist gueltig, Video-Player anzeigen
-Wenn jetzt >= Ablauf -> "Video erneuern" Button anzeigen
-```
-
-### Teil 3: Gleiche Logik in `RecordingViewer.tsx`
+Wenn die `video_url` ein Supabase Storage-Pfad ist (kein `http`-Praefix), wird per `supabase.storage.from('transcript-backups').createSignedUrl(path, 3600)` eine gueltige URL fuer den Video-Player erzeugt.
 
 **Datei: `src/components/RecordingViewer.tsx`**
 
-Die `isExpiredS3Url`-Funktion wird ebenfalls auf die tatsaechliche Ablaufpruefung umgestellt.
+Gleiche Logik fuer die RecordingViewer-Komponente.
+
+### 3. Sofortige Wiederherstellung dieses Videos
+
+Nach dem Deploy der Edge Function wird ein `force_resync` fuer das betroffene Recording ausgeloest, damit das Video heruntergeladen und permanent gesichert wird.
+
+## Technische Details
+
+### sync-recording/index.ts - Aenderung (Zeile ~907)
+
+Vorher:
+```typescript
+updates.video_url = `${supabaseUrl}/storage/v1/object/authenticated/transcript-backups/${videoFileName}`
+```
+
+Nachher:
+```typescript
+// Nur den Storage-Pfad speichern - Frontend generiert Signed URLs
+updates.video_url = `storage:transcript-backups:${videoFileName}`
+```
+
+Das `storage:`-Praefix signalisiert dem Frontend, dass es eine Signed URL erzeugen muss.
+
+### MeetingDetail.tsx und RecordingViewer.tsx - Neue Logik
+
+```typescript
+// Erkennung und Aufloesung von Storage-Pfaden
+const resolveVideoUrl = async (url: string): Promise<string> => {
+  if (url.startsWith('storage:')) {
+    const [, bucket, ...pathParts] = url.split(':');
+    const path = pathParts.join(':');
+    const { data } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(path, 3600); // 1 Stunde
+    return data?.signedUrl || url;
+  }
+  // Auch bestehende authenticated-URLs aufloesen
+  if (url.includes('/storage/v1/object/authenticated/')) {
+    const match = url.match(/\/storage\/v1\/object\/authenticated\/([^/]+)\/(.+)/);
+    if (match) {
+      const { data } = await supabase.storage
+        .from(match[1])
+        .createSignedUrl(match[2], 3600);
+      return data?.signedUrl || url;
+    }
+  }
+  return url;
+};
+```
+
+### isExpiredS3Url - Anpassung
+
+Storage-Pfade (`storage:...`) und authentifizierte URLs werden nicht als "abgelaufen" markiert, sondern als "aufloesbar" behandelt.
 
 ## Zusammenfassung der Aenderungen
 
 | Datei | Aenderung |
 |---|---|
-| `supabase/functions/sync-recording/index.ts` | HEAD-Fallback reparieren: Video per GET laden, dann per `supabase.storage.upload()` speichern statt raw fetch |
-| `src/pages/MeetingDetail.tsx` | S3-URL Ablaufzeit korrekt berechnen statt pauschal "abgelaufen" |
-| `src/components/RecordingViewer.tsx` | Gleiche Ablaufpruefung einbauen |
+| `supabase/functions/sync-recording/index.ts` | Video-URL als Storage-Pfad speichern statt authenticated URL |
+| `src/pages/MeetingDetail.tsx` | Signed URL on-demand generieren fuer Storage-Pfade |
+| `src/components/RecordingViewer.tsx` | Gleiche Signed-URL-Logik |
 
 Nach diesen Aenderungen:
-- Das Video wird beim naechsten "Video erneuern" permanent gesichert
-- Frische S3-URLs werden direkt als Video-Player angezeigt (statt "abgelaufen")
-- Nur tatsaechlich abgelaufene URLs zeigen den Erneuerungs-Button
+- Videos werden permanent im Storage gesichert
+- Der Browser kann Videos ueber kurzlebige Signed URLs abspielen
+- Bestehende S3-URLs funktionieren weiterhin solange sie gueltig sind
+- "Video erneuern" laedt das Video herunter und sichert es permanent
