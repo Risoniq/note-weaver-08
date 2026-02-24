@@ -888,7 +888,33 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
           const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 
           if (!headResponse.ok) {
-            console.warn('Video HEAD-Request fehlgeschlagen:', headResponse.status, '- ueberspringe Backup')
+            // HEAD fehlgeschlagen (z.B. 403 bei S3 pre-signed URLs) -> Fallback auf Streaming-Upload
+            console.warn('Video HEAD-Request fehlgeschlagen:', headResponse.status, '- Fallback auf Streaming-Upload (ohne Groessenkenntnis)')
+            const videoResponse = await fetch(updates.video_url as string)
+            if (videoResponse.ok && videoResponse.body) {
+              const storageUploadUrl = `${supabaseUrl}/storage/v1/object/transcript-backups/${videoFileName}`
+              const streamUploadResponse = await fetch(storageUploadUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${serviceRoleKey}`,
+                  'Content-Type': 'video/mp4',
+                  'x-upsert': 'true',
+                },
+                body: videoResponse.body,
+                // @ts-ignore - duplex is needed for streaming request bodies
+                duplex: 'half',
+              })
+              if (streamUploadResponse.ok) {
+                console.log('Video-Backup (HEAD-Fallback) erfolgreich gespeichert:', videoFileName)
+                updates.video_url = `${supabaseUrl}/storage/v1/object/authenticated/transcript-backups/${videoFileName}`
+                console.log('Video-URL aktualisiert auf Storage-URL (HEAD-Fallback)')
+              } else {
+                const errText = await streamUploadResponse.text()
+                console.error('Video-Streaming-Upload (HEAD-Fallback) fehlgeschlagen:', streamUploadResponse.status, errText)
+              }
+            } else {
+              console.error('Video-Download fuer HEAD-Fallback fehlgeschlagen:', videoResponse.status)
+            }
           } else if (contentLength > 0 && contentLength <= maxMemorySize) {
             // --- In-Memory Upload (bis 100 MB) ---
             console.log(`Video-Groesse: ${Math.round(contentLength / 1024 / 1024)}MB, starte In-Memory Download...`)
