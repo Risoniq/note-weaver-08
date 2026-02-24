@@ -12,7 +12,6 @@ function getCorsHeaders(req: Request) {
     'http://localhost:3000',
   ].filter(Boolean);
   
-  // Check if origin matches allowed origins or is a Lovable preview domain
   const isLovablePreview = origin.endsWith('.lovableproject.com') || origin.endsWith('.lovable.app');
   const allowOrigin = allowedOrigins.includes(origin) || isLovablePreview 
     ? origin 
@@ -34,7 +33,6 @@ async function authenticateUser(req: Request): Promise<{ user: { id: string } | 
 
   const token = authHeader.replace('Bearer ', '');
   
-  // Check if this is a service role call (internal)
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (token === serviceRoleKey) {
     return { user: { id: 'service-role' }, isServiceRole: true };
@@ -57,13 +55,11 @@ async function authenticateUser(req: Request): Promise<{ user: { id: string } | 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // 1. Authenticate user
     const { user, error: authError, isServiceRole } = await authenticateUser(req);
     if (!user) {
       return new Response(
@@ -77,7 +73,6 @@ Deno.serve(async (req) => {
     const { recording_id } = await req.json();
     
     if (!recording_id) {
-      console.error('Missing recording_id');
       return new Response(
         JSON.stringify({ error: 'recording_id is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -86,12 +81,10 @@ Deno.serve(async (req) => {
 
     console.log(`Analyzing transcript for recording: ${recording_id}`);
 
-    // Initialize Supabase client with service role
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch the recording
     const { data: recording, error: fetchError } = await supabase
       .from('recordings')
       .select('transcript_text, title, user_id')
@@ -99,16 +92,13 @@ Deno.serve(async (req) => {
       .single();
 
     if (fetchError || !recording) {
-      console.error('Recording not found:', fetchError);
       return new Response(
         JSON.stringify({ error: 'Recording not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // 2. Verify ownership (skip for service role calls, admins can access all)
     if (!isServiceRole && recording.user_id && recording.user_id !== user.id) {
-      // Check if user is admin
       const { data: adminCheck } = await supabase
         .from('user_roles')
         .select('role')
@@ -117,17 +107,14 @@ Deno.serve(async (req) => {
         .maybeSingle();
       
       if (!adminCheck) {
-        console.error(`[Auth] User ${user.id} tried to analyze recording owned by ${recording.user_id}`);
         return new Response(
           JSON.stringify({ error: 'Access denied' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      console.log(`[Auth] Admin ${user.id} analyzing recording owned by ${recording.user_id}`);
     }
 
     if (!recording.transcript_text) {
-      console.log('No transcript available for analysis');
       return new Response(
         JSON.stringify({ error: 'No transcript available' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -137,40 +124,27 @@ Deno.serve(async (req) => {
     const transcript = recording.transcript_text;
     console.log(`Transcript length: ${transcript.length} characters`);
 
-    // Check if title is generic and should be overwritten by AI
     const isGenericTitle = (title: string | null): boolean => {
       if (!title || title.trim() === '') return true;
       const t = title.trim().toLowerCase();
-      const genericTerms = [
-        'meeting', 'besprechung', 'untitled', 'aufnahme', 'recording',
-        'call', 'anruf', 'konferenz', 'conference', 'session',
-        'notetaker', 'note taker', 'bot',
-      ];
-      // Exact match with generic term
+      const genericTerms = ['meeting', 'besprechung', 'untitled', 'aufnahme', 'recording', 'call', 'anruf', 'konferenz', 'conference', 'session', 'notetaker', 'note taker', 'bot'];
       if (genericTerms.some(term => t === term)) return true;
-      // Starts with generic term + only whitespace/numbers/punctuation after
       if (genericTerms.some(term => t.startsWith(term) && /^[\s\d\-_.:]+$/.test(t.slice(term.length)))) return true;
-      // UUID fragment (8+ hex chars)
       if (/^[0-9a-f]{8,}/i.test(t)) return true;
-      // Very short (≤3 chars)
       if (t.length <= 3) return true;
       return false;
     };
 
     const needsTitle = isGenericTitle(recording.title);
-    console.log(`Needs title: ${needsTitle} (current: "${recording.title || 'none'}")`);
 
-    // Call Lovable AI for analysis
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      console.error('LOVABLE_API_KEY not configured');
+    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+    if (!ANTHROPIC_API_KEY) {
       return new Response(
         JSON.stringify({ error: 'AI service not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Build dynamic system prompt based on whether title is needed
     const titleInstruction = !needsTitle 
       ? '' 
       : '1. Einen spezifischen, aussagekräftigen Titel für das Meeting (max 80 Zeichen)\n';
@@ -230,33 +204,34 @@ WICHTIGE REGELN FÜR DEN TITEL:
 WEITERE REGELN:
 - Schreibe IMMER professionell und freundlich
 - Verwende KEINE Markdown-Formatierung (keine Sterne *, keine Unterstriche _)
-- Übernimme NIEMALS Schimpfwörter, Beleidigungen oder unangemessene Sprache - formuliere diese neutral um
-- Übernimme NIEMALS Passwörter, Zugangsdaten oder sensible Informationen - ersetze diese durch "[ENTFERNT]"
+- Übernimm NIEMALS Schimpfwörter, Beleidigungen oder unangemessene Sprache - formuliere diese neutral um
+- Übernimm NIEMALS Passwörter, Zugangsdaten oder sensible Informationen - ersetze diese durch "[ENTFERNT]"
 - Halte den Ton sachlich und respektvoll
 
 Antworte NUR im folgenden JSON-Format, ohne zusätzlichen Text:
 ${jsonFormat}`;
 
-    console.log('Calling Lovable AI for analysis...');
+    console.log('Calling Anthropic API for analysis...');
     
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        system: systemPrompt,
         messages: [
-          { role: 'system', content: systemPrompt },
           { role: 'user', content: `Analysiere dieses Meeting-Transkript:\n\n${transcript}` }
         ],
       }),
     });
 
     if (!aiResponse.ok) {
-      console.error('[Internal] AI API error:', aiResponse.status);
+      console.error('[Internal] Anthropic API error:', aiResponse.status);
       
       if (aiResponse.status === 429) {
         return new Response(
@@ -278,10 +253,10 @@ ${jsonFormat}`;
     }
 
     const aiData = await aiResponse.json();
-    const content = aiData.choices?.[0]?.message?.content;
+    const content = aiData.content?.[0]?.text;
     
     if (!content) {
-      console.error('No content in AI response');
+      console.error('No content in Anthropic response');
       return new Response(
         JSON.stringify({ error: 'Empty AI response' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -293,13 +268,9 @@ ${jsonFormat}`;
     // Robust JSON extraction
     let analysis;
     try {
-      // Try multiple extraction strategies
       let jsonStr = content;
-      
-      // Strategy 1: Remove markdown code blocks
       jsonStr = jsonStr.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
       
-      // Strategy 2: Find JSON object boundaries if still not valid
       if (!jsonStr.startsWith('{')) {
         const startIdx = jsonStr.indexOf('{');
         const endIdx = jsonStr.lastIndexOf('}');
@@ -308,27 +279,22 @@ ${jsonFormat}`;
         }
       }
       
-      // Strategy 3: Clean common issues
       jsonStr = jsonStr
-        .replace(/,\s*}/g, '}')  // trailing commas before }
-        .replace(/,\s*]/g, ']')  // trailing commas before ]
-        .replace(/[\x00-\x1F\x7F]/g, ' '); // control characters
+        .replace(/,\s*}/g, '}')
+        .replace(/,\s*]/g, ']')
+        .replace(/[\x00-\x1F\x7F]/g, ' ');
       
       analysis = JSON.parse(jsonStr);
-      console.log('JSON parsed successfully');
     } catch (parseError) {
       console.error('Failed to parse AI response as JSON:', parseError);
-      console.error('Raw content preview:', content.substring(0, 500));
       return new Response(
         JSON.stringify({ error: 'Failed to parse AI response' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Calculate word count
     const wordCount = transcript.split(/\s+/).filter((word: string) => word.length > 0).length;
 
-    // Build update data - only include title if none exists
     const updateData: Record<string, unknown> = {
       summary: analysis.summary,
       key_points: analysis.key_points || [],
@@ -336,13 +302,11 @@ ${jsonFormat}`;
       word_count: wordCount,
     };
 
-    // Set title if current title is generic/missing and AI generated one
     if (needsTitle && analysis.title) {
       updateData.title = analysis.title;
-      console.log(`Setting generated title: ${analysis.title} (replaced generic: "${recording.title || ''}")`);
+      console.log(`Setting generated title: ${analysis.title}`);
     }
 
-    // Update the recording with analysis results
     const { error: updateError } = await supabase
       .from('recordings')
       .update(updateData)
