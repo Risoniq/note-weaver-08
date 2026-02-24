@@ -1,31 +1,54 @@
 
-# Session-Timeout nur bei Tab-Wechsel
+# Video wiederherstellen und permanenten Backup-Prozess reparieren
 
-## Aktuelles Verhalten
-Der Timer laeuft bei Inaktivitaet innerhalb des Tabs ab (15 Min ohne Maus/Tastatur). Das fuehrt zu ungewollten Logouts waehrend der Nutzer die App aktiv im Vordergrund hat.
+## Problem
+Das Video fuer Recording `f9b14594-595e-4587-aa75-4d59db4deb4c` ist nicht dauerhaft abrufbar, weil:
 
-## Neues Verhalten
-- Der Timeout-Timer startet **nur**, wenn der Browser-Tab in den Hintergrund wechselt (z.B. anderer Tab, anderes Fenster)
-- Sobald der Nutzer zum Tab zurueckkehrt, wird der Timer zurueckgesetzt
-- Wenn der Tab 15 Minuten im Hintergrund bleibt, erscheint beim Zurueckkehren die Warnung bzw. der Logout erfolgt automatisch
+1. **Video-Backup scheitert**: Der Streaming-Upload zum Storage gibt `403 "Invalid Compact JWS"` zurueck. Das liegt daran, dass S3-URLs keine HEAD-Requests unterstuetzen (403), der Fallback-Upload aber ebenfalls scheitert.
+2. **UI zeigt alle S3-URLs als abgelaufen**: Die Logik in `MeetingDetail.tsx` prueft nicht, ob die URL tatsaechlich abgelaufen ist, sondern markiert pauschal alle S3-URLs als "Video-Link abgelaufen".
 
-## Technische Umsetzung
+## Loesung
 
-### Datei: `src/hooks/useSessionTimeout.ts`
+### Teil 1: Video-Backup in `sync-recording` Edge Function reparieren
 
-- Alle Event-Listener fuer `mousemove`, `keydown`, `click`, `scroll`, `touchstart` entfernen
-- Stattdessen die **Page Visibility API** nutzen (`document.visibilitychange`)
-- Wenn `document.hidden === true`: Timer starten (15 Min bis Logout, 13 Min bis Warnung)
-- Wenn `document.hidden === false` (Tab wieder aktiv): Timer zuruecksetzen, Warnung ausblenden
-- Der `paused`-Parameter fuer Aufnahmen bleibt erhalten
+**Datei: `supabase/functions/sync-recording/index.ts`**
 
-### Ablauf
+Das Problem beim Streaming-Upload: Der Service Role Key wird als Bearer Token verwendet, aber fuer den Storage REST API Upload wird ein anderer Auth-Header benoetigt. Die Loesung:
 
+- Statt Streaming-Upload mit `fetch()` den In-Memory-Ansatz nutzen (der ueber `supabase.storage.upload()` geht und korrekt authentifiziert)
+- Den HEAD-Fallback-Pfad so aendern, dass er das Video per GET herunterlaed und dann per `supabase.storage.upload()` hochlaed (statt per raw fetch mit Bearer Token)
+- Maximalgroesse fuer In-Memory auf 150 MB erhoehen (Edge Functions unterstuetzen das)
+
+### Teil 2: S3-URL-Ablauf korrekt pruefen in `MeetingDetail.tsx`
+
+**Datei: `src/pages/MeetingDetail.tsx`**
+
+Statt alle S3-URLs pauschal als abgelaufen zu markieren, wird der `X-Amz-Date` und `X-Amz-Expires` Parameter aus der URL ausgelesen und mathematisch geprueft, ob die URL tatsaechlich abgelaufen ist.
+
+Logik:
 ```text
-Tab sichtbar  -->  Kein Timer aktiv, Session laeuft normal
-Tab verborgen -->  Timer startet (13 Min Warnung, 15 Min Logout)
-Tab wieder sichtbar (vor 15 Min)  -->  Timer wird zurueckgesetzt
-Tab wieder sichtbar (nach 15 Min) -->  Logout wird ausgefuehrt
+X-Amz-Date = "20260224T160114Z" -> Signierungszeitpunkt
+X-Amz-Expires = "21600" -> 6 Stunden Gueltigkeit
+Ablauf = Signierungszeitpunkt + Gueltigkeit
+Wenn jetzt < Ablauf -> URL ist gueltig, Video-Player anzeigen
+Wenn jetzt >= Ablauf -> "Video erneuern" Button anzeigen
 ```
 
-Keine weiteren Dateien betroffen.
+### Teil 3: Gleiche Logik in `RecordingViewer.tsx`
+
+**Datei: `src/components/RecordingViewer.tsx`**
+
+Die `isExpiredS3Url`-Funktion wird ebenfalls auf die tatsaechliche Ablaufpruefung umgestellt.
+
+## Zusammenfassung der Aenderungen
+
+| Datei | Aenderung |
+|---|---|
+| `supabase/functions/sync-recording/index.ts` | HEAD-Fallback reparieren: Video per GET laden, dann per `supabase.storage.upload()` speichern statt raw fetch |
+| `src/pages/MeetingDetail.tsx` | S3-URL Ablaufzeit korrekt berechnen statt pauschal "abgelaufen" |
+| `src/components/RecordingViewer.tsx` | Gleiche Ablaufpruefung einbauen |
+
+Nach diesen Aenderungen:
+- Das Video wird beim naechsten "Video erneuern" permanent gesichert
+- Frische S3-URLs werden direkt als Video-Player angezeigt (statt "abgelaufen")
+- Nur tatsaechlich abgelaufene URLs zeigen den Erneuerungs-Button
