@@ -66,6 +66,73 @@ import {
 
 type TimeFilter = 'heute' | '7tage' | '30tage' | '90tage' | 'alle';
 
+// Komponente zum Auflösen von Storage-Pfaden zu Signed URLs
+function VideoPlayer({ videoUrl }: { videoUrl: string }) {
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
+  const [isResolving, setIsResolving] = useState(false);
+
+  useEffect(() => {
+    const resolve = async () => {
+      // Storage-Pfad: storage:bucket:path
+      if (videoUrl.startsWith('storage:')) {
+        setIsResolving(true);
+        const [, bucket, ...pathParts] = videoUrl.split(':');
+        const path = pathParts.join(':');
+        const { data } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(path, 3600);
+        setResolvedUrl(data?.signedUrl || null);
+        setIsResolving(false);
+        return;
+      }
+      // Authenticated URL
+      if (videoUrl.includes('/storage/v1/object/authenticated/')) {
+        setIsResolving(true);
+        const match = videoUrl.match(/\/storage\/v1\/object\/authenticated\/([^/]+)\/(.+)/);
+        if (match) {
+          const { data } = await supabase.storage
+            .from(match[1])
+            .createSignedUrl(match[2], 3600);
+          setResolvedUrl(data?.signedUrl || null);
+        }
+        setIsResolving(false);
+        return;
+      }
+      // Direkte URL (S3 etc.)
+      setResolvedUrl(videoUrl);
+    };
+    resolve();
+  }, [videoUrl]);
+
+  if (isResolving || !resolvedUrl) {
+    return (
+      <div className="aspect-video rounded-2xl overflow-hidden bg-secondary/30 flex items-center justify-center">
+        <RefreshCw className="h-8 w-8 text-muted-foreground animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="aspect-video rounded-2xl overflow-hidden bg-secondary/30 relative group">
+        <video 
+          src={resolvedUrl} 
+          controls 
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+      </div>
+      <div className="mt-4">
+        <Button variant="outline" asChild>
+          <a href={resolvedUrl} target="_blank" rel="noopener noreferrer">
+            <Download className="h-4 w-4 mr-2" />
+            Video herunterladen
+          </a>
+        </Button>
+      </div>
+    </>
+  );
+}
 export default function MeetingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -1442,13 +1509,21 @@ export default function MeetingDetail() {
             {/* Video */}
             {recording.video_url && (() => {
               const videoUrl = recording.video_url!;
-              const isStorageUrl = videoUrl.includes('/storage/v1/object/');
+              
+              // Pruefen ob es ein Storage-Pfad ist (storage:bucket:path)
+              const isStoragePath = videoUrl.startsWith('storage:');
+              // Pruefen ob es eine authenticated-URL ist
+              const isAuthenticatedUrl = videoUrl.includes('/storage/v1/object/authenticated/');
+              // Pruefen ob es eine S3-URL ist
               const isS3Url = videoUrl.includes('s3.amazonaws.com') || 
                               (videoUrl.includes('s3.') && videoUrl.includes('.amazonaws.com'));
               
-              // Tatsaechliche Ablaufzeit berechnen statt pauschal "abgelaufen"
-              let isExpiredOrTemp = false;
-              if (isS3Url && !isStorageUrl) {
+              // Storage-Pfade und authenticated-URLs sind permanent verfuegbar -> Signed URL noetig
+              const needsSignedUrl = isStoragePath || isAuthenticatedUrl;
+              
+              // S3-URLs: Tatsaechliche Ablaufzeit berechnen
+              let isExpiredS3 = false;
+              if (isS3Url && !needsSignedUrl) {
                 try {
                   const urlObj = new URL(videoUrl);
                   const amzDate = urlObj.searchParams.get("X-Amz-Date");
@@ -1464,12 +1539,12 @@ export default function MeetingDetail() {
                     
                     const signedAt = Date.UTC(year, month, day, hour, minute, second);
                     const expiresAt = signedAt + amzExpires * 1000;
-                    isExpiredOrTemp = Date.now() >= expiresAt;
+                    isExpiredS3 = Date.now() >= expiresAt;
                   } else {
-                    isExpiredOrTemp = true; // Keine Ablauf-Info -> sicherheitshalber abgelaufen
+                    isExpiredS3 = true;
                   }
                 } catch {
-                  isExpiredOrTemp = true;
+                  isExpiredS3 = true;
                 }
               }
               
@@ -1481,10 +1556,13 @@ export default function MeetingDetail() {
                         <Video className="h-5 w-5 text-primary" />
                       </div>
                       Video
+                      {needsSignedUrl && (
+                        <Badge variant="outline" className="ml-2 text-xs">Dauerhaft gesichert</Badge>
+                      )}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="px-6 pb-6">
-                    {isExpiredOrTemp ? (
+                    {isExpiredS3 ? (
                       <div className="flex flex-col items-center justify-center py-8 text-center space-y-4">
                         <div className="p-3 rounded-full bg-destructive/10">
                           <Video className="h-8 w-8 text-destructive" />
@@ -1514,24 +1592,7 @@ export default function MeetingDetail() {
                         </Button>
                       </div>
                     ) : (
-                      <>
-                        <div className="aspect-video rounded-2xl overflow-hidden bg-secondary/30 relative group">
-                          <video 
-                            src={recording.video_url} 
-                            controls 
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                        </div>
-                        <div className="mt-4">
-                          <Button variant="outline" asChild>
-                            <a href={recording.video_url} target="_blank" rel="noopener noreferrer">
-                              <Download className="h-4 w-4 mr-2" />
-                              Video herunterladen
-                            </a>
-                          </Button>
-                        </div>
-                      </>
+                      <VideoPlayer videoUrl={videoUrl} />
                     )}
                   </CardContent>
                 </Card>
