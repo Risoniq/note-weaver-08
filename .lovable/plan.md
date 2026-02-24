@@ -1,99 +1,73 @@
 
-# Video dauerhaft in Storage sichern
+# Analyse-Fehler beheben: Recording 1ca33b84 (Meeting vom 24.02.)
 
-## Problem
+## Diagnose
 
-Das Video fuer Recording `f9b14594-595e-4587-aa75-4d59db4deb4c` ist nur ueber einen temporaeren S3-Link von Recall.ai verfuegbar, der nach 6 Stunden ablaeuft. Der Video-Backup-Prozess in der `sync-recording` Edge Function hat zwar den richtigen Code (In-Memory Download + `supabase.storage.upload()`), aber es gibt ein kritisches Problem:
+Das Meeting (`1ca33b84-c981-4193-bf6c-25952beda8a5`) hat zwar ein vollstaendiges Transkript (40.347 Zeichen), aber **keine Analyse** (Summary, Key Points, Action Items und Titel fehlen).
 
-Die gespeicherte permanente URL nutzt den `authenticated`-Pfad:
-```
-/storage/v1/object/authenticated/transcript-backups/...
-```
+**Ursache**: Die KI-API hat beim Sync zweimal mit **HTTP 402 (Payment Required)** geantwortet - die AI-Credits waren zu dem Zeitpunkt aufgebraucht. Die Fehlermeldung war: "Service unavailable. Please contact support."
 
-Ein `<video src="...">` HTML-Tag kann **keine Authorization-Header** mitsenden. Das bedeutet: Selbst wenn das Video korrekt im Storage liegt, kann der Browser es nicht abspielen.
+Dies ist **kein permanenter Code-Bug**, sondern ein temporaerer Credit-Engpass. Allerdings gibt es eine **systemische Luecke**: Wenn die Analyse beim initialen Sync fehlschlaegt, gibt es keinen automatischen Retry-Mechanismus.
 
-## Loesung
+## Loesung (2 Teile)
 
-### 1. Permanente Video-URL als Signed URL speichern
+### Teil 1: Sofortiger Retry fuer dieses Meeting
 
-**Datei: `supabase/functions/sync-recording/index.ts`** (Zeilen 878-919)
+Die Analyse fuer Recording `1ca33b84-c981-4193-bf6c-25952beda8a5` erneut ausloesen. Da der "Transkript neu laden"-Button in der UI bereits existiert, kann dies auch manuell erfolgen - aber ich werde einen automatischen Retry einbauen.
 
-Nach dem erfolgreichen Upload wird statt der `authenticated`-URL eine **Signed URL** mit langer Laufzeit (z.B. 1 Jahr) generiert und in der Datenbank gespeichert. Alternativ kann der Storage-Pfad (ohne URL-Praefix) gespeichert werden und das Frontend generiert on-demand Signed URLs.
+### Teil 2: Retry-Logik in sync-recording einbauen (permanenter Fix)
 
-Gewaehlter Ansatz: **Storage-Pfad speichern** (z.B. `704551d2.../f9b14594_video_2026-02-24.mp4`), damit das Frontend flexibel Signed URLs erzeugen kann.
+**Datei: `supabase/functions/sync-recording/index.ts`** (Zeilen 942-960)
 
-### 2. Frontend: Signed URL on-demand generieren
+Wenn die Analyse mit einem temporaeren Fehler (402, 429, 500+) fehlschlaegt:
+- 1. Versuch sofort
+- Bei Fehler: 10 Sekunden warten, dann 2. Versuch
+- Bei erneutem Fehler: Log-Warnung, aber kein Abbruch des gesamten Sync-Prozesses
 
-**Datei: `src/pages/MeetingDetail.tsx`**
+```text
+Aktueller Ablauf:
+  sync-recording -> analyze-transcript -> 402 Fehler -> Fertig (keine Analyse)
 
-Wenn die `video_url` ein Supabase Storage-Pfad ist (kein `http`-Praefix), wird per `supabase.storage.from('transcript-backups').createSignedUrl(path, 3600)` eine gueltige URL fuer den Video-Player erzeugt.
-
-**Datei: `src/components/RecordingViewer.tsx`**
-
-Gleiche Logik fuer die RecordingViewer-Komponente.
-
-### 3. Sofortige Wiederherstellung dieses Videos
-
-Nach dem Deploy der Edge Function wird ein `force_resync` fuer das betroffene Recording ausgeloest, damit das Video heruntergeladen und permanent gesichert wird.
-
-## Technische Details
-
-### sync-recording/index.ts - Aenderung (Zeile ~907)
-
-Vorher:
-```typescript
-updates.video_url = `${supabaseUrl}/storage/v1/object/authenticated/transcript-backups/${videoFileName}`
+Neuer Ablauf:
+  sync-recording -> analyze-transcript -> 402 Fehler
+                 -> 10s warten
+                 -> analyze-transcript (Retry) -> Erfolg oder Log-Warnung
 ```
 
-Nachher:
-```typescript
-// Nur den Storage-Pfad speichern - Frontend generiert Signed URLs
-updates.video_url = `storage:transcript-backups:${videoFileName}`
-```
-
-Das `storage:`-Praefix signalisiert dem Frontend, dass es eine Signed URL erzeugen muss.
-
-### MeetingDetail.tsx und RecordingViewer.tsx - Neue Logik
-
-```typescript
-// Erkennung und Aufloesung von Storage-Pfaden
-const resolveVideoUrl = async (url: string): Promise<string> => {
-  if (url.startsWith('storage:')) {
-    const [, bucket, ...pathParts] = url.split(':');
-    const path = pathParts.join(':');
-    const { data } = await supabase.storage
-      .from(bucket)
-      .createSignedUrl(path, 3600); // 1 Stunde
-    return data?.signedUrl || url;
-  }
-  // Auch bestehende authenticated-URLs aufloesen
-  if (url.includes('/storage/v1/object/authenticated/')) {
-    const match = url.match(/\/storage\/v1\/object\/authenticated\/([^/]+)\/(.+)/);
-    if (match) {
-      const { data } = await supabase.storage
-        .from(match[1])
-        .createSignedUrl(match[2], 3600);
-      return data?.signedUrl || url;
-    }
-  }
-  return url;
-};
-```
-
-### isExpiredS3Url - Anpassung
-
-Storage-Pfade (`storage:...`) und authentifizierte URLs werden nicht als "abgelaufen" markiert, sondern als "aufloesbar" behandelt.
-
-## Zusammenfassung der Aenderungen
+### Aenderungen im Detail
 
 | Datei | Aenderung |
 |---|---|
-| `supabase/functions/sync-recording/index.ts` | Video-URL als Storage-Pfad speichern statt authenticated URL |
-| `src/pages/MeetingDetail.tsx` | Signed URL on-demand generieren fuer Storage-Pfade |
-| `src/components/RecordingViewer.tsx` | Gleiche Signed-URL-Logik |
+| `supabase/functions/sync-recording/index.ts` | Retry-Logik mit 1 Wiederholungsversuch und 10s Wartezeit bei temporaeren Fehlern (402, 429, 5xx) |
 
-Nach diesen Aenderungen:
-- Videos werden permanent im Storage gesichert
-- Der Browser kann Videos ueber kurzlebige Signed URLs abspielen
-- Bestehende S3-URLs funktionieren weiterhin solange sie gueltig sind
-- "Video erneuern" laedt das Video herunter und sichert es permanent
+### Technische Details
+
+In `sync-recording/index.ts` wird der Analyse-Aufruf (Zeilen 944-960) erweitert:
+
+```text
+// Vorher: Einmaliger Versuch
+const analyzeResponse = await fetch(...)
+if (!analyzeResponse.ok) {
+  console.error('Analyse-Start fehlgeschlagen:', ...)
+}
+
+// Nachher: Retry bei temporaeren Fehlern
+const maxRetries = 2;
+for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  const analyzeResponse = await fetch(...)
+  if (analyzeResponse.ok) {
+    console.log('Analyse erfolgreich gestartet')
+    break;
+  }
+  const errorText = await analyzeResponse.text();
+  const isRetryable = [402, 429, 500, 502, 503].includes(analyzeResponse.status);
+  if (isRetryable && attempt < maxRetries) {
+    console.warn(`Analyse Versuch ${attempt} fehlgeschlagen (${analyzeResponse.status}), Retry in 10s...`)
+    await new Promise(r => setTimeout(r, 10000));
+  } else {
+    console.error(`Analyse endgueltig fehlgeschlagen nach ${attempt} Versuchen:`, errorText)
+  }
+}
+```
+
+Nach dem Deploy wird ausserdem ein manueller Resync fuer das betroffene Recording ausgeloest, um die Analyse nachzuholen.
