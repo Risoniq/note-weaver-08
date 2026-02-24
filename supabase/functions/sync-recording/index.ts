@@ -941,23 +941,41 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
     const hasTranscript = updates.transcript_text || recording.transcript_text;
     if (status === 'done' && hasTranscript && (updates.transcript_text || force_resync)) {
       console.log('Starte automatische Transkript-Analyse...')
-      try {
-        const analyzeResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-transcript`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ recording_id: id }),
-        })
-        
-        if (analyzeResponse.ok) {
-          console.log('Analyse erfolgreich gestartet')
-        } else {
-          console.error('Analyse-Start fehlgeschlagen:', await analyzeResponse.text())
+      const maxAnalyzeRetries = 2;
+      for (let attempt = 1; attempt <= maxAnalyzeRetries; attempt++) {
+        try {
+          const analyzeResponse = await fetch(`${supabaseUrl}/functions/v1/analyze-transcript`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ recording_id: id }),
+          })
+          
+          if (analyzeResponse.ok) {
+            console.log('Analyse erfolgreich gestartet')
+            break;
+          }
+          
+          const errorText = await analyzeResponse.text();
+          const isRetryable = [402, 429, 500, 502, 503].includes(analyzeResponse.status);
+          
+          if (isRetryable && attempt < maxAnalyzeRetries) {
+            console.warn(`Analyse Versuch ${attempt} fehlgeschlagen (${analyzeResponse.status}), Retry in 10s...`)
+            await new Promise(r => setTimeout(r, 10000));
+          } else {
+            console.error(`Analyse endgueltig fehlgeschlagen nach ${attempt} Versuchen:`, errorText)
+            break;
+          }
+        } catch (analyzeError) {
+          if (attempt < maxAnalyzeRetries) {
+            console.warn(`Analyse Versuch ${attempt} Netzwerkfehler, Retry in 10s...`, analyzeError)
+            await new Promise(r => setTimeout(r, 10000));
+          } else {
+            console.error('Analyse endgueltig fehlgeschlagen (Netzwerkfehler):', analyzeError)
+          }
         }
-      } catch (analyzeError) {
-        console.error('Fehler beim Starten der Analyse:', analyzeError)
       }
     }
 
