@@ -19,7 +19,7 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/project-chat
 export const ProjectChatWidget = ({ projectId, projectName }: ProjectChatWidgetProps) => {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 

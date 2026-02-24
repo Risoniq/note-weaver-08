@@ -14,7 +14,7 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/meeting-chat
 export const MeetingChatWidget = () => {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
