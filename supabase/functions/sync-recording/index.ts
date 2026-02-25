@@ -883,33 +883,57 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
           const videoFileName = `${userId}/${id}_video_${timestamp}.mp4`
           const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
 
-          // Direkt per GET herunterladen (HEAD schlaegt bei S3 pre-signed URLs fehl)
+          // Prüfe Content-Length VOR dem Download um OOM zu vermeiden
           console.log('Starte Video-Download fuer permanentes Backup...')
           const videoResponse = await fetch(updates.video_url as string)
           
           if (videoResponse.ok) {
-            const videoBuffer = await videoResponse.arrayBuffer()
-            const videoSize = videoBuffer.byteLength
-            console.log(`Video heruntergeladen: ${Math.round(videoSize / 1024 / 1024)}MB`)
+            const contentLength = parseInt(videoResponse.headers.get('content-length') || '0', 10)
+            console.log(`Video Content-Length: ${contentLength > 0 ? Math.round(contentLength / 1024 / 1024) + 'MB' : 'unbekannt'}`)
             
-            if (videoSize <= maxMemorySize) {
+            if (contentLength > maxMemorySize) {
+              // Video zu groß - Response Body konsumieren und verwerfen
+              await videoResponse.body?.cancel()
+              console.warn(`Video zu gross fuer In-Memory Upload: ${Math.round(contentLength / 1024 / 1024)}MB > ${Math.round(maxMemorySize / 1024 / 1024)}MB - ueberspringe Backup, behalte Recall-URL`)
+            } else if (contentLength === 0) {
+              // Unbekannte Größe - sicherheitshalber überspringen bei langen Meetings
+              const durationSec = typeof updates.duration === 'number' ? updates.duration : (recording.duration || 0)
+              if (durationSec > 30 * 60) {
+                await videoResponse.body?.cancel()
+                console.warn(`Video-Groesse unbekannt und Meeting > 30min (${Math.round(durationSec / 60)}min) - ueberspringe Backup`)
+              } else {
+                // Kurzes Meeting - versuche Download
+                const videoBuffer = await videoResponse.arrayBuffer()
+                const videoSize = videoBuffer.byteLength
+                console.log(`Video heruntergeladen: ${Math.round(videoSize / 1024 / 1024)}MB`)
+                if (videoSize <= maxMemorySize) {
+                  const videoUint8Array = new Uint8Array(videoBuffer)
+                  const { data: videoUploadData, error: videoUploadError } = await supabase.storage
+                    .from('transcript-backups')
+                    .upload(videoFileName, videoUint8Array, { contentType: 'video/mp4', upsert: true })
+                  if (videoUploadError) {
+                    console.error('Video-Backup Upload Fehler:', videoUploadError)
+                  } else {
+                    console.log('Video-Backup gespeichert:', videoUploadData?.path)
+                    updates.video_url = `storage:transcript-backups:${videoFileName}`
+                    console.log('Video-URL als Storage-Pfad gespeichert:', updates.video_url)
+                  }
+                }
+              }
+            } else {
+              // Content-Length bekannt und innerhalb des Limits
+              const videoBuffer = await videoResponse.arrayBuffer()
               const videoUint8Array = new Uint8Array(videoBuffer)
               const { data: videoUploadData, error: videoUploadError } = await supabase.storage
                 .from('transcript-backups')
-                .upload(videoFileName, videoUint8Array, {
-                  contentType: 'video/mp4',
-                  upsert: true
-                })
+                .upload(videoFileName, videoUint8Array, { contentType: 'video/mp4', upsert: true })
               if (videoUploadError) {
                 console.error('Video-Backup Upload Fehler:', videoUploadError)
               } else {
                 console.log('Video-Backup gespeichert:', videoUploadData?.path)
-                // Storage-Pfad speichern - Frontend generiert Signed URLs on-demand
                 updates.video_url = `storage:transcript-backups:${videoFileName}`
                 console.log('Video-URL als Storage-Pfad gespeichert:', updates.video_url)
               }
-            } else {
-              console.warn(`Video zu gross fuer In-Memory Upload: ${Math.round(videoSize / 1024 / 1024)}MB > ${Math.round(maxMemorySize / 1024 / 1024)}MB`)
             }
           } else {
             console.error('Video-Download fehlgeschlagen:', videoResponse.status)
