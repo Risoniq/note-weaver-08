@@ -877,7 +877,7 @@ Erstellt: ${new Date(recording.created_at || Date.now()).toISOString()}
       // Das vermeidet das "Invalid Compact JWS" Problem beim raw fetch mit Bearer Token
       if (updates.video_url && typeof updates.video_url === 'string') {
         try {
-          const maxMemorySize = 150 * 1024 * 1024 // 150 MB - Edge Function RAM Limit
+          const maxMemorySize = 50 * 1024 * 1024 // 50 MB - Edge Function braucht ~3x RAM (fetch + ArrayBuffer + Uint8Array)
           const userId = recording.user_id || user.id
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
           const videoFileName = `${userId}/${id}_video_${timestamp}.mp4`
