@@ -215,7 +215,7 @@ export function QuickRecordingProvider({ children }: Props) {
           chunksRef.current.push(e.data);
           totalChunkSizeRef.current += e.data.size;
           if (totalChunkSizeRef.current >= MAX_CHUNK_BYTES) {
-            toast({ title: 'Speicherlimit erreicht', description: 'Aufnahme automatisch beendet (750 MB).', variant: 'destructive' });
+            toast({ title: 'Speicherlimit erreicht', description: 'Aufnahme automatisch beendet (750 MB).', variant: 'destructive', id: 'recording-limit' });
             stopRecording();
           }
         }
@@ -243,7 +243,7 @@ export function QuickRecordingProvider({ children }: Props) {
         pipVideoRef.current = pipVideo;
       }
 
-      toast({ title: '🔴 Aufnahme gestartet', description: 'Bildschirm und Mikrofon werden aufgenommen.' });
+      toast({ title: '🔴 Aufnahme gestartet', description: 'Bildschirm und Mikrofon werden aufgenommen.', id: 'recording-start' });
     } catch (err: any) {
       console.error('Quick recording start failed:', err);
       stopAllTracks();
@@ -281,7 +281,7 @@ export function QuickRecordingProvider({ children }: Props) {
           return;
         }
 
-        toast({ title: 'Aufnahme beendet', description: 'Wird hochgeladen und transkribiert…' });
+        toast({ title: 'Aufnahme beendet', description: 'Wird hochgeladen und transkribiert…', id: 'recording-stop' });
 
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -308,7 +308,7 @@ export function QuickRecordingProvider({ children }: Props) {
 
           const result = await response.json();
           if (response.ok && result.success) {
-            toast({ title: '✅ Aufnahme gespeichert', description: 'Die Transkription läuft im Hintergrund.' });
+            toast({ title: '✅ Aufnahme gespeichert', description: 'Die Transkription läuft im Hintergrund.', id: 'recording-saved' });
           } else {
             toast({ title: 'Fehler', description: result.error || 'Upload fehlgeschlagen.', variant: 'destructive' });
           }
