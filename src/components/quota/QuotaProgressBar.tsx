@@ -27,6 +27,7 @@ function getTextColor(pct: number) {
 }
 
 function SingleBar({ detail, icon, label }: { detail: QuotaDetail; icon: React.ReactNode; label: string }) {
+  if (!detail) return null;
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
