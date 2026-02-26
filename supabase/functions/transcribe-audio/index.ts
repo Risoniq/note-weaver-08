@@ -56,11 +56,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`Processing audio file: ${audioFile.name}, size: ${audioFile.size} bytes`);
+    console.log(`Processing audio file: ${audioFile.name}, size: ${audioFile.size} bytes, type: ${audioFile.type}`);
+
+    // Detect if this is a video file (screen recording)
+    const isVideo = audioFile.type.startsWith('video/') || audioFile.name.endsWith('.webm') || audioFile.name.endsWith('.mp4');
 
     // Upload to Supabase Storage first
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-    const fileExt = audioFile.name.split('.').pop() || 'mp3';
+    const fileExt = audioFile.name.split('.').pop() || (isVideo ? 'webm' : 'mp3');
     const storagePath = `${user.id}/${Date.now()}.${fileExt}`;
 
     const { error: uploadError } = await supabaseAdmin.storage
@@ -78,6 +81,9 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Build video_url for video recordings
+    const videoUrl = isVideo ? `storage:audio-uploads:${storagePath}` : null;
+
     // Create recording entry
     const meetingId = `manual_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     const { data: recording, error: recordingError } = await supabaseAdmin
@@ -88,6 +94,7 @@ Deno.serve(async (req) => {
         title: title || audioFile.name.replace(/\.[^/.]+$/, ''),
         status: 'transcribing',
         source: 'manual',
+        video_url: videoUrl,
       })
       .select()
       .single();
