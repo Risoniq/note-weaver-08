@@ -1,94 +1,92 @@
 
 
-# Verbesserung der Schnellaufnahme-Funktion (Quick Recording)
+# Webcam-Option und Picture-in-Picture Mini-Player
 
-## Probleme im aktuellen System
+## Zwei neue Features
 
-1. **Kein Auswahlmenue**: Der User kann nicht waehlen zwischen "Ganzer Bildschirm", "Fenster" oder "Tab" - es wird immer `displaySurface: 'monitor'` erzwungen
-2. **Aufnahme bricht bei Tab-/Routenwechsel ab**: Die Aufnahme-State liegt im `useQuickRecording` Hook innerhalb `AppLayout` - bei Navigation wird nichts zerstoert, ABER der `MediaRecorder` koennte durch Browser-Verhalten gestoppt werden. Das eigentliche Problem: der `isRecording`-State geht verloren wenn `AppLayout` remounted
-3. **Kein visueller Rahmen um den Bildschirm** waehrend der Aufnahme
-4. **Roter Punkt verschwindet** bei Routenwechsel (da `isRecording` State lokal ist)
-5. **Video wird als Audio hochgeladen** (an `transcribe-audio`) statt als Video gespeichert
+### 1. Webcam-Checkbox im Aufnahme-Dialog
 
-## Loesung
+Im `RecordingModeDialog` wird unter den drei Modus-Optionen eine Checkbox hinzugefuegt: **"Eigene Kamera mit aufnehmen"**. Wenn aktiviert, wird zusaetzlich zum Display-Stream ein `getUserMedia({ video: true })` Stream geholt. Das Webcam-Video wird per Canvas-Compositing als kleines Bild (Picture-in-Picture-Stil, unten rechts) in den aufgenommenen Video-Stream eingebettet.
 
-### Schritt 1: Aufnahme-Auswahl-Dialog vor dem Start
+**Technischer Ansatz:**
+- Ein unsichtbares `<canvas>` Element wird erstellt
+- Per `requestAnimationFrame`-Loop wird der Display-Stream als Hintergrund und das Webcam-Video als kleines Overlay (z.B. 200x150px, unten rechts) auf das Canvas gezeichnet
+- Der `canvas.captureStream()` liefert den kombinierten Video-Track fuer den MediaRecorder
+- Die Webcam-Vorschau wird als kleines draggable Element im UI angezeigt waehrend der Aufnahme
 
-Wenn der User auf das Mikrofon-Icon klickt, oeffnet sich ein kleiner Dialog/Popover mit 3 Optionen:
-- **Gesamter Bildschirm** (empfohlen)
-- **Anwendungsfenster**
-- **Browser-Tab**
+### 2. Picture-in-Picture Mini-Player bei Tab-/Seitenwechsel
 
-Dies wird ueber den `displaySurface`-Constraint an `getDisplayMedia` gesteuert.
+Wenn der Aufnahmemodus "Gesamter Bildschirm" ist und der User den Tab verlässt oder die Seite wechselt, oeffnet sich automatisch ein Browser-nativer **Picture-in-Picture** (PiP) Player. Dieser zeigt eine Live-Vorschau der Aufnahme und bleibt sichtbar ueber allen Fenstern.
 
-### Schritt 2: Aufnahme-State globalisieren
-
-Den Recording-State aus dem lokalen Hook in einen **React Context** (`QuickRecordingContext`) verschieben, der im Root der App (`App.tsx`) eingebunden wird. So bleibt der `isRecording`-State und die `MediaRecorder`-Referenz bei Routenwechseln erhalten.
-
-```text
-App.tsx
-  └─ QuickRecordingProvider   ← NEU: haelt MediaRecorder, isRecording, refs
-       └─ AppLayout
-            └─ Header (liest isRecording aus Context)
-            └─ Routes / Children
-```
-
-### Schritt 3: Persistenter roter Aufnahme-Balken
-
-Ein fixierter Banner am oberen Bildschirmrand (ueber dem Header), der angezeigt wird solange `isRecording === true`. Zeigt:
-- Roten Punkt (pulsierend) + "Aufnahme laeuft..."
-- Laufzeit-Timer
-- Stop-Button
-
-Dieser Banner ist Teil des `QuickRecordingProvider` und rendert unabhaengig von der aktuellen Route.
-
-### Schritt 4: Roter Bildschirmrahmen bei Vollbildaufnahme
-
-Wenn `displaySurface === 'monitor'` gewaehlt wurde, wird ein CSS-Overlay mit einem feinen roten Rahmen (`border: 2px solid red`) ueber die gesamte Viewport-Groesse gelegt (`position: fixed, inset: 0, pointer-events: none, z-index: 9999`). Dieser verschwindet erst beim Stoppen der Aufnahme.
-
-### Schritt 5: Video speichern und via ElevenLabs transkribieren
-
-Aktuell wird die Aufnahme an `transcribe-audio` geschickt. Das bleibt im Prinzip gleich (ElevenLabs `scribe_v2` kann WebM-Video-Dateien verarbeiten), aber:
-- Der Upload wird als Video-Datei benannt (`.webm` statt generisch)
-- Das Recording wird mit `source: 'manual'` gespeichert (bereits der Fall)
-- Die Videoaufnahme wird zusaetzlich in den `audio-uploads` Storage-Bucket hochgeladen und die `video_url` im Recording gesetzt, damit der User das Video spaeter abspielen kann
-
-### Schritt 6: beforeunload-Schutz
-
-Der `QuickRecordingProvider` registriert einen `beforeunload`-Event-Listener waehrend der Aufnahme, um versehentliches Schliessen des Tabs zu verhindern.
+**Technischer Ansatz:**
+- Ein unsichtbares `<video>` Element wird mit dem Display-Stream als `srcObject` verbunden
+- Bei `visibilitychange` (Tab wird unsichtbar) wird `videoElement.requestPictureInPicture()` aufgerufen
+- Bei Rueckkehr zum Tab wird PiP automatisch geschlossen
+- Fallback: Wenn PiP vom Browser nicht unterstuetzt wird, passiert nichts (kein Fehler)
 
 ## Betroffene Dateien
 
 | Datei | Aenderung |
 |---|---|
-| `src/contexts/QuickRecordingContext.tsx` | NEU: Context mit globalem Recording-State, MediaRecorder-Refs, Start/Stop-Logik |
-| `src/hooks/useQuickRecording.ts` | Wird zum duennen Wrapper um den Context |
-| `src/components/layout/AppLayout.tsx` | Nutzt Context statt lokalen Hook, rendert Recording-Banner + Rahmen |
-| `src/components/recording/RecordingBanner.tsx` | NEU: Fixierter roter Banner mit Timer und Stop-Button |
-| `src/components/recording/ScreenBorderOverlay.tsx` | NEU: Roter Rahmen-Overlay bei Vollbildaufnahme |
-| `src/components/recording/RecordingModeDialog.tsx` | NEU: Auswahl-Dialog fuer Aufnahmemodus |
-| `src/App.tsx` | QuickRecordingProvider einbinden |
-| `supabase/functions/transcribe-audio/index.ts` | Video-URL im Recording speichern nach Upload |
+| `src/contexts/QuickRecordingContext.tsx` | Neuer State `includeWebcam`, Webcam-Stream-Ref, Canvas-Compositing-Logik, PiP-Video-Element-Ref, Visibility-Change-Listener |
+| `src/components/recording/RecordingModeDialog.tsx` | Checkbox "Eigene Kamera mit aufnehmen" unter den Modus-Buttons, State wird an `startRecording` uebergeben |
+| `src/components/recording/WebcamPreview.tsx` | NEU: Kleines Webcam-Vorschaufenster (draggable, unten rechts) waehrend der Aufnahme |
 
-## Technische Details
+## Aenderungen im Detail
 
-### Display Surface Mapping
+### RecordingModeDialog
+- Neuer lokaler State `includeWebcam` (boolean, default false)
+- Checkbox mit Label "Eigene Kamera mit aufnehmen" unterhalb der drei Modus-Buttons
+- Beim Klick auf einen Modus wird `startRecording(mode, includeWebcam)` aufgerufen
+
+### QuickRecordingContext - startRecording erweitert
+
 ```text
-"monitor"  → Gesamter Bildschirm
-"window"   → Anwendungsfenster  
-"browser"  → Browser-Tab
+startRecording(mode, includeWebcam):
+  1. getDisplayMedia (wie bisher)
+  2. getUserMedia({ audio }) fuer Mikrofon (wie bisher)
+  3. WENN includeWebcam:
+     a. getUserMedia({ video: { width: 320, height: 240 } }) → webcamStream
+     b. Canvas erstellen (gleiche Aufloesung wie Display-Video)
+     c. requestAnimationFrame-Loop:
+        - Display-Frame auf Canvas zeichnen
+        - Webcam-Frame als kleines Overlay unten rechts zeichnen
+     d. canvas.captureStream(30) → combinedVideoTrack
+     e. MediaRecorder nutzt combinedVideoTrack statt displayStream.getVideoTracks()
+  4. SONST: wie bisher (displayStream Video-Track direkt nutzen)
+  5. PiP-Video-Element erstellen und mit Display-Stream verbinden
+  6. visibilitychange-Listener registrieren
 ```
 
-### Context API
+### QuickRecordingContext - PiP Logik
+
 ```text
-QuickRecordingContext:
-  - isRecording: boolean
-  - recordingMode: 'monitor' | 'window' | 'browser' | null
-  - startRecording(mode): Promise<void>
-  - stopRecording(): Promise<void>
-  - elapsedSeconds: number
+visibilitychange Handler:
+  WENN document.hidden UND isRecording UND mode === 'monitor':
+    videoElement.requestPictureInPicture()
+  WENN !document.hidden UND document.pictureInPictureElement:
+    document.exitPictureInPicture()
 ```
 
-### Video-URL Speicherung
-Die `transcribe-audio` Edge Function wird erweitert: Nach dem Storage-Upload wird eine Signed URL generiert und als `video_url` im Recording gespeichert (Format `storage:audio-uploads:path`), sodass das Frontend das Video spaeter abspielen kann.
+### WebcamPreview Komponente
+- Wird nur gerendert wenn `isRecording && includeWebcam`
+- Zeigt den Webcam-Stream in einem kleinen Video-Element (200x150px)
+- Position: fixed, bottom-right, z-index 9997
+- Abgerundete Ecken, leichter Schatten
+- Kann per CSS `cursor: move` verschoben werden (optional, einfache Variante ohne Drag)
+
+### Context API Erweiterung
+
+```text
+QuickRecordingContextValue (neu):
+  + includeWebcam: boolean
+  + setIncludeWebcam: (v: boolean) => void
+  + webcamStream: MediaStream | null  (fuer WebcamPreview)
+```
+
+### stopRecording / stopAllTracks Erweiterung
+- Webcam-Stream Tracks stoppen
+- Canvas-Animation-Loop abbrechen (cancelAnimationFrame)
+- PiP schliessen falls aktiv
+- Video-Element entfernen
 
