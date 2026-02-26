@@ -111,20 +111,16 @@ export function AppLayout({ children }: AppLayoutProps) {
             </Tooltip>
           ) : (
             <RecordingModeDialog>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => {
-                      if (quota?.is_exhausted) { setShowQuotaModal(true); return; }
-                      openModeDialog();
-                    }}
-                    className="relative flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200 text-muted-foreground hover:bg-white/50 dark:hover:bg-white/5 hover:text-foreground"
-                  >
-                    <Mic className="h-5 w-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>Schnellaufnahme starten</TooltipContent>
-              </Tooltip>
+              <button
+                onClick={() => {
+                  if (quota?.is_exhausted) { setShowQuotaModal(true); return; }
+                  openModeDialog();
+                }}
+                className="relative flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200 text-muted-foreground hover:bg-white/50 dark:hover:bg-white/5 hover:text-foreground"
+                title="Schnellaufnahme starten"
+              >
+                <Mic className="h-5 w-5" />
+              </button>
             </RecordingModeDialog>
           )}
         </nav>
