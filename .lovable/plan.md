@@ -1,50 +1,87 @@
 
 
-# Rechtlicher Hinweis vor Aufnahmestart
+# Doppelte Toast-Benachrichtigungen beheben
 
-## Anforderung
+## Problem
 
-Bevor die Aufnahme tatsaechlich startet (also bevor `getDisplayMedia` und `getUserMedia` aufgerufen werden), soll ein **verpflichtender Hinweis-Dialog** erscheinen, der den User darauf aufmerksam macht, dass er seine Gespraechspartner ueber die Aufnahme informieren muss. Ohne Bestaetigung darf die Aufnahme nicht starten.
+Das Projekt verwendet **zwei parallele Toast-Systeme** gleichzeitig:
 
-## Umsetzung
+1. **Radix/shadcn Toaster** (`@/components/ui/toaster.tsx` + `@/hooks/use-toast.ts`) — mit `TOAST_LIMIT = 1`, kann nur einen Toast gleichzeitig zeigen
+2. **Sonner** (`@/components/ui/sonner.tsx` + `import { toast } from 'sonner'`) — eigenes Stacking-System
 
-### RecordingModeDialog anpassen
+Beide Toaster werden in `App.tsx` gerendert (Zeile 36-37). Verschiedene Komponenten nutzen unterschiedliche Systeme — manche importieren `toast` aus `@/hooks/use-toast`, andere aus `sonner`. Wenn beide Systeme gleichzeitig feuern (z.B. beim Recording-Start), erscheinen doppelte Meldungen in verschiedenen Ecken.
 
-Der Klick auf einen Aufnahmemodus (z.B. "Gesamter Bildschirm") startet die Aufnahme **nicht sofort**, sondern oeffnet einen Zwischen-Dialog (AlertDialog) mit folgendem Inhalt:
+Zusaetzlich hat das Radix-System `TOAST_LIMIT = 1` und einen extrem langen `TOAST_REMOVE_DELAY = 1000000` (ca. 16 Minuten), was dazu fuehrt, dass alte Toasts nicht verschwinden und neue Toasts alte sofort ersetzen statt zu stacken.
+
+## Loesung: Auf ein einziges Toast-System vereinheitlichen
+
+**Sonner** wird als alleiniges System beibehalten, da es nativ Stacking unterstuetzt, automatische Timeouts hat und bereits von der Mehrheit der Komponenten genutzt wird.
+
+### Schritt 1: Radix-Toaster aus App.tsx entfernen
+
+Die Zeile `<Toaster />` (Radix) wird entfernt. Nur `<Sonner />` bleibt.
+
+### Schritt 2: Alle `@/hooks/use-toast` Importe auf Sonner umstellen
+
+Alle Dateien, die `toast` oder `useToast` aus `@/hooks/use-toast` importieren, werden auf `import { toast } from 'sonner'` umgestellt. Die Sonner-API unterscheidet sich leicht:
 
 ```text
-┌──────────────────────────────────────────────┐
-│  ⚠️  Aufnahmehinweis                         │
-│                                              │
-│  Sie sind gesetzlich verpflichtet, alle      │
-│  Gesprächsteilnehmer vor Beginn der          │
-│  Aufnahme darüber zu informieren, dass       │
-│  das Gespräch aufgezeichnet wird.            │
-│                                              │
-│  Eine Aufnahme ohne Zustimmung aller         │
-│  Beteiligten ist nicht rechtmäßig.           │
-│                                              │
-│  [ Abbrechen ]   [ Verstanden & Starten ]    │
-└──────────────────────────────────────────────┘
+// Vorher (Radix):
+toast({ title: 'Titel', description: 'Beschreibung', variant: 'destructive' })
+
+// Nachher (Sonner):
+toast.error('Beschreibung')          // fuer destructive
+toast.success('Beschreibung')        // fuer Erfolg
+toast('Beschreibung')                // fuer neutral
+toast('Titel', { description: '…' }) // mit Beschreibung
 ```
 
-### Ablauf
+### Schritt 3: Sonner-Konfiguration fuer Stacking
 
-1. User klickt auf Modus-Button (z.B. "Gesamter Bildschirm")
-2. Statt `startRecording()` wird ein lokaler State `pendingMode` gesetzt und der Consent-Dialog geoeffnet
-3. User klickt "Verstanden & Starten" → `startRecording(pendingMode, includeWebcam)` wird aufgerufen
-4. User klickt "Abbrechen" → Dialog schliesst, nichts passiert
+In der Sonner-Komponente wird `visibleToasts={5}` gesetzt, damit bis zu 5 verschiedene Toasts gleichzeitig sichtbar sind und sich vertikal stacken. Position bleibt `bottom-right`.
 
-### Betroffene Datei
+## Betroffene Dateien
 
 | Datei | Aenderung |
 |---|---|
-| `src/components/recording/RecordingModeDialog.tsx` | Neuer lokaler State `pendingMode` und `showConsent`. AlertDialog mit rechtlichem Hinweis. Modus-Buttons setzen nur `pendingMode` statt direkt zu starten. Bestaetigung ruft `startRecording` auf. |
+| `src/App.tsx` | `<Toaster />` (Radix) entfernen, nur Sonner behalten |
+| `src/components/ui/sonner.tsx` | `visibleToasts={5}` und `position="bottom-right"` hinzufuegen |
+| `src/contexts/QuickRecordingContext.tsx` | `toast` Import von `@/hooks/use-toast` auf `sonner` umstellen, alle Aufrufe anpassen |
+| `src/hooks/useMeetingBotWebhook.ts` | `useToast` auf Sonner umstellen |
+| `src/components/MeetingBot.tsx` | `useToast` auf Sonner umstellen |
+| `src/components/dashboard/MeetingChatWidget.tsx` | `useToast` auf Sonner umstellen |
+| `src/components/meeting/MeetingChatWidget.tsx` | `useToast` auf Sonner umstellen |
+| `src/components/meeting/MeetingDetailModal.tsx` | `useToast` auf Sonner umstellen |
+| `src/components/calendar/QuickMeetingJoin.tsx` | `toast` Import von `@/hooks/use-toast` auf `sonner` umstellen |
+| `src/hooks/useMeetingReminders.ts` | `useToast` auf Sonner umstellen |
+| `src/components/admin/WebhookConfigDialog.tsx` | `useToast` auf Sonner umstellen |
+| `src/components/projects/ProjectChatWidget.tsx` | `useToast` auf Sonner umstellen |
+| Weitere Dateien mit `@/hooks/use-toast` | Gleiche Umstellung |
 
-### Technische Details
+### Sonner Deduplizierung
 
-- Verwendet den bestehenden `AlertDialog` aus `@/components/ui/alert-dialog`
-- Der Consent-Dialog wird als `AlertDialog` (nicht dismissable durch Klick ausserhalb) implementiert, damit der User bewusst bestaetigen muss
-- Kein Backend noetig, rein clientseitige Logik
-- Der Popover schliesst sich beim Oeffnen des Consent-Dialogs (da `startRecording` intern `setShowModeDialog(false)` aufruft — hier wird stattdessen der Popover manuell geschlossen bevor der AlertDialog erscheint)
+Sonner hat eingebaute Deduplizierung: Wenn `toast.error('Gleiche Nachricht')` mehrfach schnell hintereinander aufgerufen wird, zeigt es nur einen Toast. Fuer zusaetzlichen Schutz wird in haeufig feuernden Stellen (z.B. QuickRecordingContext) eine `toast.dismiss()` vor dem neuen Toast aufgerufen oder die Sonner `id`-Option genutzt:
+
+```text
+toast.success('Aufnahme gestartet', { id: 'recording-start' })
+// Wird mit gleicher ID nie doppelt angezeigt
+```
+
+## Technische Details
+
+### Sonner API-Mapping
+
+```text
+Radix-Aufruf                              → Sonner-Aufruf
+──────────────────────────────────────────────────────────
+toast({ title, description })              → toast(title, { description })
+toast({ title, variant: 'destructive' })   → toast.error(title)
+toast({ title, description, variant: 'destructive' }) → toast.error(title, { description })
+useToast() → const { toast } = ...         → import { toast } from 'sonner' (kein Hook noetig)
+```
+
+### Kein Breaking Change
+
+- Die Sonner-Komponente und viele Dateien nutzen bereits `sonner`
+- Die Radix-Toast UI-Dateien (`toast.tsx`, `toaster.tsx`, `use-toast.ts`) koennen bestehen bleiben, werden aber nicht mehr gerendert/importiert
 
