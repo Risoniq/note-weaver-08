@@ -1,5 +1,7 @@
-import { Monitor, AppWindow, Globe } from 'lucide-react';
+import { useState } from 'react';
+import { Monitor, AppWindow, Globe, Camera } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useQuickRecordingContext } from '@/contexts/QuickRecordingContext';
 import { cn } from '@/lib/utils';
 import { ReactNode } from 'react';
@@ -16,6 +18,7 @@ interface Props {
 
 export function RecordingModeDialog({ children }: Props) {
   const { showModeDialog, setShowModeDialog, startRecording } = useQuickRecordingContext();
+  const [includeWebcam, setIncludeWebcam] = useState(false);
 
   return (
     <Popover open={showModeDialog} onOpenChange={setShowModeDialog}>
@@ -25,7 +28,7 @@ export function RecordingModeDialog({ children }: Props) {
         {modes.map((m) => (
           <button
             key={m.id}
-            onClick={() => startRecording(m.id)}
+            onClick={() => startRecording(m.id, includeWebcam)}
             className={cn(
               "w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
               "hover:bg-accent hover:text-accent-foreground"
@@ -38,6 +41,18 @@ export function RecordingModeDialog({ children }: Props) {
             </div>
           </button>
         ))}
+        <div className="border-t border-border mt-1 pt-2 px-2">
+          <label className="flex items-center gap-2 cursor-pointer py-1">
+            <Checkbox
+              checked={includeWebcam}
+              onCheckedChange={(v) => setIncludeWebcam(v === true)}
+            />
+            <div className="flex items-center gap-1.5">
+              <Camera className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-medium">Eigene Kamera mit aufnehmen</span>
+            </div>
+          </label>
+        </div>
       </PopoverContent>
     </Popover>
   );
