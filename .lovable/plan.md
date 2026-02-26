@@ -1,113 +1,94 @@
 
 
-# Umstellung auf eigenen Anthropic API Key
+# Verbesserung der Schnellaufnahme-Funktion (Quick Recording)
 
-## Uebersicht
+## Probleme im aktuellen System
 
-7 Edge Functions nutzen aktuell den Lovable AI Gateway (`ai.gateway.lovable.dev`) mit dem `LOVABLE_API_KEY`. Diese werden auf die Anthropic Messages API (`api.anthropic.com`) umgestellt, sodass du volle Kontrolle ueber Kosten und Rate Limits hast.
+1. **Kein Auswahlmenue**: Der User kann nicht waehlen zwischen "Ganzer Bildschirm", "Fenster" oder "Tab" - es wird immer `displaySurface: 'monitor'` erzwungen
+2. **Aufnahme bricht bei Tab-/Routenwechsel ab**: Die Aufnahme-State liegt im `useQuickRecording` Hook innerhalb `AppLayout` - bei Navigation wird nichts zerstoert, ABER der `MediaRecorder` koennte durch Browser-Verhalten gestoppt werden. Das eigentliche Problem: der `isRecording`-State geht verloren wenn `AppLayout` remounted
+3. **Kein visueller Rahmen um den Bildschirm** waehrend der Aufnahme
+4. **Roter Punkt verschwindet** bei Routenwechsel (da `isRecording` State lokal ist)
+5. **Video wird als Audio hochgeladen** (an `transcribe-audio`) statt als Video gespeichert
 
-## Schritt 1: API Key sicher speichern
+## Loesung
 
-Du wirst aufgefordert, deinen Anthropic API Key einzugeben. Dieser wird als `ANTHROPIC_API_KEY` sicher in deinem Backend gespeichert und ist nur fuer die Edge Functions zugaenglich.
+### Schritt 1: Aufnahme-Auswahl-Dialog vor dem Start
 
-Den API Key findest du unter: https://console.anthropic.com/settings/keys
+Wenn der User auf das Mikrofon-Icon klickt, oeffnet sich ein kleiner Dialog/Popover mit 3 Optionen:
+- **Gesamter Bildschirm** (empfohlen)
+- **Anwendungsfenster**
+- **Browser-Tab**
 
-## Schritt 2: Alle 7 Edge Functions umstellen
+Dies wird ueber den `displaySurface`-Constraint an `getDisplayMedia` gesteuert.
 
-Jede Funktion wird von der OpenAI-kompatiblen Gateway-API auf die Anthropic Messages API umgestellt.
+### Schritt 2: Aufnahme-State globalisieren
 
-**Betroffene Funktionen:**
+Den Recording-State aus dem lokalen Hook in einen **React Context** (`QuickRecordingContext`) verschieben, der im Root der App (`App.tsx`) eingebunden wird. So bleibt der `isRecording`-State und die `MediaRecorder`-Referenz bei Routenwechseln erhalten.
 
-| Funktion | Zweck |
+```text
+App.tsx
+  └─ QuickRecordingProvider   ← NEU: haelt MediaRecorder, isRecording, refs
+       └─ AppLayout
+            └─ Header (liest isRecording aus Context)
+            └─ Routes / Children
+```
+
+### Schritt 3: Persistenter roter Aufnahme-Balken
+
+Ein fixierter Banner am oberen Bildschirmrand (ueber dem Header), der angezeigt wird solange `isRecording === true`. Zeigt:
+- Roten Punkt (pulsierend) + "Aufnahme laeuft..."
+- Laufzeit-Timer
+- Stop-Button
+
+Dieser Banner ist Teil des `QuickRecordingProvider` und rendert unabhaengig von der aktuellen Route.
+
+### Schritt 4: Roter Bildschirmrahmen bei Vollbildaufnahme
+
+Wenn `displaySurface === 'monitor'` gewaehlt wurde, wird ein CSS-Overlay mit einem feinen roten Rahmen (`border: 2px solid red`) ueber die gesamte Viewport-Groesse gelegt (`position: fixed, inset: 0, pointer-events: none, z-index: 9999`). Dieser verschwindet erst beim Stoppen der Aufnahme.
+
+### Schritt 5: Video speichern und via ElevenLabs transkribieren
+
+Aktuell wird die Aufnahme an `transcribe-audio` geschickt. Das bleibt im Prinzip gleich (ElevenLabs `scribe_v2` kann WebM-Video-Dateien verarbeiten), aber:
+- Der Upload wird als Video-Datei benannt (`.webm` statt generisch)
+- Das Recording wird mit `source: 'manual'` gespeichert (bereits der Fall)
+- Die Videoaufnahme wird zusaetzlich in den `audio-uploads` Storage-Bucket hochgeladen und die `video_url` im Recording gesetzt, damit der User das Video spaeter abspielen kann
+
+### Schritt 6: beforeunload-Schutz
+
+Der `QuickRecordingProvider` registriert einen `beforeunload`-Event-Listener waehrend der Aufnahme, um versehentliches Schliessen des Tabs zu verhindern.
+
+## Betroffene Dateien
+
+| Datei | Aenderung |
 |---|---|
-| `analyze-transcript` | Automatische Meeting-Analyse (Summary, Key Points, Action Items) |
-| `analyze-notetaker` | Notetaker-Analyse |
-| `analyze-project` | Projekt-uebergreifende Analyse |
-| `meeting-chat` | Chat ueber alle Meetings |
-| `single-meeting-chat` | Chat ueber ein einzelnes Meeting |
-| `edit-email-ai` | KI-gestuetzte E-Mail-Bearbeitung |
-| `project-chat` | Projekt-Chat-Assistent |
+| `src/contexts/QuickRecordingContext.tsx` | NEU: Context mit globalem Recording-State, MediaRecorder-Refs, Start/Stop-Logik |
+| `src/hooks/useQuickRecording.ts` | Wird zum duennen Wrapper um den Context |
+| `src/components/layout/AppLayout.tsx` | Nutzt Context statt lokalen Hook, rendert Recording-Banner + Rahmen |
+| `src/components/recording/RecordingBanner.tsx` | NEU: Fixierter roter Banner mit Timer und Stop-Button |
+| `src/components/recording/ScreenBorderOverlay.tsx` | NEU: Roter Rahmen-Overlay bei Vollbildaufnahme |
+| `src/components/recording/RecordingModeDialog.tsx` | NEU: Auswahl-Dialog fuer Aufnahmemodus |
+| `src/App.tsx` | QuickRecordingProvider einbinden |
+| `supabase/functions/transcribe-audio/index.ts` | Video-URL im Recording speichern nach Upload |
 
-### Technische Aenderungen pro Funktion
+## Technische Details
 
-**API-Endpunkt:**
+### Display Surface Mapping
 ```text
-Vorher:  https://ai.gateway.lovable.dev/v1/chat/completions
-Nachher: https://api.anthropic.com/v1/messages
+"monitor"  → Gesamter Bildschirm
+"window"   → Anwendungsfenster  
+"browser"  → Browser-Tab
 ```
 
-**Headers:**
+### Context API
 ```text
-Vorher:  Authorization: Bearer ${LOVABLE_API_KEY}
-Nachher: x-api-key: ${ANTHROPIC_API_KEY}
-         anthropic-version: 2023-06-01
+QuickRecordingContext:
+  - isRecording: boolean
+  - recordingMode: 'monitor' | 'window' | 'browser' | null
+  - startRecording(mode): Promise<void>
+  - stopRecording(): Promise<void>
+  - elapsedSeconds: number
 ```
 
-**Request-Format:**
-```text
-Vorher (OpenAI-kompatibel):
-{
-  model: "google/gemini-3-flash-preview",
-  messages: [
-    { role: "system", content: "..." },
-    { role: "user", content: "..." }
-  ]
-}
-
-Nachher (Anthropic Messages API):
-{
-  model: "claude-sonnet-4-20250514",
-  max_tokens: 4096,
-  system: "...",
-  messages: [
-    { role: "user", content: "..." }
-  ]
-}
-```
-
-**Response-Format:**
-```text
-Vorher:  data.choices[0].message.content
-Nachher: data.content[0].text
-```
-
-**Streaming (fuer Chat-Funktionen):**
-```text
-Vorher:  stream: true (OpenAI SSE-Format)
-Nachher: stream: true (Anthropic SSE-Format mit event: content_block_delta)
-```
-
-### Modell-Zuordnung
-
-| Bisheriges Modell | Neues Modell | Einsatz |
-|---|---|---|
-| google/gemini-3-flash-preview | claude-sonnet-4-20250514 | Chat, E-Mail, Notetaker, Projekt-Analyse |
-| google/gemini-2.5-flash | claude-sonnet-4-20250514 | Transkript-Analyse |
-
-Claude Sonnet 4 bietet ein gutes Verhaeltnis von Qualitaet, Geschwindigkeit und Kosten. Falls gewuenscht, kann auch Claude Haiku (guenstiger/schneller) oder Claude Opus (leistungsstaerker) gewaehlt werden.
-
-## Schritt 3: Streaming-Format anpassen
-
-Die 3 Chat-Funktionen (`meeting-chat`, `single-meeting-chat`, `project-chat`) nutzen Streaming. Das Anthropic SSE-Format unterscheidet sich vom OpenAI-Format:
-
-```text
-Anthropic SSE Events:
-  event: message_start
-  event: content_block_start
-  event: content_block_delta    <- hier kommt der Text
-  event: content_block_stop
-  event: message_stop
-
-Die Edge Functions werden den Anthropic-Stream in das OpenAI-kompatible Format
-umwandeln, sodass das Frontend NICHT geaendert werden muss.
-```
-
-## Zusammenfassung
-
-| Was | Aenderung |
-|---|---|
-| Neues Secret | `ANTHROPIC_API_KEY` hinzufuegen |
-| 7 Edge Functions | API-Endpunkt, Headers, Request/Response-Format anpassen |
-| Frontend | Keine Aenderungen noetig (Stream-Format wird im Backend konvertiert) |
-| Bisheriger LOVABLE_API_KEY | Bleibt bestehen, wird aber von diesen Funktionen nicht mehr genutzt |
+### Video-URL Speicherung
+Die `transcribe-audio` Edge Function wird erweitert: Nach dem Storage-Upload wird eine Signed URL generiert und als `video_url` im Recording gespeichert (Format `storage:audio-uploads:path`), sodass das Frontend das Video spaeter abspielen kann.
 
