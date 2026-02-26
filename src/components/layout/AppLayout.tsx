@@ -7,9 +7,10 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
 import { useSessionTimeout } from "@/hooks/useSessionTimeout";
 import { SessionTimeoutWarning } from "@/components/session/SessionTimeoutWarning";
-import { useQuickRecording } from "@/hooks/useQuickRecording";
+import { useQuickRecordingContext } from "@/contexts/QuickRecordingContext";
 import { useUserQuota } from "@/hooks/useUserQuota";
 import { QuotaExhaustedModal } from "@/components/quota/QuotaExhaustedModal";
+import { RecordingModeDialog } from "@/components/recording/RecordingModeDialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface AppLayoutProps {
@@ -28,17 +29,15 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { isAdmin } = useAdminCheck();
   const { quota } = useUserQuota();
   const [showQuotaModal, setShowQuotaModal] = useState(false);
-  const { isRecording, startRecording, stopRecording } = useQuickRecording({
-    quota,
-    onQuotaExhausted: () => setShowQuotaModal(true),
-  });
+  const { isRecording, openModeDialog, stopRecording } = useQuickRecordingContext();
   const { showWarning, remainingSeconds, extendSession } = useSessionTimeout({ paused: isRecording });
 
   return (
     <div className={cn(
       "min-h-screen flex flex-col w-full",
       "bg-gradient-to-b from-sky-50 via-slate-50 to-slate-100",
-      "dark:from-slate-900 dark:via-slate-900 dark:to-slate-950"
+      "dark:from-slate-900 dark:via-slate-900 dark:to-slate-950",
+      isRecording && "pt-10" // offset for recording banner
     )}>
       {/* Impersonation Banner */}
       <ImpersonationBanner />
@@ -94,27 +93,40 @@ export function AppLayout({ children }: AppLayoutProps) {
           )}
 
           {/* Quick Recording Mic Button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                className={cn(
-                  "relative flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200",
-                  isRecording
-                    ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
-                    : "text-muted-foreground hover:bg-white/50 dark:hover:bg-white/5 hover:text-foreground"
-                )}
-              >
-                {isRecording && (
+          {isRecording ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={stopRecording}
+                  className={cn(
+                    "relative flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200",
+                    "bg-destructive/10 text-destructive hover:bg-destructive/20"
+                  )}
+                >
                   <span className="absolute inset-0 rounded-xl border-2 border-destructive animate-pulse" />
-                )}
-                {isRecording ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-5 w-5" />}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {isRecording ? "Aufnahme beenden" : "Schnellaufnahme starten"}
-            </TooltipContent>
-          </Tooltip>
+                  <Square className="h-4 w-4 fill-current" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Aufnahme beenden</TooltipContent>
+            </Tooltip>
+          ) : (
+            <RecordingModeDialog>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => {
+                      if (quota?.is_exhausted) { setShowQuotaModal(true); return; }
+                      openModeDialog();
+                    }}
+                    className="relative flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200 text-muted-foreground hover:bg-white/50 dark:hover:bg-white/5 hover:text-foreground"
+                  >
+                    <Mic className="h-5 w-5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Schnellaufnahme starten</TooltipContent>
+              </Tooltip>
+            </RecordingModeDialog>
+          )}
         </nav>
       </header>
       

@@ -8,6 +8,9 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { AdminRoute } from "@/components/auth/AdminRoute";
 import { TourProvider } from "@/components/onboarding/TourProvider";
 import { ImpersonationProvider } from "@/contexts/ImpersonationContext";
+import { QuickRecordingProvider } from "@/contexts/QuickRecordingContext";
+import { RecordingBanner } from "@/components/recording/RecordingBanner";
+import { ScreenBorderOverlay } from "@/components/recording/ScreenBorderOverlay";
 import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -27,9 +30,12 @@ const App = () => (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <TourProvider>
       <ImpersonationProvider>
+      <QuickRecordingProvider>
       <TooltipProvider>
       <Toaster />
       <Sonner />
+      <RecordingBanner />
+      <ScreenBorderOverlay />
       <BrowserRouter>
         <OnboardingTour />
         <Routes>
@@ -50,6 +56,7 @@ const App = () => (
         </Routes>
       </BrowserRouter>
       </TooltipProvider>
+      </QuickRecordingProvider>
       </ImpersonationProvider>
       </TourProvider>
     </ThemeProvider>
