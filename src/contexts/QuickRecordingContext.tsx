@@ -51,7 +51,7 @@ export function QuickRecordingProvider({ children }: Props) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isStoppingRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animFrameRef = useRef<number | null>(null);
+  const canvasIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const recordingModeRef = useRef<RecordingMode | null>(null);
   const isRecordingRef = useRef(false);
@@ -67,7 +67,7 @@ export function QuickRecordingProvider({ children }: Props) {
     audioContextRef.current = null;
     setWebcamStream(null);
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null; }
+    if (canvasIntervalRef.current) { clearInterval(canvasIntervalRef.current); canvasIntervalRef.current = null; }
     canvasRef.current = null;
     // Close PiP
     if (document.pictureInPictureElement) {
@@ -190,9 +190,8 @@ export function QuickRecordingProvider({ children }: Props) {
           ctx2d.closePath();
           ctx2d.stroke();
 
-          animFrameRef.current = requestAnimationFrame(drawFrame);
         };
-        animFrameRef.current = requestAnimationFrame(drawFrame);
+        canvasIntervalRef.current = setInterval(drawFrame, 33);
 
         const canvasStream = canvas.captureStream(30);
         videoTracks = canvasStream.getVideoTracks();
@@ -231,7 +230,14 @@ export function QuickRecordingProvider({ children }: Props) {
 
       timerRef.current = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
 
-      displayStream.getVideoTracks()[0]?.addEventListener('ended', () => { stopRecording(); });
+      displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        // Debounce: some browsers fire transient 'ended' events on tab switch
+        setTimeout(() => {
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            stopRecording();
+          }
+        }, 500);
+      });
 
       // Set up PiP video element for monitor mode
       if (mode === 'monitor' && 'pictureInPictureEnabled' in document) {
