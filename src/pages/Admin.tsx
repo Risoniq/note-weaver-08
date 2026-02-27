@@ -1037,6 +1037,15 @@ const Admin = () => {
                                         </AlertDialogFooter>
                                       </AlertDialogContent>
                                     </AlertDialog>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      title="Passwort-Reset senden"
+                                      disabled={actionLoading === user.id}
+                                      onClick={() => handleSendPasswordReset(user.id, user.email)}
+                                    >
+                                      <KeyRound className="h-4 w-4" />
+                                    </Button>
                                   </>
                                 )}
                               </div>
