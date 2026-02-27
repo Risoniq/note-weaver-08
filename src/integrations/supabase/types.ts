@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      action_item_completions: {
+        Row: {
+          completed_at: string
+          id: string
+          item_index: number
+          recording_id: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string
+          id?: string
+          item_index: number
+          recording_id: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string
+          id?: string
+          item_index?: number
+          recording_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       api_keys: {
         Row: {
           created_at: string

@@ -53,6 +53,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useImpersonation } from "@/contexts/ImpersonationContext";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { EditableTitle } from "@/components/recordings/EditableTitle";
+import { useActionItemCompletions } from "@/hooks/useActionItemCompletions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -187,6 +188,8 @@ export default function MeetingDetail() {
   const { user } = useAuth();
   const { isAdmin } = useAdminCheck();
   const { isImpersonating, impersonatedUserId } = useImpersonation();
+  const recordingIds = useMemo(() => id ? [id] : [], [id]);
+  const actionCompletions = useActionItemCompletions(recordingIds);
   
   // Sprecher-Farben für Edit-Modus
   const speakerColorMap = useMemo(() => {
@@ -1073,14 +1076,29 @@ export default function MeetingDetail() {
                 </CardHeader>
                 <CardContent className="px-6 pb-6">
                   <ul className="space-y-3">
-                    {recording.action_items.map((item, index) => (
-                      <li key={index} className="flex items-start gap-3 p-3 rounded-2xl bg-secondary/30 hover:bg-secondary/50 transition-colors group cursor-pointer">
-                        <div className="h-6 w-6 rounded-lg border-2 border-success/50 shrink-0 mt-0.5 group-hover:bg-success/20 transition-colors flex items-center justify-center">
-                          <Check className="h-4 w-4 text-success opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
-                        <span className="text-foreground">{item}</span>
-                      </li>
-                    ))}
+                    {recording.action_items.map((item, index) => {
+                      const done = actionCompletions.isCompleted(recording.id, index);
+                      const doneAt = actionCompletions.completedAt(recording.id, index);
+                      return (
+                        <li
+                          key={index}
+                          className="flex items-start gap-3 p-3 rounded-2xl bg-secondary/30 hover:bg-secondary/50 transition-colors cursor-pointer"
+                          onClick={() => actionCompletions.toggleCompletion(recording.id, index)}
+                        >
+                          <div className={`h-6 w-6 rounded-lg border-2 shrink-0 mt-0.5 flex items-center justify-center transition-colors ${done ? 'bg-success/20 border-success' : 'border-success/50 hover:bg-success/20'}`}>
+                            {done && <Check className="h-4 w-4 text-success" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className={`text-foreground ${done ? 'line-through opacity-60' : ''}`}>{item}</span>
+                            {doneAt && (
+                              <span className="block text-xs text-muted-foreground mt-0.5">
+                                erledigt am {doneAt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </CardContent>
               </Card>

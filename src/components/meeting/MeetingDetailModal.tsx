@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { X, Download, FileText, Target, CheckCircle, Clock, Radio, Mic, Play } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { X, Download, FileText, Target, CheckCircle, Clock, Radio, Mic, Play, Check } from 'lucide-react';
 import { Meeting } from '@/types/meeting';
 import { formatDuration } from '@/utils/meetingAnalysis';
 import { getAudioUrl } from '@/hooks/useMeetingStorage';
 import { useToast } from '@/hooks/use-toast';
+import { useActionItemCompletions } from '@/hooks/useActionItemCompletions';
 
 interface MeetingDetailModalProps {
   meeting: Meeting;
@@ -15,6 +16,9 @@ export const MeetingDetailModal = ({ meeting, onClose, onDownload }: MeetingDeta
   const { toast } = useToast();
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const recordingIds = useMemo(() => meeting.meeting_id ? [meeting.meeting_id] : [meeting.id], [meeting]);
+  const actionCompletions = useActionItemCompletions(recordingIds);
+  const recId = recordingIds[0];
 
   const handlePlayAudio = async () => {
     if (audioSrc) return; // already loaded
@@ -129,15 +133,29 @@ export const MeetingDetailModal = ({ meeting, onClose, onDownload }: MeetingDeta
                 Action Items
               </h3>
               <ul className="space-y-2">
-                {meeting.analysis.actionItems.map((item, i) => (
-                  <li key={i} className="flex gap-3 bg-success/5 p-3.5 rounded-xl border border-success/10">
-                    <input 
-                      type="checkbox" 
-                      className="mt-1 flex-shrink-0 w-4 h-4 accent-success" 
-                    />
-                    <span className="text-foreground">{item}</span>
-                  </li>
-                ))}
+                {meeting.analysis.actionItems.map((item, i) => {
+                  const done = actionCompletions.isCompleted(recId, i);
+                  const doneAt = actionCompletions.completedAt(recId, i);
+                  return (
+                    <li
+                      key={i}
+                      className="flex gap-3 bg-success/5 p-3.5 rounded-xl border border-success/10 cursor-pointer"
+                      onClick={() => actionCompletions.toggleCompletion(recId, i)}
+                    >
+                      <div className={`mt-1 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${done ? 'bg-success/20 border-success' : 'border-success/50'}`}>
+                        {done && <Check size={14} className="text-success" />}
+                      </div>
+                      <div className="flex-1">
+                        <span className={`text-foreground ${done ? 'line-through opacity-60' : ''}`}>{item}</span>
+                        {doneAt && (
+                          <span className="block text-xs text-muted-foreground mt-0.5">
+                            erledigt am {doneAt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
