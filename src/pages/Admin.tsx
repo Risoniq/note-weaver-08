@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, FileText, Clock, Activity, Calendar, CheckCircle, XCircle, Trash2, Shield, Settings, Eye, Plus, UsersRound, Key, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Users, FileText, Clock, Activity, Calendar, CheckCircle, XCircle, Trash2, Shield, Settings, Eye, Plus, UsersRound, Key, ShieldCheck, KeyRound } from 'lucide-react';
 import { withTokenRefresh } from '@/lib/retryWithTokenRefresh';
 import { SecurityDashboard } from '@/components/admin/SecurityDashboard';
 import { useImpersonation } from '@/contexts/ImpersonationContext';
@@ -243,6 +243,40 @@ const Admin = () => {
       toast({
         title: 'Fehler',
         description: err.message || 'Löschen fehlgeschlagen',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSendPasswordReset = async (userId: string, email: string) => {
+    setActionLoading(userId);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      const response = await withTokenRefresh(
+        () => supabase.functions.invoke('admin-send-password-reset', {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+          body: { user_id: userId },
+        })
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      toast({
+        title: 'Passwort-Reset gesendet',
+        description: `Eine E-Mail zur Passwort-Neueinrichtung wurde an ${email} gesendet.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Passwort-Reset fehlgeschlagen',
         variant: 'destructive',
       });
     } finally {
@@ -1003,6 +1037,15 @@ const Admin = () => {
                                         </AlertDialogFooter>
                                       </AlertDialogContent>
                                     </AlertDialog>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      title="Passwort-Reset senden"
+                                      disabled={actionLoading === user.id}
+                                      onClick={() => handleSendPasswordReset(user.id, user.email)}
+                                    >
+                                      <KeyRound className="h-4 w-4" />
+                                    </Button>
                                   </>
                                 )}
                               </div>

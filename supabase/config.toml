@@ -128,3 +128,6 @@ verify_jwt = false
 
 [functions.analyze-notetaker]
 verify_jwt = false
+
+[functions.admin-send-password-reset]
+verify_jwt = false
