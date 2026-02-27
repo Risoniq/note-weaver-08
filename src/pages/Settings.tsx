@@ -768,6 +768,77 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Branding / Whitelabel */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <ImageIcon className="h-5 w-5 text-primary" />
+                <CardTitle>Branding</CardTitle>
+              </div>
+              <CardDescription>Eigenes Logo und App-Name für dein Konto</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Logo Upload */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Eigenes Logo</Label>
+                  <p className="text-sm text-muted-foreground">Wird im Header angezeigt</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {brandingLogoUrl ? (
+                    <img src={brandingLogoUrl} alt="Logo" className="h-10 w-auto max-w-[120px] object-contain rounded border border-border" />
+                  ) : (
+                    <div className="h-10 w-10 rounded border border-dashed border-border flex items-center justify-center">
+                      <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      type="file"
+                      ref={logoInputRef}
+                      onChange={handleLogoUpload}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={isUploadingLogo}
+                    >
+                      {isUploadingLogo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                      <span className="ml-1">Hochladen</span>
+                    </Button>
+                    {brandingLogoUrl && (
+                      <Button variant="ghost" size="sm" onClick={removeLogo}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* App Name */}
+              <div className="space-y-2">
+                <Label>App-Name</Label>
+                <p className="text-sm text-muted-foreground">Eigener Name statt "Meeting Recorder"</p>
+                <div className="flex gap-2">
+                  <Input
+                    value={brandingAppName}
+                    onChange={(e) => setBrandingAppName(e.target.value)}
+                    placeholder="Meeting Recorder"
+                  />
+                  <Button onClick={saveBrandingSettings} disabled={isSavingBranding}>
+                    {isSavingBranding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    <span className="ml-1">Speichern</span>
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Recording Preferences */}
           <Card>
             <CardHeader>
