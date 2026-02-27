@@ -52,6 +52,7 @@ const App = () => (
           <Route path="/transcripts" element={<Navigate to="/recordings" replace />} />
           {/* OAuth callback must be reachable even if auth session refreshes during redirect */}
           <Route path="/calendar-callback" element={<CalendarCallback />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
