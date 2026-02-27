@@ -53,6 +53,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useImpersonation } from "@/contexts/ImpersonationContext";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { EditableTitle } from "@/components/recordings/EditableTitle";
+import { useActionItemCompletions } from "@/hooks/useActionItemCompletions";
 import {
   AlertDialog,
   AlertDialogAction,
