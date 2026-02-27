@@ -1,87 +1,37 @@
 
 
-# Doppelte Toast-Benachrichtigungen beheben
+# Bildschirmaufnahme stoppt bei Tab-Wechsel — Fix
 
 ## Problem
 
-Das Projekt verwendet **zwei parallele Toast-Systeme** gleichzeitig:
+Zwei Ursachen:
 
-1. **Radix/shadcn Toaster** (`@/components/ui/toaster.tsx` + `@/hooks/use-toast.ts`) — mit `TOAST_LIMIT = 1`, kann nur einen Toast gleichzeitig zeigen
-2. **Sonner** (`@/components/ui/sonner.tsx` + `import { toast } from 'sonner'`) — eigenes Stacking-System
+1. **`requestAnimationFrame` pausiert im Hintergrund**: Wenn die Webcam-Compositing-Schleife (Canvas) laeuft und der User den Tab wechselt, stoppt `requestAnimationFrame` komplett. Der MediaRecorder bekommt keine neuen Frames mehr, das Video friert ein.
 
-Beide Toaster werden in `App.tsx` gerendert (Zeile 36-37). Verschiedene Komponenten nutzen unterschiedliche Systeme — manche importieren `toast` aus `@/hooks/use-toast`, andere aus `sonner`. Wenn beide Systeme gleichzeitig feuern (z.B. beim Recording-Start), erscheinen doppelte Meldungen in verschiedenen Ecken.
+2. **Video-Track `ended`-Event stoppt die Aufnahme**: Zeile 234 in `QuickRecordingContext.tsx` registriert `displayStream.getVideoTracks()[0].addEventListener('ended', stopRecording)`. Chrome feuert dieses Event auch, wenn der User die Tab-Freigabe beendet oder den geteilten Tab schliesst — aber bei bestimmten Szenarien (z.B. Tab-Wechsel bei Browser-Tab-Sharing) kann der Track ebenfalls enden, was die Aufnahme ungewollt beendet.
 
-Zusaetzlich hat das Radix-System `TOAST_LIMIT = 1` und einen extrem langen `TOAST_REMOVE_DELAY = 1000000` (ca. 16 Minuten), was dazu fuehrt, dass alte Toasts nicht verschwinden und neue Toasts alte sofort ersetzen statt zu stacken.
+3. **Modus-Hint vs. tatsaechliche Auswahl**: `displaySurface: 'monitor'` ist nur ein Hint fuer den Browser-Dialog. Wenn der User im Picker stattdessen einen einzelnen Tab waehlt, wird nur dieser Tab aufgenommen — nicht der gesamte Bildschirm.
 
-## Loesung: Auf ein einziges Toast-System vereinheitlichen
+## Aenderungen
 
-**Sonner** wird als alleiniges System beibehalten, da es nativ Stacking unterstuetzt, automatische Timeouts hat und bereits von der Mehrheit der Komponenten genutzt wird.
+### `src/contexts/QuickRecordingContext.tsx`
 
-### Schritt 1: Radix-Toaster aus App.tsx entfernen
+**A) Canvas-Loop von `requestAnimationFrame` auf `setInterval` umstellen**
 
-Die Zeile `<Toaster />` (Radix) wird entfernt. Nur `<Sonner />` bleibt.
+Die `drawFrame`-Funktion wird statt mit `requestAnimationFrame` mit `setInterval(drawFrame, 1000/30)` (30 FPS) aufgerufen. `setInterval` laeuft im Hintergrund weiter, `requestAnimationFrame` nicht. Der Ref `animFrameRef` wird zu einem `intervalRef` (Typ `ReturnType<typeof setInterval>`).
 
-### Schritt 2: Alle `@/hooks/use-toast` Importe auf Sonner umstellen
+**B) Video-Track `ended`-Handler absichern**
 
-Alle Dateien, die `toast` oder `useToast` aus `@/hooks/use-toast` importieren, werden auf `import { toast } from 'sonner'` umgestellt. Die Sonner-API unterscheidet sich leicht:
+Statt blind `stopRecording()` aufzurufen, wird geprueft, ob der MediaRecorder noch aktiv ist und ob es sich um ein echtes Ende handelt (nicht nur ein Pause-Event). Zusaetzlich wird ein kurzer Timeout (500ms) eingebaut, damit Flicker-Events (z.B. bei Tab-Wechsel) nicht sofort die Aufnahme beenden.
 
-```text
-// Vorher (Radix):
-toast({ title: 'Titel', description: 'Beschreibung', variant: 'destructive' })
+**C) Timer (`setInterval` fuer Elapsed) robuster machen**
 
-// Nachher (Sonner):
-toast.error('Beschreibung')          // fuer destructive
-toast.success('Beschreibung')        // fuer Erfolg
-toast('Beschreibung')                // fuer neutral
-toast('Titel', { description: '…' }) // mit Beschreibung
-```
+Der Timer laeuft bereits mit `setInterval` — kein Problem hier.
 
-### Schritt 3: Sonner-Konfiguration fuer Stacking
-
-In der Sonner-Komponente wird `visibleToasts={5}` gesetzt, damit bis zu 5 verschiedene Toasts gleichzeitig sichtbar sind und sich vertikal stacken. Position bleibt `bottom-right`.
-
-## Betroffene Dateien
-
-| Datei | Aenderung |
-|---|---|
-| `src/App.tsx` | `<Toaster />` (Radix) entfernen, nur Sonner behalten |
-| `src/components/ui/sonner.tsx` | `visibleToasts={5}` und `position="bottom-right"` hinzufuegen |
-| `src/contexts/QuickRecordingContext.tsx` | `toast` Import von `@/hooks/use-toast` auf `sonner` umstellen, alle Aufrufe anpassen |
-| `src/hooks/useMeetingBotWebhook.ts` | `useToast` auf Sonner umstellen |
-| `src/components/MeetingBot.tsx` | `useToast` auf Sonner umstellen |
-| `src/components/dashboard/MeetingChatWidget.tsx` | `useToast` auf Sonner umstellen |
-| `src/components/meeting/MeetingChatWidget.tsx` | `useToast` auf Sonner umstellen |
-| `src/components/meeting/MeetingDetailModal.tsx` | `useToast` auf Sonner umstellen |
-| `src/components/calendar/QuickMeetingJoin.tsx` | `toast` Import von `@/hooks/use-toast` auf `sonner` umstellen |
-| `src/hooks/useMeetingReminders.ts` | `useToast` auf Sonner umstellen |
-| `src/components/admin/WebhookConfigDialog.tsx` | `useToast` auf Sonner umstellen |
-| `src/components/projects/ProjectChatWidget.tsx` | `useToast` auf Sonner umstellen |
-| Weitere Dateien mit `@/hooks/use-toast` | Gleiche Umstellung |
-
-### Sonner Deduplizierung
-
-Sonner hat eingebaute Deduplizierung: Wenn `toast.error('Gleiche Nachricht')` mehrfach schnell hintereinander aufgerufen wird, zeigt es nur einen Toast. Fuer zusaetzlichen Schutz wird in haeufig feuernden Stellen (z.B. QuickRecordingContext) eine `toast.dismiss()` vor dem neuen Toast aufgerufen oder die Sonner `id`-Option genutzt:
-
-```text
-toast.success('Aufnahme gestartet', { id: 'recording-start' })
-// Wird mit gleicher ID nie doppelt angezeigt
-```
-
-## Technische Details
-
-### Sonner API-Mapping
-
-```text
-Radix-Aufruf                              → Sonner-Aufruf
-──────────────────────────────────────────────────────────
-toast({ title, description })              → toast(title, { description })
-toast({ title, variant: 'destructive' })   → toast.error(title)
-toast({ title, description, variant: 'destructive' }) → toast.error(title, { description })
-useToast() → const { toast } = ...         → import { toast } from 'sonner' (kein Hook noetig)
-```
-
-### Kein Breaking Change
-
-- Die Sonner-Komponente und viele Dateien nutzen bereits `sonner`
-- Die Radix-Toast UI-Dateien (`toast.tsx`, `toaster.tsx`, `use-toast.ts`) koennen bestehen bleiben, werden aber nicht mehr gerendert/importiert
+| Stelle | Vorher | Nachher |
+|---|---|---|
+| Zeile 54 | `animFrameRef = useRef<number>` | `canvasIntervalRef = useRef<ReturnType<typeof setInterval>>` |
+| Zeile 70 | `cancelAnimationFrame(animFrameRef)` | `clearInterval(canvasIntervalRef)` |
+| Zeile 156-194 | `requestAnimationFrame(drawFrame)` Loop | `setInterval(drawFrame, 33)` (30 FPS) |
+| Zeile 234 | `addEventListener('ended', stopRecording)` | Debounced handler mit 500ms Timeout, prueft `recorder.state` |
 
