@@ -207,30 +207,46 @@ export const AccountAnalyticsModal = ({
 
               {displayedItems.length > 0 ? (
                 <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {displayedItems.map((item, i) => (
-                    <div key={i} className="flex items-start gap-3 bg-background/50 rounded-lg px-3 py-2.5">
-                      <Checkbox className="mt-0.5 shrink-0" disabled />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm line-clamp-2">{item.text}</p>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                          <span className="truncate max-w-[200px]">{item.meetingTitle}</span>
-                          <span>·</span>
-                          <span className="shrink-0">
-                            {(() => {
-                              try { return format(parseISO(item.meetingDate), 'dd.MM.yyyy', { locale: de }); }
-                              catch { return ''; }
-                            })()}
-                          </span>
-                          {item.assignedTo && (
-                            <>
-                              <span>·</span>
-                              <span className="text-primary font-medium truncate max-w-[120px]">→ {item.assignedTo}</span>
-                            </>
-                          )}
+                  {displayedItems.map((item, i) => {
+                    const done = actionCompletions.isCompleted(item.recordingId, item.itemIndex);
+                    const doneAt = actionCompletions.completedAt(item.recordingId, item.itemIndex);
+                    return (
+                      <div
+                        key={i}
+                        className="flex items-start gap-3 bg-background/50 rounded-lg px-3 py-2.5 cursor-pointer"
+                        onClick={() => actionCompletions.toggleCompletion(item.recordingId, item.itemIndex)}
+                      >
+                        <div className={`mt-0.5 shrink-0 h-4 w-4 rounded border flex items-center justify-center transition-colors ${done ? 'bg-primary border-primary' : 'border-muted-foreground/40'}`}>
+                          {done && <Check className="h-3 w-3 text-primary-foreground" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-sm line-clamp-2 ${done ? 'line-through text-muted-foreground' : ''}`}>{item.text}</p>
+                          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                            <span className="truncate max-w-[200px]">{item.meetingTitle}</span>
+                            <span>·</span>
+                            <span className="shrink-0">
+                              {(() => {
+                                try { return format(parseISO(item.meetingDate), 'dd.MM.yyyy', { locale: de }); }
+                                catch { return ''; }
+                              })()}
+                            </span>
+                            {item.assignedTo && (
+                              <>
+                                <span>·</span>
+                                <span className="text-primary font-medium truncate max-w-[120px]">→ {item.assignedTo}</span>
+                              </>
+                            )}
+                            {doneAt && (
+                              <>
+                                <span>·</span>
+                                <span className="text-success">✓ {doneAt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-6">
