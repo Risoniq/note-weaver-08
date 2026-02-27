@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowLeft, Bell, Bot, Calendar as CalendarIcon, Check, Download, FileText, HelpCircle, Loader2, LogOut, Mic, PlayCircle, RefreshCw, Settings2, Shield, Upload, Volume2, X } from "lucide-react";
+import { ArrowLeft, Bell, Bot, Calendar as CalendarIcon, Check, Download, FileText, HelpCircle, Image as ImageIcon, Loader2, LogOut, Mic, PlayCircle, RefreshCw, Settings2, Shield, Upload, Volume2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useOnboardingTour } from "@/hooks/useOnboardingTour";
 import { Link } from "react-router-dom";
@@ -21,6 +21,7 @@ import { useGoogleRecallCalendar } from "@/hooks/useGoogleRecallCalendar";
 import { useMicrosoftRecallCalendar } from "@/hooks/useMicrosoftRecallCalendar";
 import { RecallCalendarConnection } from "@/components/calendar/RecallCalendarConnection";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useUserBranding } from "@/hooks/useUserBranding";
 
 const Settings = () => {
   const { toast } = useToast();
@@ -28,6 +29,14 @@ const Settings = () => {
   const navigate = useNavigate();
   const { isImpersonating, impersonatedUserId, impersonatedUserEmail } = useImpersonation();
   const { isAdmin } = useAdminCheck();
+  const { branding, updateBranding } = useUserBranding();
+  
+  // Branding state
+  const [brandingAppName, setBrandingAppName] = useState("");
+  const [brandingLogoUrl, setBrandingLogoUrl] = useState<string | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isSavingBranding, setIsSavingBranding] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   
   // Calendar hooks
   const { preferences, updatePreferences, fetchMeetings, preferencesLoaded } = useRecallCalendarMeetings();
@@ -182,6 +191,62 @@ const Settings = () => {
     loadBotSettings();
     loadTranscriptBackups();
   }, [loadBotSettings, loadTranscriptBackups]);
+
+  // Sync branding state when hook data loads
+  useEffect(() => {
+    if (branding) {
+      setBrandingAppName(branding.app_name || "");
+      setBrandingLogoUrl(branding.logo_url || null);
+    }
+  }, [branding]);
+
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    setIsUploadingLogo(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const filePath = `${user.id}/logo-${Date.now()}.${file.name.split('.').pop()}`;
+      const { error: uploadError } = await supabase.storage
+        .from('user-logos')
+        .upload(filePath, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage.from('user-logos').getPublicUrl(filePath);
+      setBrandingLogoUrl(publicUrl);
+      await updateBranding(publicUrl, brandingAppName || null);
+      toast({ title: "Logo hochgeladen" });
+    } catch (err) {
+      console.error('Logo upload error:', err);
+      toast({ title: "Upload fehlgeschlagen", variant: "destructive" });
+    } finally {
+      setIsUploadingLogo(false);
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  };
+
+  const removeLogo = async () => {
+    setBrandingLogoUrl(null);
+    try {
+      await updateBranding(null, brandingAppName || null);
+      toast({ title: "Logo entfernt" });
+    } catch (err) {
+      console.error('Error removing logo:', err);
+    }
+  };
+
+  const saveBrandingSettings = async () => {
+    setIsSavingBranding(true);
+    try {
+      await updateBranding(brandingLogoUrl, brandingAppName || null);
+      toast({ title: "Branding gespeichert" });
+    } catch (err) {
+      console.error('Error saving branding:', err);
+      toast({ title: "Fehler beim Speichern", variant: "destructive" });
+    } finally {
+      setIsSavingBranding(false);
+    }
+  };
   
   const downloadBackup = async (fileName: string) => {
     setIsDownloading(fileName);
@@ -700,6 +765,77 @@ const Settings = () => {
                 onCheckMicrosoftStatus={microsoft.checkStatus}
                 onRefreshMeetings={fetchMeetings}
               />
+            </CardContent>
+          </Card>
+
+          {/* Branding / Whitelabel */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <ImageIcon className="h-5 w-5 text-primary" />
+                <CardTitle>Branding</CardTitle>
+              </div>
+              <CardDescription>Eigenes Logo und App-Name für dein Konto</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Logo Upload */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Eigenes Logo</Label>
+                  <p className="text-sm text-muted-foreground">Wird im Header angezeigt</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {brandingLogoUrl ? (
+                    <img src={brandingLogoUrl} alt="Logo" className="h-10 w-auto max-w-[120px] object-contain rounded border border-border" />
+                  ) : (
+                    <div className="h-10 w-10 rounded border border-dashed border-border flex items-center justify-center">
+                      <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      type="file"
+                      ref={logoInputRef}
+                      onChange={handleLogoUpload}
+                      accept="image/*"
+                      className="hidden"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={isUploadingLogo}
+                    >
+                      {isUploadingLogo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                      <span className="ml-1">Hochladen</span>
+                    </Button>
+                    {brandingLogoUrl && (
+                      <Button variant="ghost" size="sm" onClick={removeLogo}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* App Name */}
+              <div className="space-y-2">
+                <Label>App-Name</Label>
+                <p className="text-sm text-muted-foreground">Eigener Name statt "Meeting Recorder"</p>
+                <div className="flex gap-2">
+                  <Input
+                    value={brandingAppName}
+                    onChange={(e) => setBrandingAppName(e.target.value)}
+                    placeholder="Meeting Recorder"
+                  />
+                  <Button onClick={saveBrandingSettings} disabled={isSavingBranding}>
+                    {isSavingBranding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    <span className="ml-1">Speichern</span>
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 

@@ -12,6 +12,7 @@ import { useUserQuota } from "@/hooks/useUserQuota";
 import { QuotaExhaustedModal } from "@/components/quota/QuotaExhaustedModal";
 import { RecordingModeDialog } from "@/components/recording/RecordingModeDialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useUserBranding } from "@/hooks/useUserBranding";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -28,6 +29,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const { isAdmin } = useAdminCheck();
   const { quota } = useUserQuota();
+  const { branding } = useUserBranding();
   const [showQuotaModal, setShowQuotaModal] = useState(false);
   const { isRecording, openModeDialog, stopRecording } = useQuickRecordingContext();
   const { showWarning, remainingSeconds, extendSession } = useSessionTimeout({ paused: isRecording });
@@ -52,7 +54,18 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* Logo - ThemeToggle links */}
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <span className="font-semibold text-lg hidden sm:block text-muted-foreground">Meeting Recorder</span>
+          {branding?.logo_url ? (
+            <img src={branding.logo_url} alt="Logo" className="h-8 w-auto max-w-[140px] object-contain hidden sm:block" />
+          ) : (
+            <span className="font-semibold text-lg hidden sm:block text-muted-foreground">
+              {branding?.app_name || "Meeting Recorder"}
+            </span>
+          )}
+          {branding?.logo_url && branding?.app_name && (
+            <span className="font-semibold text-lg hidden sm:block text-muted-foreground">
+              {branding.app_name}
+            </span>
+          )}
         </div>
 
         {/* Navigation */}
