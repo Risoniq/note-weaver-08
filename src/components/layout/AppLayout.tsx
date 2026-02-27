@@ -54,7 +54,18 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* Logo - ThemeToggle links */}
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <span className="font-semibold text-lg hidden sm:block text-muted-foreground">Meeting Recorder</span>
+          {branding?.logo_url ? (
+            <img src={branding.logo_url} alt="Logo" className="h-8 w-auto max-w-[140px] object-contain hidden sm:block" />
+          ) : (
+            <span className="font-semibold text-lg hidden sm:block text-muted-foreground">
+              {branding?.app_name || "Meeting Recorder"}
+            </span>
+          )}
+          {branding?.logo_url && branding?.app_name && (
+            <span className="font-semibold text-lg hidden sm:block text-muted-foreground">
+              {branding.app_name}
+            </span>
+          )}
         </div>
 
         {/* Navigation */}
