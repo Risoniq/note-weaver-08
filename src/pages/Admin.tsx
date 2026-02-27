@@ -250,6 +250,40 @@ const Admin = () => {
     }
   };
 
+  const handleSendPasswordReset = async (userId: string, email: string) => {
+    setActionLoading(userId);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) return;
+
+      const response = await withTokenRefresh(
+        () => supabase.functions.invoke('admin-send-password-reset', {
+          headers: {
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+          },
+          body: { user_id: userId },
+        })
+      );
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      toast({
+        title: 'Passwort-Reset gesendet',
+        description: `Eine E-Mail zur Passwort-Neueinrichtung wurde an ${email} gesendet.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Passwort-Reset fehlgeschlagen',
+        variant: 'destructive',
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const openQuotaEdit = (user: UserData) => {
     setEditingUser(user);
     setQuotaHours(user.max_minutes / 60);
