@@ -29,6 +29,14 @@ const Settings = () => {
   const navigate = useNavigate();
   const { isImpersonating, impersonatedUserId, impersonatedUserEmail } = useImpersonation();
   const { isAdmin } = useAdminCheck();
+  const { branding, updateBranding } = useUserBranding();
+  
+  // Branding state
+  const [brandingAppName, setBrandingAppName] = useState("");
+  const [brandingLogoUrl, setBrandingLogoUrl] = useState<string | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isSavingBranding, setIsSavingBranding] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   
   // Calendar hooks
   const { preferences, updatePreferences, fetchMeetings, preferencesLoaded } = useRecallCalendarMeetings();
