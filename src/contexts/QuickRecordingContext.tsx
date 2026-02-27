@@ -230,7 +230,14 @@ export function QuickRecordingProvider({ children }: Props) {
 
       timerRef.current = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
 
-      displayStream.getVideoTracks()[0]?.addEventListener('ended', () => { stopRecording(); });
+      displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        // Debounce: some browsers fire transient 'ended' events on tab switch
+        setTimeout(() => {
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            stopRecording();
+          }
+        }, 500);
+      });
 
       // Set up PiP video element for monitor mode
       if (mode === 'monitor' && 'pictureInPictureEnabled' in document) {
