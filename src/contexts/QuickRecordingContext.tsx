@@ -190,9 +190,8 @@ export function QuickRecordingProvider({ children }: Props) {
           ctx2d.closePath();
           ctx2d.stroke();
 
-          animFrameRef.current = requestAnimationFrame(drawFrame);
         };
-        animFrameRef.current = requestAnimationFrame(drawFrame);
+        canvasIntervalRef.current = setInterval(drawFrame, 33);
 
         const canvasStream = canvas.captureStream(30);
         videoTracks = canvasStream.getVideoTracks();
