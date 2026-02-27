@@ -16,6 +16,9 @@ export const MeetingDetailModal = ({ meeting, onClose, onDownload }: MeetingDeta
   const { toast } = useToast();
   const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const recordingIds = useMemo(() => meeting.meeting_id ? [meeting.meeting_id] : [meeting.id], [meeting]);
+  const actionCompletions = useActionItemCompletions(recordingIds);
+  const recId = recordingIds[0];
 
   const handlePlayAudio = async () => {
     if (audioSrc) return; // already loaded
