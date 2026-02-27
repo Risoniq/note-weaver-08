@@ -21,6 +21,7 @@ import { useGoogleRecallCalendar } from "@/hooks/useGoogleRecallCalendar";
 import { useMicrosoftRecallCalendar } from "@/hooks/useMicrosoftRecallCalendar";
 import { RecallCalendarConnection } from "@/components/calendar/RecallCalendarConnection";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useUserBranding } from "@/hooks/useUserBranding";
 
 const Settings = () => {
   const { toast } = useToast();
