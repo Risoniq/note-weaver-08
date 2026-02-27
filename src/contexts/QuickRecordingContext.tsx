@@ -51,7 +51,7 @@ export function QuickRecordingProvider({ children }: Props) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isStoppingRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animFrameRef = useRef<number | null>(null);
+  const canvasIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const recordingModeRef = useRef<RecordingMode | null>(null);
   const isRecordingRef = useRef(false);
