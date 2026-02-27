@@ -261,7 +261,7 @@ const Admin = () => {
           headers: {
             Authorization: `Bearer ${sessionData.session.access_token}`,
           },
-          body: { user_id: userId },
+          body: { user_id: userId, site_url: window.location.origin },
         })
       );
 
