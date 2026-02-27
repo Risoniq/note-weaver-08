@@ -191,6 +191,62 @@ const Settings = () => {
     loadBotSettings();
     loadTranscriptBackups();
   }, [loadBotSettings, loadTranscriptBackups]);
+
+  // Sync branding state when hook data loads
+  useEffect(() => {
+    if (branding) {
+      setBrandingAppName(branding.app_name || "");
+      setBrandingLogoUrl(branding.logo_url || null);
+    }
+  }, [branding]);
+
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    setIsUploadingLogo(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const filePath = `${user.id}/logo-${Date.now()}.${file.name.split('.').pop()}`;
+      const { error: uploadError } = await supabase.storage
+        .from('user-logos')
+        .upload(filePath, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      const { data: { publicUrl } } = supabase.storage.from('user-logos').getPublicUrl(filePath);
+      setBrandingLogoUrl(publicUrl);
+      await updateBranding(publicUrl, brandingAppName || null);
+      toast({ title: "Logo hochgeladen" });
+    } catch (err) {
+      console.error('Logo upload error:', err);
+      toast({ title: "Upload fehlgeschlagen", variant: "destructive" });
+    } finally {
+      setIsUploadingLogo(false);
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  };
+
+  const removeLogo = async () => {
+    setBrandingLogoUrl(null);
+    try {
+      await updateBranding(null, brandingAppName || null);
+      toast({ title: "Logo entfernt" });
+    } catch (err) {
+      console.error('Error removing logo:', err);
+    }
+  };
+
+  const saveBrandingSettings = async () => {
+    setIsSavingBranding(true);
+    try {
+      await updateBranding(brandingLogoUrl, brandingAppName || null);
+      toast({ title: "Branding gespeichert" });
+    } catch (err) {
+      console.error('Error saving branding:', err);
+      toast({ title: "Fehler beim Speichern", variant: "destructive" });
+    } finally {
+      setIsSavingBranding(false);
+    }
+  };
   
   const downloadBackup = async (fileName: string) => {
     setIsDownloading(fileName);
