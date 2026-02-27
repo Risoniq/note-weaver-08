@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   Sheet,
   SheetContent,
@@ -18,10 +19,12 @@ import {
   Target, 
   CheckSquare,
   FileDown,
-  ExternalLink
+  ExternalLink,
+  Check,
 } from "lucide-react";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
+import { useActionItemCompletions } from "@/hooks/useActionItemCompletions";
 
 interface RecordingDetailSheetProps {
   recording: Recording | null;
