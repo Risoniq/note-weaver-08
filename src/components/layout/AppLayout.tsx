@@ -12,6 +12,7 @@ import { useUserQuota } from "@/hooks/useUserQuota";
 import { QuotaExhaustedModal } from "@/components/quota/QuotaExhaustedModal";
 import { RecordingModeDialog } from "@/components/recording/RecordingModeDialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useUserBranding } from "@/hooks/useUserBranding";
 
 interface AppLayoutProps {
   children: ReactNode;
