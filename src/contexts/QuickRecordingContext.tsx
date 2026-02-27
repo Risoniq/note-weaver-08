@@ -22,10 +22,16 @@ interface QuickRecordingContextValue {
 
 const QuickRecordingContext = createContext<QuickRecordingContextValue | null>(null);
 
+const fallback: QuickRecordingContextValue = {
+  isRecording: false, recordingMode: null, elapsedSeconds: 0,
+  showModeDialog: false, setShowModeDialog: () => {}, openModeDialog: () => {},
+  startRecording: async () => {}, stopRecording: async () => {},
+  error: '', includeWebcam: false, webcamStream: null,
+};
+
 export function useQuickRecordingContext() {
   const ctx = useContext(QuickRecordingContext);
-  if (!ctx) throw new Error('useQuickRecordingContext must be inside QuickRecordingProvider');
-  return ctx;
+  return ctx ?? fallback;
 }
 
 interface Props {
