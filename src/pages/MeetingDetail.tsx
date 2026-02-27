@@ -188,6 +188,8 @@ export default function MeetingDetail() {
   const { user } = useAuth();
   const { isAdmin } = useAdminCheck();
   const { isImpersonating, impersonatedUserId } = useImpersonation();
+  const recordingIds = useMemo(() => id ? [id] : [], [id]);
+  const actionCompletions = useActionItemCompletions(recordingIds);
   
   // Sprecher-Farben für Edit-Modus
   const speakerColorMap = useMemo(() => {
