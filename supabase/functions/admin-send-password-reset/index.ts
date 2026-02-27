@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { user_id } = await req.json();
+    const { user_id, site_url } = await req.json();
 
     if (!user_id) {
       return new Response(JSON.stringify({ error: 'user_id is required' }), {
@@ -72,16 +72,20 @@ Deno.serve(async (req) => {
     }
 
     const email = targetUser.user.email;
+    const redirectTo = site_url ? `${site_url}/reset-password` : undefined;
 
-    // Generate recovery link (this also sends the email via configured SMTP)
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+    // Send password reset email (this automatically sends the recovery email)
+    const { error: resetError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'recovery',
       email,
+      options: {
+        redirectTo,
+      },
     });
 
-    if (linkError) {
-      console.error('Generate link error:', linkError);
-      return new Response(JSON.stringify({ error: 'Failed to generate password reset link' }), {
+    if (resetError) {
+      console.error('Reset password error:', resetError);
+      return new Response(JSON.stringify({ error: 'Failed to send password reset email' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
