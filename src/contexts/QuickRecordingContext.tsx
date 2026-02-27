@@ -67,7 +67,7 @@ export function QuickRecordingProvider({ children }: Props) {
     audioContextRef.current = null;
     setWebcamStream(null);
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null; }
+    if (canvasIntervalRef.current) { clearInterval(canvasIntervalRef.current); canvasIntervalRef.current = null; }
     canvasRef.current = null;
     // Close PiP
     if (document.pictureInPictureElement) {
