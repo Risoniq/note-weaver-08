@@ -23,6 +23,13 @@ export const AccountAnalyticsModal = ({
 }: AccountAnalyticsModalProps) => {
   const [todoFilter, setTodoFilter] = useState<"week" | "all">("week");
 
+  // Collect unique recording IDs for completion hook
+  const recordingIds = useMemo(() => {
+    if (!analytics) return [];
+    return [...new Set(analytics.allActionItems.map(i => i.recordingId))];
+  }, [analytics]);
+  const actionCompletions = useActionItemCompletions(recordingIds);
+
   if (!analytics) return null;
 
   // Aggregierte Sprechanteile: Eigener Account vs. Andere
