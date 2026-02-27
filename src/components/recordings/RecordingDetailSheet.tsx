@@ -37,6 +37,9 @@ export const RecordingDetailSheet = ({
   open, 
   onOpenChange 
 }: RecordingDetailSheetProps) => {
+  const recordingIds = useMemo(() => recording ? [recording.id] : [], [recording?.id]);
+  const actionCompletions = useActionItemCompletions(recordingIds);
+
   if (!recording) return null;
 
   const formattedDate = format(new Date(recording.created_at), "dd. MMMM yyyy, HH:mm 'Uhr'", { locale: de });
