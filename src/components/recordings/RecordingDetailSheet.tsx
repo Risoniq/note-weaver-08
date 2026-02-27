@@ -155,18 +155,32 @@ export const RecordingDetailSheet = ({
               <section>
                 <h3 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
                   <CheckSquare className="h-4 w-4" />
-                  Action Items ({recording.action_items.length})
+                  Action Items ({actionCompletions.completedCount(recording.id)}/{recording.action_items.length} erledigt)
                 </h3>
                 <ul className="space-y-2">
-                  {recording.action_items.map((item, index) => (
-                    <li 
-                      key={index} 
-                      className="text-sm text-muted-foreground bg-muted/50 rounded-lg p-3 flex items-start gap-2"
-                    >
-                      <CheckSquare className="h-4 w-4 shrink-0 mt-0.5 text-primary" />
-                      {item}
-                    </li>
-                  ))}
+                  {recording.action_items.map((item, index) => {
+                    const done = actionCompletions.isCompleted(recording.id, index);
+                    const doneAt = actionCompletions.completedAt(recording.id, index);
+                    return (
+                      <li
+                        key={index}
+                        className="text-sm bg-muted/50 rounded-lg p-3 flex items-start gap-2 cursor-pointer"
+                        onClick={() => actionCompletions.toggleCompletion(recording.id, index)}
+                      >
+                        <div className={`h-4 w-4 shrink-0 mt-0.5 rounded border flex items-center justify-center transition-colors ${done ? 'bg-primary border-primary' : 'border-muted-foreground/40'}`}>
+                          {done && <Check className="h-3 w-3 text-primary-foreground" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className={done ? 'line-through text-muted-foreground' : 'text-muted-foreground'}>{item}</span>
+                          {doneAt && (
+                            <span className="block text-xs text-muted-foreground/70 mt-0.5">
+                              erledigt am {doneAt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             )}

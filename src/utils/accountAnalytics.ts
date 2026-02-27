@@ -208,13 +208,15 @@ export const calculateAccountAnalytics = (
   const allActionItemsList: ActionItemWithContext[] = [];
   completedRecordings.forEach(recording => {
     if (recording.action_items && Array.isArray(recording.action_items)) {
-      recording.action_items.forEach((item: string) => {
+      recording.action_items.forEach((item: string, idx: number) => {
         const assignedTo = extractAssignedPerson(item);
         allActionItemsList.push({
           text: item,
           meetingTitle: recording.title || 'Unbenanntes Meeting',
           meetingDate: recording.created_at,
           assignedTo,
+          recordingId: recording.id,
+          itemIndex: idx,
         });
       });
     }
