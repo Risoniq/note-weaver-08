@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { X, Download, FileText, Target, CheckCircle, Clock, Radio, Mic, Play } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { X, Download, FileText, Target, CheckCircle, Clock, Radio, Mic, Play, Check } from 'lucide-react';
 import { Meeting } from '@/types/meeting';
 import { formatDuration } from '@/utils/meetingAnalysis';
 import { getAudioUrl } from '@/hooks/useMeetingStorage';
 import { useToast } from '@/hooks/use-toast';
+import { useActionItemCompletions } from '@/hooks/useActionItemCompletions';
 
 interface MeetingDetailModalProps {
   meeting: Meeting;
