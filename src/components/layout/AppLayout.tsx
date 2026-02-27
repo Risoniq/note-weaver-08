@@ -29,6 +29,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const { isAdmin } = useAdminCheck();
   const { quota } = useUserQuota();
+  const { branding } = useUserBranding();
   const [showQuotaModal, setShowQuotaModal] = useState(false);
   const { isRecording, openModeDialog, stopRecording } = useQuickRecordingContext();
   const { showWarning, remainingSeconds, extendSession } = useSessionTimeout({ paused: isRecording });
