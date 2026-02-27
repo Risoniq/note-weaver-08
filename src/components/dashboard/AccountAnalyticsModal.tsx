@@ -79,7 +79,7 @@ export const AccountAnalyticsModal = ({
             <div className="grid grid-cols-4 gap-3">
               <StatCard icon={<Users className="h-5 w-5" />} value={analytics.totalMeetings} label="Meetings" />
               <StatCard icon={<Clock className="h-5 w-5" />} value={formatDuration(analytics.totalDurationMinutes)} label="Aufnahmezeit" />
-              <StatCard icon={<CheckSquare className="h-5 w-5" />} value={analytics.totalActionItems} label="To-Dos" />
+              <StatCard icon={<CheckSquare className="h-5 w-5" />} value={`${actionCompletions.completedCount()}/${analytics.totalActionItems}`} label="To-Dos erledigt" />
               <StatCard icon={<MessageCircleQuestion className="h-5 w-5" />} value={analytics.aggregatedOpenQuestions.length} label="Offene Fragen" />
             </div>
 
