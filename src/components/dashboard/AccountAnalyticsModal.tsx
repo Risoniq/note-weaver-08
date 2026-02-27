@@ -1,14 +1,14 @@
 import { useState, useMemo } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
-import { Users, Clock, CheckSquare, MessageCircleQuestion, TrendingUp, Target, ListTodo, CalendarDays } from "lucide-react";
+import { Users, Clock, CheckSquare, MessageCircleQuestion, TrendingUp, Target, ListTodo, CalendarDays, Check } from "lucide-react";
 import { formatDuration, type AccountAnalytics, type ActionItemWithContext } from "@/utils/accountAnalytics";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MeetingChatWidget } from "./MeetingChatWidget";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { format, parseISO, isThisWeek } from "date-fns";
 import { de } from "date-fns/locale";
+import { useActionItemCompletions } from "@/hooks/useActionItemCompletions";
 
 interface AccountAnalyticsModalProps {
   open: boolean;
