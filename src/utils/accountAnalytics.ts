@@ -45,6 +45,8 @@ export interface ActionItemWithContext {
   meetingTitle: string;
   meetingDate: string;
   assignedTo: string | null;
+  recordingId: string;
+  itemIndex: number;
 }
 
 export interface AccountAnalytics {
