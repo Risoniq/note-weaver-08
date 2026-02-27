@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowLeft, Bell, Bot, Calendar as CalendarIcon, Check, Download, FileText, HelpCircle, Loader2, LogOut, Mic, PlayCircle, RefreshCw, Settings2, Shield, Upload, Volume2, X } from "lucide-react";
+import { ArrowLeft, Bell, Bot, Calendar as CalendarIcon, Check, Download, FileText, HelpCircle, Image, Loader2, LogOut, Mic, PlayCircle, RefreshCw, Settings2, Shield, Upload, Volume2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useOnboardingTour } from "@/hooks/useOnboardingTour";
 import { Link } from "react-router-dom";
