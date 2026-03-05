@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
 const MAX_CHUNK_BYTES = 750 * 1024 * 1024;
+const MAX_DURATION_SECONDS = 7200; // 2 hours
 
 type RecordingMode = 'monitor' | 'window' | 'browser';
 
@@ -61,6 +62,7 @@ export function QuickRecordingProvider({ children }: Props) {
   const pipVideoRef = useRef<HTMLVideoElement | null>(null);
   const recordingModeRef = useRef<RecordingMode | null>(null);
   const isRecordingRef = useRef(false);
+  const mimeTypeRef = useRef<string>('video/webm');
 
   const stopAllTracks = useCallback(() => {
     displayStreamRef.current?.getTracks().forEach(t => t.stop());
@@ -75,7 +77,6 @@ export function QuickRecordingProvider({ children }: Props) {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     if (canvasIntervalRef.current) { clearInterval(canvasIntervalRef.current); canvasIntervalRef.current = null; }
     canvasRef.current = null;
-    // Close PiP
     if (document.pictureInPictureElement) {
       document.exitPictureInPicture().catch(() => {});
     }
@@ -85,9 +86,100 @@ export function QuickRecordingProvider({ children }: Props) {
     }
   }, []);
 
+  const resetState = useCallback(() => {
+    setIsRecording(false);
+    isRecordingRef.current = false;
+    setRecordingMode(null);
+    recordingModeRef.current = null;
+    setElapsedSeconds(0);
+    setIncludeWebcam(false);
+    isStoppingRef.current = false;
+  }, []);
+
+  /** Upload whatever chunks are available */
+  const uploadChunks = useCallback(async (chunks: Blob[], mimeType: string) => {
+    const blob = new Blob(chunks, { type: mimeType });
+    if (blob.size === 0) {
+      toast({ title: 'Fehler', description: 'Keine Aufnahmedaten vorhanden.', variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: 'Aufnahme beendet', description: 'Wird hochgeladen und transkribiert…', id: 'recording-stop' });
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: 'Fehler', description: 'Nicht eingeloggt.', variant: 'destructive' });
+        return;
+      }
+
+      const now = new Date();
+      const title = `Aufnahme ${now.toLocaleDateString('de-DE')} ${now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+
+      const formData = new FormData();
+      formData.append('audio', blob, `recording-${Date.now()}.webm`);
+      formData.append('title', title);
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: formData,
+      });
+
+      const result = await response.json();
+      if (response.ok && result.success) {
+        toast({ title: '✅ Aufnahme gespeichert', description: 'Die Transkription läuft im Hintergrund.', id: 'recording-saved' });
+      } else {
+        toast({ title: 'Fehler', description: result.error || 'Upload fehlgeschlagen.', variant: 'destructive' });
+      }
+    } catch (uploadErr: any) {
+      console.error('Upload failed:', uploadErr);
+      toast({ title: 'Fehler', description: 'Upload fehlgeschlagen.', variant: 'destructive' });
+    }
+  }, []);
+
   const openModeDialog = useCallback(() => {
     setShowModeDialog(true);
   }, []);
+
+  const stopRecording = useCallback(async () => {
+    if (isStoppingRef.current) return;
+    isStoppingRef.current = true;
+
+    const recorder = mediaRecorderRef.current;
+    const chunks = [...chunksRef.current];
+    const mimeType = mimeTypeRef.current;
+
+    // If recorder is already inactive or missing, handle ghost state
+    if (!recorder || recorder.state === 'inactive') {
+      stopAllTracks();
+      resetState();
+      chunksRef.current = [];
+      mediaRecorderRef.current = null;
+
+      // Still upload whatever chunks we have
+      if (chunks.length > 0) {
+        await uploadChunks(chunks, mimeType);
+      }
+      return;
+    }
+
+    return new Promise<void>((resolve) => {
+      recorder.onstop = async () => {
+        stopAllTracks();
+        resetState();
+
+        const allChunks = [...chunksRef.current];
+        chunksRef.current = [];
+        mediaRecorderRef.current = null;
+
+        await uploadChunks(allChunks, recorder.mimeType);
+        resolve();
+      };
+      recorder.stop();
+    });
+  }, [stopAllTracks, resetState, uploadChunks]);
 
   const startRecording = useCallback(async (mode: RecordingMode, withWebcam = false) => {
     setError('');
@@ -124,14 +216,12 @@ export function QuickRecordingProvider({ children }: Props) {
       let videoTracks: MediaStreamTrack[];
 
       if (withWebcam) {
-        // Get webcam stream
         const camStream = await navigator.mediaDevices.getUserMedia({
           video: { width: 320, height: 240, facingMode: 'user' },
         });
         webcamStreamRef.current = camStream;
         setWebcamStream(camStream);
 
-        // Set up canvas compositing
         const displayVideoTrack = displayStream.getVideoTracks()[0];
         const displaySettings = displayVideoTrack.getSettings();
         const cw = displaySettings.width || 1920;
@@ -161,7 +251,6 @@ export function QuickRecordingProvider({ children }: Props) {
 
         const drawFrame = () => {
           ctx2d.drawImage(displayVideo, 0, 0, cw, ch);
-          // Draw webcam overlay bottom-right with rounded rect clip
           const ox = cw - overlayW - padding;
           const oy = ch - overlayH - padding;
           const radius = 12;
@@ -180,7 +269,6 @@ export function QuickRecordingProvider({ children }: Props) {
           ctx2d.clip();
           ctx2d.drawImage(camVideo, ox, oy, overlayW, overlayH);
           ctx2d.restore();
-          // Border
           ctx2d.strokeStyle = 'rgba(255,255,255,0.6)';
           ctx2d.lineWidth = 2;
           ctx2d.beginPath();
@@ -195,7 +283,6 @@ export function QuickRecordingProvider({ children }: Props) {
           ctx2d.quadraticCurveTo(ox, oy, ox + radius, oy);
           ctx2d.closePath();
           ctx2d.stroke();
-
         };
         canvasIntervalRef.current = setInterval(drawFrame, 33);
 
@@ -210,10 +297,11 @@ export function QuickRecordingProvider({ children }: Props) {
         ...destination.stream.getAudioTracks(),
       ]);
 
-      const mediaRecorder = new MediaRecorder(combinedStream, {
-        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-          ? 'video/webm;codecs=vp9,opus' : 'video/webm',
-      });
+      const selectedMimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+        ? 'video/webm;codecs=vp9,opus' : 'video/webm';
+      mimeTypeRef.current = selectedMimeType;
+
+      const mediaRecorder = new MediaRecorder(combinedStream, { mimeType: selectedMimeType });
 
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
@@ -234,15 +322,24 @@ export function QuickRecordingProvider({ children }: Props) {
       recordingModeRef.current = mode;
       setElapsedSeconds(0);
 
-      timerRef.current = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
-
-      displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        // Debounce: some browsers fire transient 'ended' events on tab switch
-        setTimeout(() => {
-          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds(s => {
+          const next = s + 1;
+          if (next >= MAX_DURATION_SECONDS) {
+            toast({ title: 'Maximale Aufnahmedauer erreicht', description: 'Aufnahme nach 2 Stunden automatisch beendet.', variant: 'destructive', id: 'recording-max-duration' });
             stopRecording();
           }
-        }, 500);
+          return next;
+        });
+      }, 1000);
+
+      // Track ended handler — robust: works even if recorder already inactive
+      displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        setTimeout(() => {
+          if (isRecordingRef.current) {
+            stopRecording();
+          }
+        }, 300);
       });
 
       // Set up PiP video element for monitor mode
@@ -265,75 +362,7 @@ export function QuickRecordingProvider({ children }: Props) {
         toast({ title: 'Fehler', description: 'Aufnahme konnte nicht gestartet werden.', variant: 'destructive' });
       }
     }
-  }, [stopAllTracks]);
-
-  const stopRecording = useCallback(async () => {
-    if (isStoppingRef.current) return;
-    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
-    isStoppingRef.current = true;
-
-    return new Promise<void>((resolve) => {
-      const recorder = mediaRecorderRef.current!;
-      recorder.onstop = async () => {
-        setIsRecording(false);
-        isRecordingRef.current = false;
-        setRecordingMode(null);
-        recordingModeRef.current = null;
-        setElapsedSeconds(0);
-        setIncludeWebcam(false);
-        stopAllTracks();
-
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
-        chunksRef.current = [];
-
-        if (blob.size === 0) {
-          toast({ title: 'Fehler', description: 'Keine Aufnahmedaten vorhanden.', variant: 'destructive' });
-          isStoppingRef.current = false;
-          resolve();
-          return;
-        }
-
-        toast({ title: 'Aufnahme beendet', description: 'Wird hochgeladen und transkribiert…', id: 'recording-stop' });
-
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (!session) {
-            toast({ title: 'Fehler', description: 'Nicht eingeloggt.', variant: 'destructive' });
-            isStoppingRef.current = false;
-            resolve();
-            return;
-          }
-
-          const now = new Date();
-          const title = `Aufnahme ${now.toLocaleDateString('de-DE')} ${now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
-
-          const formData = new FormData();
-          formData.append('audio', blob, `recording-${Date.now()}.webm`);
-          formData.append('title', title);
-
-          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-          const response = await fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${session.access_token}` },
-            body: formData,
-          });
-
-          const result = await response.json();
-          if (response.ok && result.success) {
-            toast({ title: '✅ Aufnahme gespeichert', description: 'Die Transkription läuft im Hintergrund.', id: 'recording-saved' });
-          } else {
-            toast({ title: 'Fehler', description: result.error || 'Upload fehlgeschlagen.', variant: 'destructive' });
-          }
-        } catch (uploadErr: any) {
-          console.error('Upload failed:', uploadErr);
-          toast({ title: 'Fehler', description: 'Upload fehlgeschlagen.', variant: 'destructive' });
-        }
-        isStoppingRef.current = false;
-        resolve();
-      };
-      recorder.stop();
-    });
-  }, [stopAllTracks]);
+  }, [stopAllTracks, stopRecording]);
 
   // PiP visibility change handler
   useEffect(() => {
