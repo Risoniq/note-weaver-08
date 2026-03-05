@@ -239,7 +239,7 @@ export const AccountAnalyticsModal = ({
                             {doneAt && (
                               <>
                                 <span>·</span>
-                                <span className="text-success">✓ {actionCompletions.completedByEmail(item.recordingId, item.originalIndex) ?? ''} {doneAt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span>
+                                <span className="text-success">✓ {actionCompletions.completedByEmail(item.recordingId, item.itemIndex) ?? ''} {doneAt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span>
                               </>
                             )}
                           </div>
