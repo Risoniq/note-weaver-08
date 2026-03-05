@@ -1,0 +1,1 @@
+ALTER TABLE public.action_item_completions ADD COLUMN completed_by_email TEXT;

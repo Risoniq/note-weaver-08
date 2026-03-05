@@ -17,6 +17,7 @@ export type Database = {
       action_item_completions: {
         Row: {
           completed_at: string
+          completed_by_email: string | null
           id: string
           item_index: number
           recording_id: string
@@ -24,6 +25,7 @@ export type Database = {
         }
         Insert: {
           completed_at?: string
+          completed_by_email?: string | null
           id?: string
           item_index: number
           recording_id: string
@@ -31,6 +33,7 @@ export type Database = {
         }
         Update: {
           completed_at?: string
+          completed_by_email?: string | null
           id?: string
           item_index?: number
           recording_id?: string
