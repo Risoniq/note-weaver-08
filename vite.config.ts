@@ -15,4 +15,8 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  define: {
+    // Ensure correct Supabase URL is always used (fixes preview env override issue)
+    'import.meta.env.VITE_SUPABASE_URL': JSON.stringify("https://kltxpsrghuxzfbctkdnz.supabase.co"),
+  },
 }));
