@@ -22,19 +22,18 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 
-    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
+    // Authenticate user via getUser
     const token = authHeader.replace('Bearer ', '');
-    const { data: claims, error: claimsError } = await supabaseUser.auth.getClaims(token);
-    if (claimsError || !claims?.claims) {
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey);
+    const { data: { user }, error: authError } = await supabaseUser.auth.getUser(token);
+
+    if (authError || !user) {
       return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
         status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const userId = claims.claims.sub;
+    const userId = user.id;
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     const { data: isAdmin } = await supabaseAdmin.rpc('has_role', { _user_id: userId, _role: 'admin' });
@@ -85,8 +84,6 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const fileNames = new Set((files || []).map(f => f.name));
-
         for (const rec of recs) {
           // Prefix-based match: any file starting with the recording ID counts
           const found = (files || []).some(f => f.name.startsWith(rec.id));
@@ -120,7 +117,7 @@ Deno.serve(async (req) => {
           backups_found: backupsFound,
           backups_missing: backupsMissing,
           backups_corrupted: backupsCorrupted,
-          details: details.slice(0, 50), // Limit details
+          details: details.slice(0, 50),
           status,
           run_by: userId,
         })

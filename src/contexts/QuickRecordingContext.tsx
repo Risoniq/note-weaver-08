@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useRef, useCallback, useEffect, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { saveBlob, deleteBlob } from '@/hooks/useIndexedDBBackup';
 
 const MAX_CHUNK_BYTES = 750 * 1024 * 1024;
 const MAX_DURATION_SECONDS = 7200; // 2 hours
@@ -96,7 +97,7 @@ export function QuickRecordingProvider({ children }: Props) {
     isStoppingRef.current = false;
   }, []);
 
-  /** Upload whatever chunks are available */
+  /** Upload chunks with IndexedDB backup fallback */
   const uploadChunks = useCallback(async (chunks: Blob[], mimeType: string) => {
     const blob = new Blob(chunks, { type: mimeType });
     if (blob.size === 0) {
@@ -104,13 +105,22 @@ export function QuickRecordingProvider({ children }: Props) {
       return;
     }
 
+    // Save to IndexedDB FIRST as backup before attempting upload
+    const backupId = `recording-${Date.now()}`;
+    try {
+      await saveBlob(backupId, blob);
+      console.log(`Recording backed up to IndexedDB: ${backupId} (${(blob.size / 1024 / 1024).toFixed(1)} MB)`);
+    } catch (backupErr) {
+      console.warn('IndexedDB backup failed (continuing with upload):', backupErr);
+    }
+
     toast({ title: 'Aufnahme beendet', description: 'Wird hochgeladen und transkribiert…', id: 'recording-stop' });
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        toast({ title: 'Fehler', description: 'Nicht eingeloggt.', variant: 'destructive' });
-        return;
+        toast({ title: 'Fehler', description: 'Nicht eingeloggt. Aufnahme lokal gesichert.', variant: 'destructive' });
+        return; // Keep IndexedDB backup
       }
 
       const now = new Date();
@@ -130,18 +140,25 @@ export function QuickRecordingProvider({ children }: Props) {
       const result = await response.json();
       if (response.ok && result.success) {
         toast({ title: '✅ Aufnahme gespeichert', description: 'Die Transkription läuft im Hintergrund.', id: 'recording-saved' });
+        // Upload succeeded — remove IndexedDB backup
+        try { await deleteBlob(backupId); } catch {}
       } else {
-        toast({ title: 'Fehler', description: result.error || 'Upload fehlgeschlagen.', variant: 'destructive' });
+        toast({ title: 'Fehler', description: result.error || 'Upload fehlgeschlagen. Aufnahme lokal gesichert.', variant: 'destructive' });
+        // Keep IndexedDB backup for retry
       }
     } catch (uploadErr: any) {
       console.error('Upload failed:', uploadErr);
-      toast({ title: 'Fehler', description: 'Upload fehlgeschlagen.', variant: 'destructive' });
+      toast({ title: 'Upload fehlgeschlagen', description: 'Die Aufnahme wurde lokal gesichert und kann später erneut hochgeladen werden.', variant: 'destructive' });
+      // Keep IndexedDB backup for retry
     }
   }, []);
 
   const openModeDialog = useCallback(() => {
     setShowModeDialog(true);
   }, []);
+
+  // Use a ref to trigger stopRecording from the timer without calling it inside setState
+  const shouldStopRef = useRef(false);
 
   const stopRecording = useCallback(async () => {
     if (isStoppingRef.current) return;
@@ -181,12 +198,21 @@ export function QuickRecordingProvider({ children }: Props) {
     });
   }, [stopAllTracks, resetState, uploadChunks]);
 
+  // Effect to handle deferred stop (from max duration timer)
+  useEffect(() => {
+    if (shouldStopRef.current && isRecording) {
+      shouldStopRef.current = false;
+      stopRecording();
+    }
+  });
+
   const startRecording = useCallback(async (mode: RecordingMode, withWebcam = false) => {
     setError('');
     setShowModeDialog(false);
     chunksRef.current = [];
     totalChunkSizeRef.current = 0;
     isStoppingRef.current = false;
+    shouldStopRef.current = false;
     setIncludeWebcam(withWebcam);
 
     try {
@@ -326,8 +352,9 @@ export function QuickRecordingProvider({ children }: Props) {
         setElapsedSeconds(s => {
           const next = s + 1;
           if (next >= MAX_DURATION_SECONDS) {
+            // Don't call stopRecording inside setState — use ref to defer
             toast({ title: 'Maximale Aufnahmedauer erreicht', description: 'Aufnahme nach 2 Stunden automatisch beendet.', variant: 'destructive', id: 'recording-max-duration' });
-            stopRecording();
+            shouldStopRef.current = true;
           }
           return next;
         });
