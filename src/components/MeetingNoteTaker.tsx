@@ -177,8 +177,12 @@ export default function MeetingNoteTaker() {
         }
 
         audioTracks[0].onended = () => {
-          console.log('Audio stream ended');
-          stopRecording();
+          setTimeout(() => {
+            if (audioTracks[0].readyState === 'ended' && !isStoppingRef.current) {
+              console.log('Audio stream confirmed ended, stopping recording');
+              stopRecording();
+            }
+          }, 500);
         };
       } else {
         const deviceId = audioDevices.selectedMicId;
