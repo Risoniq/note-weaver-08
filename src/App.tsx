@@ -11,6 +11,7 @@ import { QuickRecordingProvider } from "@/contexts/QuickRecordingContext";
 import { RecordingBanner } from "@/components/recording/RecordingBanner";
 import { ScreenBorderOverlay } from "@/components/recording/ScreenBorderOverlay";
 import { WebcamPreview } from "@/components/recording/WebcamPreview";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -27,6 +28,7 @@ import ResetPassword from "./pages/ResetPassword";
 const queryClient = new QueryClient();
 
 const App = () => (
+  <ErrorBoundary>
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <TourProvider>
@@ -63,6 +65,7 @@ const App = () => (
       </TourProvider>
     </ThemeProvider>
   </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;
