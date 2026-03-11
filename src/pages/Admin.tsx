@@ -132,6 +132,11 @@ const Admin = () => {
   const [webhookDialogOpen, setWebhookDialogOpen] = useState(false);
   const [selectedApiKey, setSelectedApiKey] = useState<ApiKeyData | null>(null);
 
+  // Set Password Dialog
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordUser, setPasswordUser] = useState<UserData | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+
   const handleViewAsUser = (user: UserData) => {
     startImpersonating(user.id, user.email);
     navigate('/');
