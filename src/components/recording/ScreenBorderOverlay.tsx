@@ -7,7 +7,7 @@ export function ScreenBorderOverlay() {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] pointer-events-none border-2 border-destructive"
+      className="fixed inset-0 z-[9995] pointer-events-none border-2 border-destructive"
       aria-hidden="true"
     />
   );

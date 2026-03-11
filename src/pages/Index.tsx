@@ -134,11 +134,6 @@ const Index = () => {
           </GlassCard>
         )}
 
-        {/* Modal für erschöpftes Kontingent */}
-        <QuotaExhaustedModal 
-          open={showExhaustedModal} 
-          onClose={() => setShowExhaustedModal(false)} 
-        />
       </div>
       <Toaster />
     </AppLayout>

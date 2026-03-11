@@ -38,7 +38,7 @@ const App = () => (
       <ScreenBorderOverlay />
       <WebcamPreview />
       <BrowserRouter>
-        <OnboardingTour />
+        
         <Routes>
           <Route path="/auth" element={<Auth />} />
           <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />

@@ -138,7 +138,7 @@ export function OnboardingTour() {
   const isLastStep = currentStep === totalSteps - 1;
 
   return (
-    <div className="fixed inset-0 z-[9999]">
+    <div className="fixed inset-0 z-[9990]">
       {/* Backdrop with spotlight cutout */}
       <div className="absolute inset-0 pointer-events-auto">
         <svg className="absolute inset-0 w-full h-full">
