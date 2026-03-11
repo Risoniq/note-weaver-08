@@ -11,7 +11,7 @@ import { QuickRecordingProvider } from "@/contexts/QuickRecordingContext";
 import { RecordingBanner } from "@/components/recording/RecordingBanner";
 import { ScreenBorderOverlay } from "@/components/recording/ScreenBorderOverlay";
 import { WebcamPreview } from "@/components/recording/WebcamPreview";
-import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
+
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import CalendarCallback from "./pages/CalendarCallback";
