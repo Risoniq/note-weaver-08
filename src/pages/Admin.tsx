@@ -1372,6 +1372,36 @@ const Admin = () => {
           onSave={handleWebhookAction}
           isSaving={!!actionLoading}
         />
+
+        {/* Set Password Dialog */}
+        <Dialog open={passwordDialogOpen} onOpenChange={(open) => { setPasswordDialogOpen(open); if (!open) { setNewPassword(''); setPasswordUser(null); } }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Passwort setzen</DialogTitle>
+              <DialogDescription>
+                Neues Passwort für <strong>{passwordUser?.email}</strong> festlegen. Die E-Mail wird gleichzeitig bestätigt.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-password">Neues Passwort</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  placeholder="Mindestens 8 Zeichen"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>Abbrechen</Button>
+              <Button onClick={handleSetPassword} disabled={!newPassword || newPassword.length < 8 || actionLoading === passwordUser?.id}>
+                Passwort setzen
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
