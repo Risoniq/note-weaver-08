@@ -142,7 +142,7 @@ export default function MeetingDetail() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [activeFilter, setActiveFilter] = useState<TimeFilter>('7tage');
-  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const titleJustUpdatedRef = useRef<boolean>(false);
   const lastUserEditedTitleRef = useRef<string | null>(null);
   
