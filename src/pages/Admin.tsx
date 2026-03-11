@@ -1375,7 +1375,7 @@ const Admin = () => {
         />
 
         {/* Set Password Dialog */}
-        <Dialog open={passwordDialogOpen} onOpenChange={(open) => { setPasswordDialogOpen(open); if (!open) { setNewPassword(''); setPasswordUser(null); } }}>
+        <Dialog open={passwordDialogOpen} onOpenChange={(open) => { setPasswordDialogOpen(open); if (!open) { setNewPassword(''); setPasswordUser(null); setShowPassword(false); } }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Passwort setzen</DialogTitle>
