@@ -1109,6 +1109,24 @@ const Admin = () => {
                                     >
                                       <KeyRound className="h-4 w-4" />
                                     </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      title="Passwort direkt setzen"
+                                      disabled={actionLoading === user.id}
+                                      onClick={() => { setPasswordUser(user); setNewPassword(''); setPasswordDialogOpen(true); }}
+                                    >
+                                      <Lock className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      title="E-Mail bestätigen"
+                                      disabled={actionLoading === user.id}
+                                      onClick={() => handleConfirmEmail(user.id, user.email)}
+                                    >
+                                      <MailCheck className="h-4 w-4" />
+                                    </Button>
                                   </>
                                 )}
                               </div>
