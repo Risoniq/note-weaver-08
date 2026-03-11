@@ -74,13 +74,9 @@ Deno.serve(async (req) => {
     const email = targetUser.user.email;
     const redirectTo = site_url ? `${site_url}/reset-password` : undefined;
 
-    // Send password reset email (this automatically sends the recovery email)
-    const { error: resetError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'recovery',
-      email,
-      options: {
-        redirectTo,
-      },
+    // Send password reset email - resetPasswordForEmail actually sends the email
+    const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
+      redirectTo,
     });
 
     if (resetError) {
