@@ -63,7 +63,6 @@ const Index = () => {
           </div>
         </div>
 
-        {/* Quota Exhausted Warning Banner */}
         {quota?.is_exhausted && (
           <Alert className="border-destructive bg-destructive/10">
             <AlertTriangle className="h-4 w-4 text-destructive" />
