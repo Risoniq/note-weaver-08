@@ -201,6 +201,7 @@ export function OnboardingTour() {
           top: tooltipPosition.top,
           left: tooltipPosition.left,
         }}
+        onClick={(event) => event.stopPropagation()}
       >
         <GlassCard className="p-5 shadow-2xl border-primary/20">
           <button

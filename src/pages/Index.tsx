@@ -23,7 +23,6 @@ import { QuotaProgressBar } from "@/components/quota/QuotaProgressBar";
 import { useUserQuota } from "@/hooks/useUserQuota";
 import { useTeamleadCheck } from "@/hooks/useTeamleadCheck";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useAutoStartTour } from "@/hooks/useOnboardingTour";
 import { OnboardingTour } from "@/components/onboarding/OnboardingTour";
 
 const Index = () => {
@@ -31,8 +30,6 @@ const Index = () => {
   const { quota, loading: quotaLoading } = useUserQuota();
   const { isTeamlead, teamName, leadTeams } = useTeamleadCheck();
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  // Auto-start onboarding tour for first-time users
-  useAutoStartTour();
 
   return (
     <AppLayout>
