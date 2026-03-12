@@ -272,6 +272,8 @@ export default function MeetingNoteTaker() {
     // H2: Lock to prevent double invocation
     if (isStoppingRef.current || !isRecording) return;
     isStoppingRef.current = true;
+
+    try {
     
     setIsRecording(false);
     setCurrentStream(null);
