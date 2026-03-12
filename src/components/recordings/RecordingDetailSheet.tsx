@@ -199,9 +199,9 @@ export const RecordingDetailSheet = ({
 
             {/* Download Actions */}
             <section className="flex flex-wrap gap-3">
-              {recording.video_url && (
+              {resolvedVideoUrl && (
                 <Button variant="outline" asChild>
-                  <a href={recording.video_url} target="_blank" rel="noopener noreferrer">
+                  <a href={resolvedVideoUrl} target="_blank" rel="noopener noreferrer">
                     <Download className="h-4 w-4 mr-2" />
                     Video herunterladen
                     <ExternalLink className="h-3 w-3 ml-1.5 opacity-50" />
