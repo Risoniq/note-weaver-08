@@ -25,6 +25,7 @@ import {
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { useActionItemCompletions } from "@/hooks/useActionItemCompletions";
+import { VideoPlayer, useResolvedVideoUrl } from "./VideoPlayer";
 
 interface RecordingDetailSheetProps {
   recording: Recording | null;
