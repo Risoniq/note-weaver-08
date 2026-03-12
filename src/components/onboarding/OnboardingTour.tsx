@@ -119,6 +119,19 @@ export function OnboardingTour() {
     };
   }, [isActive, currentStep, calculatePositions, location.pathname]);
 
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        skipTour();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isActive, skipTour]);
+
   const handleNext = () => {
     if (currentStepConfig?.action === "navigate" && currentStepConfig.actionTarget) {
       const targetPath = currentStepConfig.actionTarget;
