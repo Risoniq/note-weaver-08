@@ -272,6 +272,8 @@ export default function MeetingNoteTaker() {
     // H2: Lock to prevent double invocation
     if (isStoppingRef.current || !isRecording) return;
     isStoppingRef.current = true;
+
+    try {
     
     setIsRecording(false);
     setCurrentStream(null);
@@ -387,6 +389,13 @@ export default function MeetingNoteTaker() {
     } catch (err) {
       console.error('Fehler beim Speichern:', err);
       setError('Meeting konnte nicht gespeichert werden.');
+    }
+    } catch (outerErr: any) {
+      console.error('[MeetingNoteTaker] stopRecording crashed:', outerErr);
+      setIsRecording(false);
+      setCurrentStream(null);
+      isStoppingRef.current = false;
+      toast({ title: 'Fehler', description: outerErr?.message || 'Aufnahme konnte nicht gestoppt werden.', variant: 'destructive' });
     }
   }, [isRecording, recordingStartTime, meetingTitle, currentTranscript, captureMode, saveMeeting, stopRecognition, toast, user, selectedMeeting, loadMeetings]);
 

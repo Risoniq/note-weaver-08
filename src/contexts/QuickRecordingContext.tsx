@@ -164,38 +164,51 @@ export function QuickRecordingProvider({ children }: Props) {
     if (isStoppingRef.current) return;
     isStoppingRef.current = true;
 
-    const recorder = mediaRecorderRef.current;
-    const chunks = [...chunksRef.current];
-    const mimeType = mimeTypeRef.current;
+    try {
+      const recorder = mediaRecorderRef.current;
+      const chunks = [...chunksRef.current];
+      const mimeType = mimeTypeRef.current;
 
-    // If recorder is already inactive or missing, handle ghost state
-    if (!recorder || recorder.state === 'inactive') {
+      // If recorder is already inactive or missing, handle ghost state
+      if (!recorder || recorder.state === 'inactive') {
+        stopAllTracks();
+        resetState();
+        chunksRef.current = [];
+        mediaRecorderRef.current = null;
+
+        // Still upload whatever chunks we have
+        if (chunks.length > 0) {
+          await uploadChunks(chunks, mimeType);
+        }
+        return;
+      }
+
+      return new Promise<void>((resolve) => {
+        recorder.onstop = async () => {
+          try {
+            stopAllTracks();
+            resetState();
+
+            const allChunks = [...chunksRef.current];
+            chunksRef.current = [];
+            mediaRecorderRef.current = null;
+
+            await uploadChunks(allChunks, recorder.mimeType);
+          } catch (innerErr) {
+            console.error('[QuickRecording] Error in onstop handler:', innerErr);
+          }
+          resolve();
+        };
+        recorder.stop();
+      });
+    } catch (err: any) {
+      console.error('[QuickRecording] stopRecording failed:', err);
       stopAllTracks();
       resetState();
       chunksRef.current = [];
       mediaRecorderRef.current = null;
-
-      // Still upload whatever chunks we have
-      if (chunks.length > 0) {
-        await uploadChunks(chunks, mimeType);
-      }
-      return;
+      toast({ title: 'Fehler beim Stoppen', description: err?.message || 'Unbekannter Fehler', variant: 'destructive' });
     }
-
-    return new Promise<void>((resolve) => {
-      recorder.onstop = async () => {
-        stopAllTracks();
-        resetState();
-
-        const allChunks = [...chunksRef.current];
-        chunksRef.current = [];
-        mediaRecorderRef.current = null;
-
-        await uploadChunks(allChunks, recorder.mimeType);
-        resolve();
-      };
-      recorder.stop();
-    });
   }, [stopAllTracks, resetState, uploadChunks]);
 
   // Effect to handle deferred stop (from max duration timer)
