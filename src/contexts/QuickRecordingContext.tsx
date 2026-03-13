@@ -32,6 +32,7 @@ const fallback: QuickRecordingContextValue = {
   showModeDialog: false, setShowModeDialog: () => {}, openModeDialog: () => {},
   startRecording: async () => {}, stopRecording: async () => {},
   error: '', includeWebcam: false, webcamStream: null,
+  pendingUploads: 0, retryPendingUploads: async () => {}, isRetrying: false,
 };
 
 export function useQuickRecordingContext() {
