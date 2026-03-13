@@ -20,6 +20,9 @@ interface QuickRecordingContextValue {
   error: string;
   includeWebcam: boolean;
   webcamStream: MediaStream | null;
+  pendingUploads: number;
+  retryPendingUploads: () => Promise<void>;
+  isRetrying: boolean;
 }
 
 const QuickRecordingContext = createContext<QuickRecordingContextValue | null>(null);
