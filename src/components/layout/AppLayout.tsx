@@ -1,6 +1,6 @@
 import { ReactNode, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Settings, Shield, Mic, Video, FolderKanban, Square } from "lucide-react";
+import { LayoutDashboard, Settings, Shield, Mic, Video, FolderKanban, Square, CloudUpload, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminCheck } from "@/hooks/useAdminCheck";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -31,7 +31,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { quota } = useUserQuota();
   const { branding } = useUserBranding();
   const [showQuotaModal, setShowQuotaModal] = useState(false);
-  const { isRecording, openModeDialog, stopRecording } = useQuickRecordingContext();
+  const { isRecording, openModeDialog, stopRecording, pendingUploads, retryPendingUploads, isRetrying } = useQuickRecordingContext();
   const { showWarning, remainingSeconds, extendSession } = useSessionTimeout({ paused: isRecording });
 
   return (
@@ -43,6 +43,22 @@ export function AppLayout({ children }: AppLayoutProps) {
     )}>
       {/* Impersonation Banner */}
       <ImpersonationBanner />
+
+      {/* Pending Upload Banner */}
+      {pendingUploads > 0 && !isRecording && (
+        <div className="bg-amber-500/90 dark:bg-amber-600/90 text-white px-4 py-2 flex items-center justify-center gap-3 text-sm font-medium">
+          <CloudUpload className="h-4 w-4" />
+          <span>{pendingUploads} Aufnahme(n) warten auf Upload</span>
+          <button
+            onClick={retryPendingUploads}
+            disabled={isRetrying}
+            className="px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {isRetrying ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            {isRetrying ? 'Wird hochgeladen…' : 'Jetzt hochladen'}
+          </button>
+        </div>
+      )}
       
       {/* Header Navigation */}
       <header className={cn(

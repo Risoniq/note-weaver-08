@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useRef, useCallback, useEffect, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { saveBlob, deleteBlob } from '@/hooks/useIndexedDBBackup';
+import { saveBlob, deleteBlob, getPendingIds, getBlob } from '@/hooks/useIndexedDBBackup';
 
 const MAX_CHUNK_BYTES = 750 * 1024 * 1024;
 const MAX_DURATION_SECONDS = 7200; // 2 hours
@@ -20,6 +20,9 @@ interface QuickRecordingContextValue {
   error: string;
   includeWebcam: boolean;
   webcamStream: MediaStream | null;
+  pendingUploads: number;
+  retryPendingUploads: () => Promise<void>;
+  isRetrying: boolean;
 }
 
 const QuickRecordingContext = createContext<QuickRecordingContextValue | null>(null);
@@ -29,6 +32,7 @@ const fallback: QuickRecordingContextValue = {
   showModeDialog: false, setShowModeDialog: () => {}, openModeDialog: () => {},
   startRecording: async () => {}, stopRecording: async () => {},
   error: '', includeWebcam: false, webcamStream: null,
+  pendingUploads: 0, retryPendingUploads: async () => {}, isRetrying: false,
 };
 
 export function useQuickRecordingContext() {
@@ -48,6 +52,8 @@ export function QuickRecordingProvider({ children }: Props) {
   const [error, setError] = useState('');
   const [includeWebcam, setIncludeWebcam] = useState(false);
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
+  const [pendingUploads, setPendingUploads] = useState(0);
+  const [isRetrying, setIsRetrying] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -429,11 +435,134 @@ export function QuickRecordingProvider({ children }: Props) {
     return () => window.removeEventListener('beforeunload', handler);
   }, [isRecording]);
 
+  // Check for pending uploads on mount
+  const checkPendingUploads = useCallback(async () => {
+    try {
+      const ids = await getPendingIds();
+      setPendingUploads(ids.length);
+    } catch {
+      setPendingUploads(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkPendingUploads();
+  }, [checkPendingUploads]);
+
+  // Auto-retry pending uploads when user has a valid session
+  const retryPendingUploads = useCallback(async () => {
+    if (isRetrying) return;
+    setIsRetrying(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast({ title: 'Nicht eingeloggt', description: 'Bitte melde dich an, um ausstehende Aufnahmen hochzuladen.', variant: 'destructive' });
+        setIsRetrying(false);
+        return;
+      }
+
+      const ids = await getPendingIds();
+      if (ids.length === 0) {
+        setPendingUploads(0);
+        setIsRetrying(false);
+        return;
+      }
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const id of ids) {
+        try {
+          const blob = await getBlob(id);
+          if (!blob || blob.size === 0) {
+            await deleteBlob(id);
+            continue;
+          }
+
+          // Re-check session before each upload (token might expire during batch)
+          const { data: { session: currentSession } } = await supabase.auth.getSession();
+          if (!currentSession) {
+            failCount += (ids.length - successCount);
+            break;
+          }
+
+          const now = new Date();
+          const title = `Aufnahme (wiederhergestellt) ${now.toLocaleDateString('de-DE')} ${now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+
+          const formData = new FormData();
+          formData.append('audio', blob, `recording-recovered-${Date.now()}.webm`);
+          formData.append('title', title);
+
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+          const response = await fetch(`${supabaseUrl}/functions/v1/transcribe-audio`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${currentSession.access_token}` },
+            body: formData,
+          });
+
+          const result = await response.json();
+          if (response.ok && result.success) {
+            await deleteBlob(id);
+            successCount++;
+            console.log(`[PendingUpload] Successfully uploaded ${id}`);
+          } else {
+            console.warn(`[PendingUpload] Upload failed for ${id}:`, result.error);
+            failCount++;
+          }
+        } catch (err) {
+          console.error(`[PendingUpload] Error uploading ${id}:`, err);
+          failCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast({ title: '✅ Aufnahmen wiederhergestellt', description: `${successCount} Aufnahme(n) erfolgreich hochgeladen.` });
+      }
+      if (failCount > 0) {
+        toast({ title: 'Upload-Fehler', description: `${failCount} Aufnahme(n) konnten nicht hochgeladen werden.`, variant: 'destructive' });
+      }
+
+      await checkPendingUploads();
+    } catch (err) {
+      console.error('[PendingUpload] Retry failed:', err);
+    } finally {
+      setIsRetrying(false);
+    }
+  }, [isRetrying, checkPendingUploads]);
+
+  // Auto-retry on auth state change (user logs in)
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        // Delay slightly to ensure token is propagated
+        setTimeout(() => {
+          getPendingIds().then(ids => {
+            if (ids.length > 0) {
+              console.log(`[PendingUpload] ${ids.length} pending upload(s) found after ${event}, auto-retrying...`);
+              retryPendingUploads();
+            }
+          }).catch(() => {});
+        }, 2000);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [retryPendingUploads]);
+
+  // Also refresh pending count after a recording stops
+  useEffect(() => {
+    if (!isRecording) {
+      const timeout = setTimeout(checkPendingUploads, 3000);
+      return () => clearTimeout(timeout);
+    }
+  }, [isRecording, checkPendingUploads]);
+
   return (
     <QuickRecordingContext.Provider value={{
       isRecording, recordingMode, elapsedSeconds, showModeDialog, setShowModeDialog,
       openModeDialog, startRecording, stopRecording, error,
       includeWebcam, webcamStream,
+      pendingUploads, retryPendingUploads, isRetrying,
     }}>
       {children}
     </QuickRecordingContext.Provider>
